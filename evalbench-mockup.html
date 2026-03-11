@@ -1,0 +1,1527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EvalBench · Design Concepts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #FAFAF9;
+      --bg-surface: #FFFFFF;
+      --bg-muted: #F5F5F4;
+      --bg-subtle: #EFEDE9;
+      --text-primary: #1C1917;
+      --text-secondary: #57534E;
+      --text-tertiary: #A8A29E;
+      --border-subtle: #E7E5E4;
+      --border-default: #D6D3D1;
+      --violet: #7C3AED;
+      --violet-dark: #5B21B6;
+      --violet-light: #EDE9FE;
+      --violet-mid: #8B5CF6;
+      --amber: #D97706;
+      --amber-light: #FEF3C7;
+      --amber-mid: #F59E0B;
+      --emerald: #059669;
+      --emerald-light: #D1FAE5;
+      --rose: #DC2626;
+      --rose-light: #FEE2E2;
+      --sky: #0284C7;
+      --sky-light: #E0F2FE;
+    }
+    * { box-sizing: border-box; -webkit-font-smoothing: antialiased; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      overflow: hidden;
+      height: 100vh;
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* Navigation */
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; border-radius: 8px; cursor: pointer;
+      transition: all 0.15s ease; font-size: 13.5px; font-weight: 500;
+      color: var(--text-primary); text-decoration: none; user-select: none;
+    }
+    .nav-item:hover { background: var(--bg-muted); color: var(--text-primary); }
+    .nav-item.active { background: var(--violet-light); color: var(--violet); font-weight: 600; }
+    .nav-icon { width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
+    .nav-section-label {
+      font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--text-tertiary); padding: 4px 12px; margin-top: 6px;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--bg-surface); border: 1px solid var(--border-subtle);
+      border-radius: 12px; padding: 20px;
+      box-shadow: 0 1px 3px 0 rgb(0 0 0 / .04), 0 1px 2px -1px rgb(0 0 0 / .04);
+    }
+
+    /* Stat cards */
+    .stat-card {
+      background: var(--bg-surface); border: 1px solid var(--border-subtle);
+      border-radius: 12px; padding: 20px;
+      box-shadow: 0 1px 3px 0 rgb(0 0 0 / .04);
+    }
+    .stat-value { font-size: 30px; font-weight: 800; line-height: 1; color: var(--text-primary); }
+    .stat-label { font-size: 13px; color: var(--text-secondary); margin-top: 6px; font-weight: 500; }
+    .stat-trend { font-size: 12px; font-weight: 600; margin-top: 6px; }
+    .trend-up { color: var(--emerald); }
+    .trend-neutral { color: var(--text-tertiary); }
+
+    /* Score badges */
+    .score-badge {
+      font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;
+      padding: 2px 8px; border-radius: 6px; white-space: nowrap;
+    }
+    .score-excellent { background: var(--emerald-light); color: var(--emerald); }
+    .score-good { background: #DBEAFE; color: #1D4ED8; }
+    .score-fair { background: var(--amber-light); color: var(--amber); }
+    .score-poor { background: var(--rose-light); color: var(--rose); }
+
+    /* Buttons */
+    .btn-primary {
+      background: var(--violet); color: white; padding: 9px 18px; border-radius: 8px;
+      font-size: 13.5px; font-weight: 600; border: none; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 7px; transition: all 0.15s;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .btn-primary:hover { background: var(--violet-dark); transform: translateY(-1px); box-shadow: 0 4px 12px rgb(124 58 237 / .25); }
+    .btn-secondary {
+      background: white; color: var(--text-primary); padding: 8px 18px; border-radius: 8px;
+      font-size: 13.5px; font-weight: 600; border: 1.5px solid var(--border-default);
+      cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+      transition: all 0.15s; font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .btn-secondary:hover { background: var(--bg-muted); }
+
+    /* Score bar */
+    .score-bar-track { height: 5px; background: var(--bg-muted); border-radius: 3px; overflow: hidden; }
+    .score-bar-fill { height: 100%; border-radius: 3px; }
+
+    /* Screens */
+    .screen { display: none; }
+    .screen.active { display: block; animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 3px; }
+
+    /* Task cards */
+    .task-card {
+      border: 2px solid var(--border-subtle); border-radius: 12px; padding: 18px 16px;
+      cursor: pointer; transition: all 0.2s; background: white;
+    }
+    .task-card:hover { border-color: var(--violet-mid); box-shadow: 0 0 0 3px var(--violet-light); }
+    .task-card.selected { border-color: var(--violet); background: var(--violet-light); }
+
+    /* Metric chips */
+    .metric-chip {
+      display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px;
+      border-radius: 20px; font-size: 11.5px; font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+      background: var(--violet-light); color: var(--violet); cursor: pointer;
+      transition: all 0.15s; user-select: none;
+    }
+    .task-card.selected .metric-chip { background: white; }
+    .metric-chip:hover { background: var(--violet); color: white; }
+
+    /* Data table */
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th {
+      text-align: left; padding: 10px 16px; font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary);
+      border-bottom: 1px solid var(--border-subtle); white-space: nowrap;
+    }
+    .data-table td { padding: 12px 16px; font-size: 13.5px; border-bottom: 1px solid var(--border-subtle); vertical-align: middle; color: var(--text-primary); }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr:hover td { background: #FAFAF9; }
+
+    /* Step indicator */
+    .step-dot {
+      width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center;
+      justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0;
+    }
+    .step-dot.active { background: var(--violet); color: white; box-shadow: 0 0 0 4px var(--violet-light); }
+    .step-dot.done { background: var(--emerald); color: white; }
+    .step-dot.pending { background: var(--bg-muted); color: var(--text-tertiary); border: 2px solid var(--border-default); }
+    .step-line { height: 2px; flex: 1; background: var(--border-default); }
+    .step-line.done { background: var(--emerald); }
+
+    /* Vote buttons */
+    .vote-btn {
+      flex: 1; padding: 15px; border-radius: 12px; font-size: 14px; font-weight: 700;
+      border: 2px solid transparent; cursor: pointer; transition: all 0.2s;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .vote-btn-a { background: #EFF6FF; color: #1D4ED8; border-color: #BFDBFE; }
+    .vote-btn-a:hover { background: #1D4ED8; color: white; transform: translateY(-2px); box-shadow: 0 6px 16px rgb(29 78 216 / .25); }
+    .vote-btn-tie { background: var(--bg-muted); color: var(--text-secondary); border-color: var(--border-default); max-width: 110px; }
+    .vote-btn-tie:hover { background: var(--bg-subtle); color: var(--text-primary); }
+    .vote-btn-b { background: #FDF2F8; color: #9D174D; border-color: #FBCFE8; }
+    .vote-btn-b:hover { background: #9D174D; color: white; transform: translateY(-2px); box-shadow: 0 6px 16px rgb(157 23 77 / .25); }
+
+    /* Model card */
+    .model-card {
+      background: white; border: 1.5px solid var(--border-subtle); border-radius: 14px;
+      padding: 20px; cursor: pointer; transition: all 0.2s;
+    }
+    .model-card:hover { border-color: var(--violet); box-shadow: 0 4px 16px rgb(124 58 237 / .1); transform: translateY(-2px); }
+
+    /* Edu panel */
+    .edu-panel {
+      background: linear-gradient(135deg, #EDE9FE, #F0FDF4);
+      border: 1px solid #DDD6FE; border-left: 3px solid var(--violet);
+      border-radius: 10px; padding: 14px 18px; font-size: 13px;
+    }
+
+    /* Learn tooltip */
+    .ltt {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 15px; height: 15px; border-radius: 50%; background: var(--bg-muted);
+      color: var(--text-tertiary); font-size: 9px; font-weight: 700; cursor: help;
+      border: 1px solid var(--border-default); margin-left: 3px; vertical-align: middle;
+    }
+    .ltt:hover { background: var(--violet-light); color: var(--violet); border-color: var(--violet); }
+
+    /* Tag */
+    .tag { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
+    .tag-blue { background: #DBEAFE; color: #1D4ED8; }
+    .tag-green { background: var(--emerald-light); color: var(--emerald); }
+    .tag-red { background: var(--rose-light); color: var(--rose); }
+    .tag-amber { background: var(--amber-light); color: var(--amber); }
+    .tag-violet { background: var(--violet-light); color: var(--violet); }
+    .tag-gray { background: var(--bg-muted); color: var(--text-tertiary); }
+
+    /* Shimmer animation */
+    @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(200%); } }
+    .shimmer-wrap { position: relative; overflow: hidden; }
+    .shimmer-wrap::after {
+      content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 50%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.4), transparent);
+      animation: shimmer 1.6s infinite;
+    }
+
+    /* Spin animation */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin 0.8s linear infinite; }
+
+    /* Arena panel */
+    .arena-panel {
+      background: white; border: 1.5px solid var(--border-subtle);
+      padding: 22px; display: flex; flex-direction: column;
+    }
+
+    /* Progress bar */
+    .prog-bar {
+      height: 9px; background: var(--bg-muted); border-radius: 5px; overflow: hidden;
+    }
+    .prog-fill {
+      height: 100%; border-radius: 5px;
+      background: linear-gradient(90deg, var(--violet), var(--violet-mid));
+    }
+
+    /* Ribbon badge for design mockup header */
+    .design-ribbon {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+      background: linear-gradient(90deg, var(--violet), var(--violet-mid));
+      color: white; font-size: 12px; font-weight: 600; text-align: center;
+      padding: 6px; display: flex; align-items: center; justify-content: center; gap: 12px;
+    }
+    .screen-nav-btn {
+      background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.3);
+      color: white; padding: 3px 12px; border-radius: 12px; font-size: 11px;
+      font-weight: 700; cursor: pointer; transition: all .15s;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .screen-nav-btn:hover { background: rgba(255,255,255,.35); }
+    .screen-nav-btn.current { background: white; color: var(--violet); }
+  </style>
+</head>
+<body>
+
+  <!-- Design preview ribbon -->
+  <div class="design-ribbon">
+    <span>🎨 EvalBench Design Concept · Click to preview each screen:</span>
+    <button class="screen-nav-btn current" id="btn-dashboard" onclick="showScreen('dashboard')">Dashboard</button>
+    <button class="screen-nav-btn" id="btn-wizard" onclick="showScreen('wizard')">Eval Wizard</button>
+    <button class="screen-nav-btn" id="btn-running" onclick="showScreen('running')">Eval Running</button>
+    <button class="screen-nav-btn" id="btn-arena" onclick="showScreen('arena')">Arena</button>
+    <button class="screen-nav-btn" id="btn-models" onclick="showScreen('models')">Models</button>
+    <button class="screen-nav-btn" id="btn-learn" onclick="showScreen('learn')">Metric Guide</button>
+  </div>
+
+  <!-- App Shell (pushed down by ribbon) -->
+  <div style="display:flex; height:100vh; padding-top:33px; overflow:hidden;">
+
+    <!-- ═══════════════════════════════════════ SIDEBAR ═══════════════════════════════════════ -->
+    <aside style="width:252px;min-width:252px;background:white;border-right:1px solid var(--border-subtle);display:flex;flex-direction:column;overflow-y:auto;">
+
+      <!-- Logo -->
+      <div style="padding:18px 16px 14px;border-bottom:1px solid var(--border-subtle);">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;background:linear-gradient(135deg,var(--violet),var(--violet-mid));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">⚗️</div>
+          <div>
+            <div style="font-size:16px;font-weight:800;color:var(--text-primary);line-height:1.1;">EvalBench</div>
+            <div style="font-size:11px;color:var(--text-tertiary);font-weight:500;margin-top:1px;">v0.4 · Local LLM Eval</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Nav -->
+      <nav style="padding:10px 8px;flex:1;">
+        <div class="nav-section-label">Evaluate</div>
+        <a class="nav-item" id="nav-dashboard" onclick="showScreen('dashboard')">
+          <span class="nav-icon">📊</span><span>Dashboard</span>
+        </a>
+        <a class="nav-item" id="nav-wizard" onclick="showScreen('wizard')">
+          <span class="nav-icon">🧪</span><span>Eval Wizard</span>
+          <span style="margin-left:auto;background:var(--violet);color:white;font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:10px;">NEW</span>
+        </a>
+        <a class="nav-item" id="nav-history" onclick="showScreen('history')">
+          <span class="nav-icon">📋</span><span>Run History</span>
+          <span style="margin-left:auto;color:var(--text-tertiary);font-size:12px;font-family:'JetBrains Mono',monospace;">12</span>
+        </a>
+
+        <div class="nav-section-label" style="margin-top:6px;">Analyze</div>
+        <a class="nav-item" id="nav-models" onclick="showScreen('models')">
+          <span class="nav-icon">🤖</span><span>Models</span>
+          <span style="margin-left:auto;color:var(--text-tertiary);font-size:12px;font-family:'JetBrains Mono',monospace;">5</span>
+        </a>
+        <a class="nav-item" id="nav-arena" onclick="showScreen('arena')">
+          <span class="nav-icon">⚔️</span><span>Arena</span>
+        </a>
+        <a class="nav-item" id="nav-leaderboard" onclick="showScreen('leaderboard')">
+          <span class="nav-icon">🏆</span><span>Leaderboard</span>
+        </a>
+        <a class="nav-item" id="nav-compare" onclick="showScreen('compare')">
+          <span class="nav-icon">📈</span><span>Compare</span>
+        </a>
+
+        <div class="nav-section-label" style="margin-top:6px;">Learn</div>
+        <a class="nav-item" id="nav-learn" onclick="showScreen('learn')">
+          <span class="nav-icon">📚</span><span>Metric Guide</span>
+        </a>
+        <a class="nav-item" id="nav-datasets" onclick="showScreen('datasets')">
+          <span class="nav-icon">🗂️</span><span>Datasets</span>
+        </a>
+      </nav>
+
+      <!-- Bottom status + settings -->
+      <div style="padding:10px 8px;border-top:1px solid var(--border-subtle);">
+        <div style="padding:10px 12px;background:var(--bg-muted);border-radius:10px;margin-bottom:8px;display:flex;align-items:center;gap:8px;">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--emerald);box-shadow:0 0 6px var(--emerald);flex-shrink:0;"></div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;font-weight:600;color:var(--text-primary);">Ollama Connected</div>
+            <div style="font-size:11px;color:var(--text-tertiary);font-family:'JetBrains Mono',monospace;">localhost:11434</div>
+          </div>
+        </div>
+        <a class="nav-item" id="nav-settings" onclick="showScreen('settings')">
+          <span class="nav-icon">⚙️</span><span>Settings</span>
+        </a>
+      </div>
+    </aside>
+
+    <!-- ═══════════════════════════════════════ MAIN ═══════════════════════════════════════ -->
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+
+      <!-- Topbar -->
+      <div style="height:56px;background:white;border-bottom:1px solid var(--border-subtle);padding:0 24px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+        <div id="breadcrumb" style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text-secondary);">
+          <span style="font-weight:700;color:var(--text-primary);">Dashboard</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="display:flex;align-items:center;gap:7px;background:var(--bg-muted);border:1px solid var(--border-subtle);border-radius:8px;padding:6px 12px;">
+            <span style="font-size:13px;color:var(--text-tertiary);">🔍</span>
+            <span style="font-size:12.5px;color:var(--text-tertiary);">Search...</span>
+            <kbd style="font-size:10px;color:var(--text-tertiary);background:white;border:1px solid var(--border-default);border-radius:4px;padding:1px 5px;font-family:'JetBrains Mono',monospace;">⌘K</kbd>
+          </div>
+          <button class="btn-primary" onclick="showScreen('wizard')" style="padding:7px 14px;font-size:12.5px;">＋ New Eval</button>
+          <div style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--violet),var(--violet-mid));display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:12px;">T</div>
+        </div>
+      </div>
+
+      <!-- Scrollable content -->
+      <div id="scroll-area" style="flex:1;overflow-y:auto;background:var(--bg-base);">
+
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <!--  SCREEN: DASHBOARD                                            -->
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <div id="screen-dashboard" class="screen active" style="padding:24px;">
+
+          <!-- Header -->
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;">
+            <div>
+              <h1 style="font-size:22px;font-weight:800;color:var(--text-primary);margin-bottom:3px;">Dashboard</h1>
+              <p style="font-size:13px;color:var(--text-secondary);">Your local LLM evaluation workspace · Updated 2 minutes ago</p>
+            </div>
+            <button class="btn-secondary" style="font-size:12.5px;padding:7px 13px;">↻ Refresh</button>
+          </div>
+
+          <!-- Stat cards -->
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;">
+            <div class="stat-card">
+              <div style="width:34px;height:34px;background:var(--violet-light);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:12px;">🤖</div>
+              <div class="stat-value">5</div>
+              <div class="stat-label">Models Loaded</div>
+              <div class="stat-trend trend-up">+2 this week</div>
+            </div>
+            <div class="stat-card">
+              <div style="width:34px;height:34px;background:var(--amber-light);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:12px;">🧪</div>
+              <div class="stat-value">12</div>
+              <div class="stat-label">Eval Runs Total</div>
+              <div class="stat-trend trend-up">+3 this week</div>
+            </div>
+            <div class="stat-card">
+              <div style="width:34px;height:34px;background:var(--emerald-light);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:12px;">📊</div>
+              <div class="stat-value mono" style="font-size:26px;">847</div>
+              <div class="stat-label">Data Points</div>
+              <div class="stat-trend trend-up">247 in latest run</div>
+            </div>
+            <div class="stat-card">
+              <div style="width:34px;height:34px;background:#FEE2E2;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:12px;">⚡</div>
+              <div class="stat-value" style="color:var(--amber);">0</div>
+              <div class="stat-label">Active Evals</div>
+              <div class="stat-trend trend-neutral">None running</div>
+            </div>
+          </div>
+
+          <!-- Main grid: leaderboard + right column -->
+          <div style="display:grid;grid-template-columns:1fr 300px;gap:12px;margin-bottom:18px;">
+
+            <!-- Leaderboard -->
+            <div class="card" style="padding:0;overflow:hidden;">
+              <div style="padding:16px 20px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between;">
+                <div>
+                  <h3 style="font-size:14.5px;font-weight:700;color:var(--text-primary);margin-bottom:2px;">Model Leaderboard</h3>
+                  <p style="font-size:12px;color:var(--text-secondary);">Sorted by overall score across all tasks</p>
+                </div>
+                <button class="btn-secondary" style="font-size:11.5px;padding:5px 11px;">All Tasks ▾</button>
+              </div>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width:36px;">#</th>
+                    <th>Model</th>
+                    <th>Score <span class="ltt" title="Weighted average across all evaluated metrics. Includes 95% confidence intervals.">?</span></th>
+                    <th>ROUGE-L <span class="ltt" title="Longest Common Subsequence F1 for text similarity. Higher is better, max 1.0.">?</span></th>
+                    <th>BLEU <span class="ltt" title="N-gram precision score. Best for translation tasks.">?</span></th>
+                    <th>Latency</th>
+                    <th>Tasks</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span style="font-size:18px;">🥇</span></td>
+                    <td>
+                      <div style="display:flex;align-items:center;gap:9px;">
+                        <div style="width:30px;height:30px;background:linear-gradient(135deg,#7C3AED,#8B5CF6);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;">🦙</div>
+                        <div>
+                          <div style="font-weight:600;font-size:13px;font-family:'JetBrains Mono',monospace;">llama3.2:8b</div>
+                          <div style="font-size:11px;color:var(--text-tertiary);">8B · Q4_K_M</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <span class="score-badge score-excellent">72.4%</span>
+                        <div class="score-bar-track" style="width:52px;"><div class="score-bar-fill" style="width:72.4%;background:var(--emerald);"></div></div>
+                      </div>
+                    </td>
+                    <td><span class="score-badge score-excellent">0.412</span></td>
+                    <td><span class="score-badge score-good">0.341</span></td>
+                    <td><span class="mono" style="font-size:12.5px;color:var(--text-secondary);">18 t/s</span></td>
+                    <td><div style="display:flex;gap:3px;"><span class="tag tag-blue">Summ</span><span class="tag tag-green">QA</span></div></td>
+                  </tr>
+                  <tr>
+                    <td><span style="font-size:18px;">🥈</span></td>
+                    <td>
+                      <div style="display:flex;align-items:center;gap:9px;">
+                        <div style="width:30px;height:30px;background:linear-gradient(135deg,#0EA5E9,#38BDF8);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;">🔷</div>
+                        <div>
+                          <div style="font-weight:600;font-size:13px;font-family:'JetBrains Mono',monospace;">phi4:14b</div>
+                          <div style="font-size:11px;color:var(--text-tertiary);">14B · Q4_K_M</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <span class="score-badge score-good">69.1%</span>
+                        <div class="score-bar-track" style="width:52px;"><div class="score-bar-fill" style="width:69.1%;background:#3B82F6;"></div></div>
+                      </div>
+                    </td>
+                    <td><span class="score-badge score-good">0.389</span></td>
+                    <td><span class="score-badge score-good">0.312</span></td>
+                    <td><span class="mono" style="font-size:12.5px;color:var(--text-secondary);">11 t/s</span></td>
+                    <td><div style="display:flex;gap:3px;"><span class="tag tag-blue">Summ</span></div></td>
+                  </tr>
+                  <tr>
+                    <td><span style="font-size:18px;">🥉</span></td>
+                    <td>
+                      <div style="display:flex;align-items:center;gap:9px;">
+                        <div style="width:30px;height:30px;background:linear-gradient(135deg,#F59E0B,#FCD34D);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;">⭐</div>
+                        <div>
+                          <div style="font-weight:600;font-size:13px;font-family:'JetBrains Mono',monospace;">mistral:7b</div>
+                          <div style="font-size:11px;color:var(--text-tertiary);">7B · Q4_0</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <span class="score-badge score-good">68.8%</span>
+                        <div class="score-bar-track" style="width:52px;"><div class="score-bar-fill" style="width:68.8%;background:#3B82F6;"></div></div>
+                      </div>
+                    </td>
+                    <td><span class="score-badge score-good">0.401</span></td>
+                    <td><span class="score-badge score-fair">0.298</span></td>
+                    <td><span class="mono" style="font-size:12.5px;color:var(--text-secondary);">22 t/s</span></td>
+                    <td><div style="display:flex;gap:3px;"><span class="tag tag-green">QA</span><span class="tag tag-red">Code</span></div></td>
+                  </tr>
+                  <tr>
+                    <td><span style="font-size:14px;font-weight:700;color:var(--text-tertiary);">4</span></td>
+                    <td>
+                      <div style="display:flex;align-items:center;gap:9px;">
+                        <div style="width:30px;height:30px;background:linear-gradient(135deg,#10B981,#34D399);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;">🌊</div>
+                        <div>
+                          <div style="font-weight:600;font-size:13px;font-family:'JetBrains Mono',monospace;">qwen2.5:7b</div>
+                          <div style="font-size:11px;color:var(--text-tertiary);">7.6B · Q4_K_M</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <span class="score-badge score-fair">64.2%</span>
+                        <div class="score-bar-track" style="width:52px;"><div class="score-bar-fill" style="width:64.2%;background:var(--amber);"></div></div>
+                      </div>
+                    </td>
+                    <td><span class="score-badge score-fair">0.356</span></td>
+                    <td><span class="score-badge score-fair">0.287</span></td>
+                    <td><span class="mono" style="font-size:12.5px;color:var(--text-secondary);">25 t/s</span></td>
+                    <td><div style="display:flex;gap:3px;"><span class="tag tag-blue">Summ</span></div></td>
+                  </tr>
+                </tbody>
+              </table>
+              <div style="padding:10px 20px;border-top:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between;">
+                <span style="font-size:12px;color:var(--text-tertiary);">4 of 5 models evaluated</span>
+                <button class="btn-secondary" style="font-size:11.5px;padding:5px 11px;">View All →</button>
+              </div>
+            </div>
+
+            <!-- Right column -->
+            <div style="display:flex;flex-direction:column;gap:12px;">
+
+              <!-- Capability Radar -->
+              <div class="card">
+                <div style="margin-bottom:10px;">
+                  <h3 style="font-size:13.5px;font-weight:700;color:var(--text-primary);margin-bottom:2px;">Capability Radar</h3>
+                  <p style="font-size:11.5px;color:var(--text-secondary);">Top 2 models compared</p>
+                </div>
+                <svg width="100%" viewBox="0 0 260 215" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" style="stop-color:#7C3AED;stop-opacity:0.18"/>
+                      <stop offset="100%" style="stop-color:#8B5CF6;stop-opacity:0.08"/>
+                    </linearGradient>
+                    <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" style="stop-color:#0284C7;stop-opacity:0.15"/>
+                      <stop offset="100%" style="stop-color:#38BDF8;stop-opacity:0.05"/>
+                    </linearGradient>
+                  </defs>
+                  <!-- Background rings -->
+                  <polygon points="130,30 198,73 198,143 130,186 62,143 62,73" fill="none" stroke="#E7E5E4" stroke-width="1"/>
+                  <polygon points="130,55 181,88 181,133 130,166 79,133 79,88" fill="none" stroke="#E7E5E4" stroke-width="1"/>
+                  <polygon points="130,80 164,103 164,123 130,146 96,123 96,103" fill="none" stroke="#E7E5E4" stroke-width="1"/>
+                  <!-- Axes -->
+                  <line x1="130" y1="30" x2="130" y2="186" stroke="#E7E5E4" stroke-width="1"/>
+                  <line x1="62" y1="73" x2="198" y2="143" stroke="#E7E5E4" stroke-width="1"/>
+                  <line x1="198" y1="73" x2="62" y2="143" stroke="#E7E5E4" stroke-width="1"/>
+                  <!-- Model 1 llama (violet) -->
+                  <polygon points="130,42 193,82 190,138 130,178 74,135 80,80"
+                    fill="url(#g1)" stroke="#7C3AED" stroke-width="2" stroke-linejoin="round"/>
+                  <!-- Model 2 phi4 (blue, dashed) -->
+                  <polygon points="130,50 185,88 183,134 130,170 80,131 84,86"
+                    fill="url(#g2)" stroke="#0284C7" stroke-width="2" stroke-linejoin="round" stroke-dasharray="4,2.5"/>
+                  <!-- Labels -->
+                  <text x="130" y="22" text-anchor="middle" font-size="10.5" font-weight="600" fill="#57534E" font-family="'Plus Jakarta Sans',sans-serif">Knowledge</text>
+                  <text x="212" y="70" text-anchor="start" font-size="10.5" font-weight="600" fill="#57534E" font-family="'Plus Jakarta Sans',sans-serif">Speed</text>
+                  <text x="212" y="152" text-anchor="start" font-size="10.5" font-weight="600" fill="#57534E" font-family="'Plus Jakarta Sans',sans-serif">Code</text>
+                  <text x="130" y="200" text-anchor="middle" font-size="10.5" font-weight="600" fill="#57534E" font-family="'Plus Jakarta Sans',sans-serif">Reasoning</text>
+                  <text x="48" y="152" text-anchor="end" font-size="10.5" font-weight="600" fill="#57534E" font-family="'Plus Jakarta Sans',sans-serif">Language</text>
+                  <text x="48" y="70" text-anchor="end" font-size="10.5" font-weight="600" fill="#57534E" font-family="'Plus Jakarta Sans',sans-serif">Safety</text>
+                </svg>
+                <div style="display:flex;flex-direction:column;gap:5px;margin-top:6px;">
+                  <div style="display:flex;align-items:center;gap:7px;">
+                    <div style="width:18px;height:2.5px;background:#7C3AED;border-radius:2px;flex-shrink:0;"></div>
+                    <span style="font-size:11.5px;font-weight:600;font-family:'JetBrains Mono',monospace;">llama3.2:8b</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:7px;">
+                    <div style="width:18px;border-top:2.5px dashed #0284C7;flex-shrink:0;"></div>
+                    <span style="font-size:11.5px;font-weight:600;font-family:'JetBrains Mono',monospace;">phi4:14b</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Recent Activity -->
+              <div class="card" style="padding:16px;">
+                <h3 style="font-size:13.5px;font-weight:700;color:var(--text-primary);margin-bottom:12px;">Recent Activity</h3>
+                <div style="display:flex;flex-direction:column;gap:9px;">
+                  <div style="display:flex;gap:9px;align-items:flex-start;">
+                    <div style="width:26px;height:26px;background:var(--emerald-light);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">✓</div>
+                    <div>
+                      <div style="font-size:12.5px;font-weight:600;">Summarization eval</div>
+                      <div style="font-size:11px;color:var(--text-secondary);">llama3.2:8b · 20 samples</div>
+                      <div style="font-size:11px;color:var(--text-tertiary);">5 minutes ago</div>
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:9px;align-items:flex-start;">
+                    <div style="width:26px;height:26px;background:var(--violet-light);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">⚔️</div>
+                    <div>
+                      <div style="font-size:12.5px;font-weight:600;">Arena battle</div>
+                      <div style="font-size:11px;color:var(--text-secondary);">mistral vs phi4 · 8 rounds</div>
+                      <div style="font-size:11px;color:var(--text-tertiary);">1 hour ago</div>
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:9px;align-items:flex-start;">
+                    <div style="width:26px;height:26px;background:var(--amber-light);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">🧪</div>
+                    <div>
+                      <div style="font-size:12.5px;font-weight:600;">QA eval run</div>
+                      <div style="font-size:11px;color:var(--text-secondary);">3 models · SQuAD subset</div>
+                      <div style="font-size:11px;color:var(--text-tertiary);">Yesterday, 3:42 PM</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Educational callout -->
+          <div class="edu-panel" style="display:flex;align-items:center;gap:14px;">
+            <div style="font-size:26px;flex-shrink:0;">💡</div>
+            <div style="flex:1;">
+              <div style="font-size:13px;font-weight:700;color:var(--violet);margin-bottom:3px;">New to LLM evaluation?</div>
+              <div style="font-size:13px;color:#374151;">Start with <strong>Eval Wizard</strong> — it guides you to the right metrics for your task. Or visit <strong>Metric Guide</strong> to learn when to use ROUGE vs BLEU vs BERTScore.</div>
+            </div>
+            <button class="btn-primary" onclick="showScreen('wizard')" style="flex-shrink:0;font-size:12px;padding:8px 14px;">Start Evaluating →</button>
+          </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <!--  SCREEN: EVAL WIZARD — STEP 1                                 -->
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <div id="screen-wizard" class="screen" style="padding:24px;">
+          <div style="margin-bottom:24px;">
+            <h1 style="font-size:22px;font-weight:800;margin-bottom:3px;">Eval Wizard</h1>
+            <p style="font-size:13px;color:var(--text-secondary);">Set up and run a new evaluation in minutes — we'll guide you every step</p>
+          </div>
+
+          <!-- Step indicator -->
+          <div style="display:flex;align-items:center;max-width:560px;margin-bottom:10px;">
+            <div class="step-dot active">1</div>
+            <div class="step-line"></div>
+            <div class="step-dot pending">2</div>
+            <div class="step-line"></div>
+            <div class="step-dot pending">3</div>
+            <div class="step-line"></div>
+            <div class="step-dot pending">4</div>
+          </div>
+          <div style="display:flex;justify-content:space-between;max-width:540px;margin-bottom:28px;">
+            <span style="font-size:11.5px;font-weight:700;color:var(--violet);">Task Type</span>
+            <span style="font-size:11.5px;font-weight:500;color:var(--text-tertiary);margin-left:-8px;">Models</span>
+            <span style="font-size:11.5px;font-weight:500;color:var(--text-tertiary);">Metrics & Data</span>
+            <span style="font-size:11.5px;font-weight:500;color:var(--text-tertiary);">Review & Run</span>
+          </div>
+
+          <div style="margin-bottom:18px;">
+            <h2 style="font-size:17px;font-weight:700;margin-bottom:5px;">What are you evaluating?</h2>
+            <p style="font-size:13px;color:var(--text-secondary);">Choose a task type and EvalBench auto-selects the right metrics and dataset.</p>
+          </div>
+
+          <!-- Task type grid -->
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:820px;margin-bottom:22px;">
+            <div class="task-card selected" id="task-summ">
+              <div style="font-size:26px;margin-bottom:8px;">📝</div>
+              <div style="font-size:14.5px;font-weight:700;margin-bottom:4px;">Summarization</div>
+              <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;line-height:1.5;">How well does the model condense articles or documents?</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span class="metric-chip">ROUGE-1</span>
+                <span class="metric-chip">ROUGE-L</span>
+                <span class="metric-chip">BERTScore</span>
+              </div>
+            </div>
+            <div class="task-card" id="task-qa" onclick="selectTask('qa')">
+              <div style="font-size:26px;margin-bottom:8px;">❓</div>
+              <div style="font-size:14.5px;font-weight:700;margin-bottom:4px;">Question Answering</div>
+              <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;line-height:1.5;">Factual accuracy and extraction from provided context.</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span class="metric-chip">Exact Match</span>
+                <span class="metric-chip">Token F1</span>
+                <span class="metric-chip">ROUGE-L</span>
+              </div>
+            </div>
+            <div class="task-card" id="task-chat" onclick="selectTask('chat')">
+              <div style="font-size:26px;margin-bottom:8px;">💬</div>
+              <div style="font-size:14.5px;font-weight:700;margin-bottom:4px;">Chat / Generation</div>
+              <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;line-height:1.5;">Diversity, fluency, and quality of open-ended responses.</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span class="metric-chip">Distinct-N</span>
+                <span class="metric-chip">LLM Judge</span>
+                <span class="metric-chip">MAUVE</span>
+              </div>
+            </div>
+            <div class="task-card" id="task-knowledge" onclick="selectTask('knowledge')">
+              <div style="font-size:26px;margin-bottom:8px;">🧠</div>
+              <div style="font-size:14.5px;font-weight:700;margin-bottom:4px;">Knowledge / MMLU</div>
+              <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;line-height:1.5;">Academic knowledge across professional domains.</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span class="metric-chip">Accuracy</span>
+                <span class="metric-chip">Macro F1</span>
+                <span class="metric-chip">MMLU</span>
+              </div>
+            </div>
+            <div class="task-card" id="task-code" onclick="selectTask('code')">
+              <div style="font-size:26px;margin-bottom:8px;">💻</div>
+              <div style="font-size:14.5px;font-weight:700;margin-bottom:4px;">Code Generation</div>
+              <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;line-height:1.5;">Functional correctness via code execution sandbox.</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span class="metric-chip">Pass@1</span>
+                <span class="metric-chip">Pass@10</span>
+                <span class="metric-chip">CodeBLEU</span>
+              </div>
+            </div>
+            <div class="task-card" id="task-reasoning" onclick="selectTask('reasoning')">
+              <div style="font-size:26px;margin-bottom:8px;">🔢</div>
+              <div style="font-size:14.5px;font-weight:700;margin-bottom:4px;">Reasoning / Math</div>
+              <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;line-height:1.5;">Problem-solving and chain-of-thought evaluation.</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span class="metric-chip">Accuracy</span>
+                <span class="metric-chip">Pass@K</span>
+                <span class="metric-chip">GSM8K</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Auto-configured info panel -->
+          <div style="max-width:820px;margin-bottom:22px;">
+            <div style="background:var(--violet-light);border:1px solid #DDD6FE;border-radius:12px;padding:16px 18px;">
+              <div style="display:flex;gap:12px;align-items:flex-start;">
+                <div style="font-size:18px;">✨</div>
+                <div style="flex:1;">
+                  <div style="font-size:13.5px;font-weight:700;color:var(--violet);margin-bottom:5px;">Auto-configured for Summarization</div>
+                  <div style="font-size:12.5px;color:#4C1D95;margin-bottom:10px;line-height:1.6;">We'll use <strong>CNN/DailyMail</strong> (20 article-summary pairs) and compute <strong>ROUGE-1, ROUGE-2, ROUGE-L</strong> with 95% confidence intervals automatically.</div>
+                  <div style="display:flex;gap:7px;flex-wrap:wrap;">
+                    <span style="background:white;color:var(--violet);font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:6px;border:1px solid #DDD6FE;">📄 CNN/DailyMail</span>
+                    <span style="background:white;color:var(--violet);font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:6px;border:1px solid #DDD6FE;">📏 20 samples</span>
+                    <span style="background:white;color:var(--violet);font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:6px;border:1px solid #DDD6FE;">📊 3 metrics</span>
+                    <span style="background:white;color:var(--violet);font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:6px;border:1px solid #DDD6FE;">⏱ ~3 min/model</span>
+                  </div>
+                </div>
+                <button style="background:transparent;border:none;color:var(--violet);cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;text-decoration:underline;font-family:'Plus Jakarta Sans',sans-serif;" onclick="showScreen('learn')">Why ROUGE? →</button>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px;max-width:820px;">
+            <button class="btn-secondary" onclick="showScreen('dashboard')">← Back</button>
+            <button class="btn-primary" onclick="showScreen('running')">Continue: Select Models →</button>
+          </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <!--  SCREEN: EVAL RUNNING                                         -->
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <div id="screen-running" class="screen" style="padding:24px;">
+          <div style="margin-bottom:24px;">
+            <h1 style="font-size:22px;font-weight:800;margin-bottom:3px;">Running Evaluation</h1>
+            <p style="font-size:13px;color:var(--text-secondary);">Summarization · llama3.2:8b + phi4:14b · CNN/DailyMail · 20 samples each</p>
+          </div>
+
+          <!-- Overall progress card -->
+          <div class="card" style="max-width:680px;margin-bottom:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <span style="font-size:14px;font-weight:700;">Overall Progress</span>
+              <span class="mono" style="font-size:13.5px;font-weight:700;color:var(--violet);">24 / 40 samples</span>
+            </div>
+            <div class="prog-bar shimmer-wrap" style="margin-bottom:7px;">
+              <div class="prog-fill" style="width:60%;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-tertiary);">
+              <span>⏱ ~2 min remaining</span>
+              <span>Model 2 of 2 · 60% complete</span>
+            </div>
+          </div>
+
+          <!-- Per-model cards -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:680px;margin-bottom:14px;">
+
+            <!-- Model 1: done -->
+            <div class="card" style="border-left:3px solid var(--emerald);">
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:12px;">
+                <div style="width:26px;height:26px;background:var(--emerald-light);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;">✓</div>
+                <div>
+                  <div class="mono" style="font-size:12.5px;font-weight:700;">llama3.2:8b</div>
+                  <div style="font-size:11px;color:var(--emerald);font-weight:600;">Completed · 20/20</div>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:7px;">
+                <div style="display:flex;justify-content:space-between;font-size:12.5px;">
+                  <span style="color:var(--text-secondary);">ROUGE-1</span>
+                  <span class="mono" style="font-weight:700;color:var(--emerald);">0.462</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:12.5px;">
+                  <span style="color:var(--text-secondary);">ROUGE-L</span>
+                  <span class="mono" style="font-weight:700;color:var(--emerald);">0.412</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:12.5px;">
+                  <span style="color:var(--text-secondary);">Tokens/sec</span>
+                  <span class="mono" style="font-weight:700;">18.3</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Model 2: running -->
+            <div class="card" style="border-left:3px solid var(--violet);">
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:12px;">
+                <div style="width:26px;height:26px;background:var(--violet-light);border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                  <div style="width:13px;height:13px;border:2px solid var(--violet);border-top-color:transparent;border-radius:50%;animation:spin .9s linear infinite;"></div>
+                </div>
+                <div>
+                  <div class="mono" style="font-size:12.5px;font-weight:700;">phi4:14b</div>
+                  <div style="font-size:11px;color:var(--violet);font-weight:600;">Running · 4/20...</div>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:7px;">
+                <div style="display:flex;justify-content:space-between;font-size:12.5px;">
+                  <span style="color:var(--text-secondary);">ROUGE-1</span>
+                  <span class="mono" style="font-weight:700;color:var(--text-tertiary);">0.434 ▸</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:12.5px;">
+                  <span style="color:var(--text-secondary);">ROUGE-L</span>
+                  <span class="mono" style="font-weight:700;color:var(--text-tertiary);">0.389 ▸</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:12.5px;">
+                  <span style="color:var(--text-secondary);">Tokens/sec</span>
+                  <span class="mono" style="font-weight:700;">11.2</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live log -->
+          <div style="max-width:680px;background:#1C1917;border:1px solid #3D3530;border-radius:12px;padding:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <span class="mono" style="font-size:11px;font-weight:700;color:#78716C;text-transform:uppercase;letter-spacing:.05em;">Live Log</span>
+              <span class="mono" style="font-size:11px;color:#10B981;">● RUNNING</span>
+            </div>
+            <div class="mono" style="font-size:12px;color:#A8A29E;line-height:1.9;max-height:145px;overflow-y:auto;">
+              <div><span style="color:#10B981;">[✓]</span> <span style="color:#D6D3D1;">llama3.2:8b · 20/20 complete — ROUGE-L: 0.412 ± 0.031</span></div>
+              <div><span style="color:#8B5CF6;">[→]</span> <span style="color:#D6D3D1;">phi4:14b · sample 4/20 generating...</span></div>
+              <div><span style="color:#78716C;">[→]</span> phi4:14b · sample 3 — ROUGE-L: 0.401</div>
+              <div><span style="color:#78716C;">[→]</span> phi4:14b · sample 2 — ROUGE-L: 0.378</div>
+              <div><span style="color:#78716C;">[→]</span> phi4:14b · sample 1 — ROUGE-L: 0.395</div>
+              <div><span style="color:#10B981;">[✓]</span> <span style="color:#78716C;">llama3.2:8b · sample 20 — ROUGE-L: 0.441</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <!--  SCREEN: ARENA                                                -->
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <div id="screen-arena" class="screen" style="padding:24px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;">
+            <div>
+              <h1 style="font-size:22px;font-weight:800;margin-bottom:3px;">⚔️ Arena</h1>
+              <p style="font-size:13px;color:var(--text-secondary);">Blind pairwise evaluation · Vote on responses · Builds ELO ratings automatically</p>
+            </div>
+            <div style="display:flex;gap:9px;">
+              <button class="btn-secondary" style="font-size:12.5px;padding:7px 13px;">🏆 Leaderboard</button>
+              <button class="btn-secondary" style="font-size:12.5px;padding:7px 13px;">↻ New Matchup</button>
+            </div>
+          </div>
+
+          <!-- Prompt banner -->
+          <div style="background:var(--violet-light);border:1px solid #DDD6FE;border-radius:12px;padding:14px 18px;margin-bottom:14px;">
+            <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--violet);margin-bottom:7px;">📝 Prompt</div>
+            <div style="font-size:13.5px;color:#3730A3;line-height:1.65;font-style:italic;">"Explain the difference between precision and recall in machine learning evaluation, and give a concrete example of when high precision matters more than high recall."</div>
+            <div style="margin-top:9px;display:flex;gap:6px;">
+              <span style="background:white;color:var(--violet);font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600;border:1px solid #DDD6FE;">Knowledge / QA</span>
+              <span style="background:white;color:var(--violet);font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600;border:1px solid #DDD6FE;">Round 4 of 8</span>
+            </div>
+          </div>
+
+          <!-- Battle area -->
+          <div style="display:grid;grid-template-columns:1fr 44px 1fr;margin-bottom:14px;">
+            <!-- Model A -->
+            <div class="arena-panel" style="border-radius:14px 0 0 14px;border:1.5px solid var(--border-subtle);border-right:none;">
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border-subtle);">
+                <div style="width:34px;height:34px;background:linear-gradient(135deg,#1D4ED8,#3B82F6);border-radius:9px;display:flex;align-items:center;justify-content:center;color:white;font-size:16px;font-weight:800;flex-shrink:0;">A</div>
+                <div>
+                  <div style="font-size:13.5px;font-weight:700;">Model A</div>
+                  <div style="font-size:11px;color:var(--text-tertiary);">Hidden until you vote</div>
+                </div>
+              </div>
+              <div style="flex:1;font-size:13.5px;color:var(--text-primary);line-height:1.75;">
+                <p style="margin-bottom:10px;">Precision and recall are two complementary metrics for evaluating classifiers, especially with imbalanced data.</p>
+                <p style="margin-bottom:10px;"><strong>Precision:</strong> Of all items I predicted positive, how many actually were? <span class="mono" style="font-size:12px;background:var(--bg-muted);padding:1px 5px;border-radius:4px;">TP / (TP + FP)</span></p>
+                <p style="margin-bottom:10px;"><strong>Recall:</strong> Of all actual positives, how many did I catch? <span class="mono" style="font-size:12px;background:var(--bg-muted);padding:1px 5px;border-radius:4px;">TP / (TP + FN)</span></p>
+                <p><strong>High precision example:</strong> Email spam filtering. If your filter has low precision, legitimate emails end up in spam. Users prefer missed spam over blocked real emails.</p>
+              </div>
+            </div>
+            <!-- VS divider -->
+            <div style="background:var(--bg-muted);display:flex;align-items:center;justify-content:center;border-top:1.5px solid var(--border-subtle);border-bottom:1.5px solid var(--border-subtle);">
+              <div style="background:white;border:1.5px solid var(--border-default);border-radius:18px;padding:5px 9px;font-size:11px;font-weight:800;color:var(--text-tertiary);writing-mode:vertical-rl;transform:rotate(180deg);">VS</div>
+            </div>
+            <!-- Model B -->
+            <div class="arena-panel" style="border-radius:0 14px 14px 0;border:1.5px solid var(--border-subtle);border-left:none;">
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border-subtle);">
+                <div style="width:34px;height:34px;background:linear-gradient(135deg,#BE185D,#EC4899);border-radius:9px;display:flex;align-items:center;justify-content:center;color:white;font-size:16px;font-weight:800;flex-shrink:0;">B</div>
+                <div>
+                  <div style="font-size:13.5px;font-weight:700;">Model B</div>
+                  <div style="font-size:11px;color:var(--text-tertiary);">Hidden until you vote</div>
+                </div>
+              </div>
+              <div style="flex:1;font-size:13.5px;color:var(--text-primary);line-height:1.75;">
+                <p style="margin-bottom:10px;">Think of this with a doctor analogy — it makes the tradeoff intuitive.</p>
+                <p style="margin-bottom:10px;">In <strong>medical screening</strong>, you maximize recall — catch every sick patient, even if some false alarms get ruled out later. Missing a case is worse than an unnecessary follow-up test.</p>
+                <p style="margin-bottom:10px;">In <strong>search relevance</strong>, precision matters more — nobody wants 100 mixed results when they want 5 great ones. Quality beats quantity.</p>
+                <p>The <strong>F1 score</strong> is the harmonic mean of both — it balances the tradeoff when neither can be sacrificed entirely.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Vote buttons -->
+          <div style="display:flex;gap:9px;">
+            <button class="vote-btn vote-btn-a">
+              <span style="font-size:20px;">👍</span>
+              <span>A is Better</span>
+              <span style="font-size:11px;font-weight:500;opacity:.75;">More precise & structured</span>
+            </button>
+            <button class="vote-btn vote-btn-tie">
+              <span style="font-size:18px;">🤝</span>
+              <span style="font-size:13px;">Tie</span>
+            </button>
+            <button class="vote-btn vote-btn-b">
+              <span style="font-size:20px;">👍</span>
+              <span>B is Better</span>
+              <span style="font-size:11px;font-weight:500;opacity:.75;">More intuitive & memorable</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <!--  SCREEN: MODELS                                               -->
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <div id="screen-models" class="screen" style="padding:24px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;">
+            <div>
+              <h1 style="font-size:22px;font-weight:800;margin-bottom:3px;">Models</h1>
+              <p style="font-size:13px;color:var(--text-secondary);">Local Ollama models · 5 available · Discovered 2 minutes ago</p>
+            </div>
+            <div style="display:flex;gap:9px;">
+              <button class="btn-secondary" style="font-size:12.5px;padding:7px 13px;">🔍 Discover</button>
+              <button class="btn-primary" style="font-size:12.5px;padding:7px 13px;" onclick="showScreen('wizard')">＋ Evaluate a Model</button>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:13px;">
+
+            <!-- Card 1: llama3.2 -->
+            <div class="model-card">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:13px;">
+                <div style="display:flex;align-items:center;gap:9px;">
+                  <div style="width:38px;height:38px;background:linear-gradient(135deg,#7C3AED,#8B5CF6);border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:18px;">🦙</div>
+                  <div>
+                    <div class="mono" style="font-size:13px;font-weight:700;">llama3.2:8b</div>
+                    <div style="font-size:11px;color:var(--text-tertiary);">Meta · Llama family</div>
+                  </div>
+                </div>
+                <span style="background:var(--emerald-light);color:var(--emerald);font-size:10px;font-weight:700;padding:3px 7px;border-radius:6px;">#1 Overall</span>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px;padding:11px;background:var(--bg-muted);border-radius:9px;margin-bottom:13px;">
+                <div style="text-align:center;"><div class="mono" style="font-size:14.5px;font-weight:800;">8B</div><div style="font-size:9.5px;color:var(--text-tertiary);font-weight:700;text-transform:uppercase;margin-top:2px;">Params</div></div>
+                <div style="text-align:center;border-left:1px solid var(--border-subtle);border-right:1px solid var(--border-subtle);"><div class="mono" style="font-size:14.5px;font-weight:800;">4.9G</div><div style="font-size:9.5px;color:var(--text-tertiary);font-weight:700;text-transform:uppercase;margin-top:2px;">Size</div></div>
+                <div style="text-align:center;"><div class="mono" style="font-size:14.5px;font-weight:800;color:var(--emerald);">18/s</div><div style="font-size:9.5px;color:var(--text-tertiary);font-weight:700;text-transform:uppercase;margin-top:2px;">Speed</div></div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:13px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;">
+                  <span style="color:var(--text-secondary);">Best Score (ROUGE-L)</span>
+                  <span class="score-badge score-excellent">0.412</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;">
+                  <span style="color:var(--text-secondary);">Arena ELO</span>
+                  <span class="mono" style="font-size:13px;font-weight:700;color:var(--amber);">1184</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;">
+                  <span style="color:var(--text-secondary);">Tasks</span>
+                  <div style="display:flex;gap:3px;"><span class="tag tag-blue">Summ</span><span class="tag tag-green">QA</span></div>
+                </div>
+              </div>
+              <div style="display:flex;gap:7px;">
+                <button class="btn-primary" style="flex:1;font-size:12px;padding:7px;justify-content:center;" onclick="showScreen('wizard')">Run Eval</button>
+                <button class="btn-secondary" style="font-size:12px;padding:7px 11px;">Details</button>
+              </div>
+            </div>
+
+            <!-- Card 2: phi4 -->
+            <div class="model-card">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:13px;">
+                <div style="display:flex;align-items:center;gap:9px;">
+                  <div style="width:38px;height:38px;background:linear-gradient(135deg,#0EA5E9,#38BDF8);border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:18px;">🔷</div>
+                  <div>
+                    <div class="mono" style="font-size:13px;font-weight:700;">phi4:14b</div>
+                    <div style="font-size:11px;color:var(--text-tertiary);">Microsoft · Phi family</div>
+                  </div>
+                </div>
+                <span style="background:#DBEAFE;color:#1D4ED8;font-size:10px;font-weight:700;padding:3px 7px;border-radius:6px;">#2 Overall</span>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px;padding:11px;background:var(--bg-muted);border-radius:9px;margin-bottom:13px;">
+                <div style="text-align:center;"><div class="mono" style="font-size:14.5px;font-weight:800;">14B</div><div style="font-size:9.5px;color:var(--text-tertiary);font-weight:700;text-transform:uppercase;margin-top:2px;">Params</div></div>
+                <div style="text-align:center;border-left:1px solid var(--border-subtle);border-right:1px solid var(--border-subtle);"><div class="mono" style="font-size:14.5px;font-weight:800;">8.2G</div><div style="font-size:9.5px;color:var(--text-tertiary);font-weight:700;text-transform:uppercase;margin-top:2px;">Size</div></div>
+                <div style="text-align:center;"><div class="mono" style="font-size:14.5px;font-weight:800;color:var(--amber);">11/s</div><div style="font-size:9.5px;color:var(--text-tertiary);font-weight:700;text-transform:uppercase;margin-top:2px;">Speed</div></div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:13px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;">
+                  <span style="color:var(--text-secondary);">Best Score (ROUGE-L)</span>
+                  <span class="score-badge score-good">0.389</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;">
+                  <span style="color:var(--text-secondary);">Arena ELO</span>
+                  <span class="mono" style="font-size:13px;font-weight:700;color:var(--amber);">1147</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;">
+                  <span style="color:var(--text-secondary);">Tasks</span>
+                  <div style="display:flex;gap:3px;"><span class="tag tag-blue">Summ</span></div>
+                </div>
+              </div>
+              <div style="display:flex;gap:7px;">
+                <button class="btn-primary" style="flex:1;font-size:12px;padding:7px;justify-content:center;" onclick="showScreen('wizard')">Run Eval</button>
+                <button class="btn-secondary" style="font-size:12px;padding:7px 11px;">Details</button>
+              </div>
+            </div>
+
+            <!-- Card 3: not evaluated -->
+            <div class="model-card" style="border-style:dashed;opacity:.85;">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:13px;">
+                <div style="display:flex;align-items:center;gap:9px;">
+                  <div style="width:38px;height:38px;background:linear-gradient(135deg,#6B7280,#9CA3AF);border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:18px;">🌊</div>
+                  <div>
+                    <div class="mono" style="font-size:13px;font-weight:700;">qwen2.5:7b</div>
+                    <div style="font-size:11px;color:var(--text-tertiary);">Alibaba · Qwen family</div>
+                  </div>
+                </div>
+                <span class="tag tag-gray" style="padding:3px 7px;border-radius:6px;font-size:10px;">Not evaluated</span>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px;padding:11px;background:var(--bg-muted);border-radius:9px;margin-bottom:13px;">
+                <div style="text-align:center;"><div class="mono" style="font-size:14.5px;font-weight:800;">7.6B</div><div style="font-size:9.5px;color:var(--text-tertiary);font-weight:700;text-transform:uppercase;margin-top:2px;">Params</div></div>
+                <div style="text-align:center;border-left:1px solid var(--border-subtle);border-right:1px solid var(--border-subtle);"><div class="mono" style="font-size:14.5px;font-weight:800;">4.7G</div><div style="font-size:9.5px;color:var(--text-tertiary);font-weight:700;text-transform:uppercase;margin-top:2px;">Size</div></div>
+                <div style="text-align:center;"><div class="mono" style="font-size:14.5px;font-weight:800;color:var(--text-tertiary);">—</div><div style="font-size:9.5px;color:var(--text-tertiary);font-weight:700;text-transform:uppercase;margin-top:2px;">Speed</div></div>
+              </div>
+              <div style="text-align:center;padding:18px 0;color:var(--text-tertiary);">
+                <div style="font-size:24px;margin-bottom:7px;">🔍</div>
+                <div style="font-size:12.5px;font-weight:600;color:var(--text-secondary);margin-bottom:3px;">No evaluation data yet</div>
+                <div style="font-size:12px;margin-bottom:14px;">Run an eval to see how it performs</div>
+                <button class="btn-primary" style="font-size:12px;padding:7px 14px;margin:0 auto;" onclick="showScreen('wizard')">＋ Evaluate Now</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <!--  SCREEN: METRIC GUIDE (LEARN)                                 -->
+        <!-- ══════════════════════════════════════════════════════════════ -->
+        <div id="screen-learn" class="screen" style="padding:24px;">
+          <div style="margin-bottom:22px;">
+            <h1 style="font-size:22px;font-weight:800;margin-bottom:3px;">📚 Metric Guide</h1>
+            <p style="font-size:13px;color:var(--text-secondary);">Learn which evaluation metrics to use and why — tied directly into the Eval Wizard</p>
+          </div>
+
+          <!-- Decision tree prompt -->
+          <div style="background:white;border:1px solid var(--border-default);border-left:4px solid var(--violet);border-radius:14px;padding:20px 22px;margin-bottom:20px;display:flex;align-items:center;gap:16px;">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+            <div style="flex:1;">
+              <div style="font-size:15px;font-weight:700;color:var(--violet);margin-bottom:4px;">Not sure which metric to use?</div>
+              <div style="font-size:13px;color:var(--text-primary);line-height:1.6;">Use the interactive decision tree to get a personalized recommendation based on your task, data availability, and goals. Answer 3 questions → get your metric.</div>
+            </div>
+            <button class="btn-primary" style="flex-shrink:0;font-size:13px;padding:9px 16px;">Open Decision Tree →</button>
+          </div>
+
+          <!-- Metric cards grid -->
+          <h2 style="font-size:15px;font-weight:700;margin-bottom:14px;color:var(--text-primary);">All Metrics by Category</h2>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;">
+
+            <!-- Summarization metrics -->
+            <div class="card">
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px;">
+                <div style="width:34px;height:34px;background:#DBEAFE;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1D4ED8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
+                <div>
+                  <div style="font-size:14px;font-weight:700;">Summarization</div>
+                  <div style="font-size:11.5px;color:var(--text-secondary);">Best for: document condensing, news summarization</div>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:9px;">
+                <div style="background:white;border:1px solid var(--border-subtle);border-radius:8px;padding:12px 14px;">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                    <span class="mono" style="font-size:12.5px;font-weight:700;color:var(--violet);">ROUGE-L</span>
+                    <span style="font-size:10.5px;background:var(--emerald-light);color:var(--emerald);padding:2px 7px;border-radius:4px;font-weight:600;">Primary</span>
+                  </div>
+                  <div style="font-size:13px;color:var(--text-primary);line-height:1.65;">Measures Longest Common Subsequence overlap between generated and reference summaries. Fast and reference-based.</div>
+                </div>
+                <div style="background:white;border:1px solid var(--border-subtle);border-radius:8px;padding:12px 14px;">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                    <span class="mono" style="font-size:12.5px;font-weight:700;color:var(--violet);">BERTScore</span>
+                    <span style="font-size:10.5px;background:var(--amber-light);color:var(--amber);padding:2px 7px;border-radius:4px;font-weight:600;">Secondary</span>
+                  </div>
+                  <div style="font-size:13px;color:var(--text-primary);line-height:1.65;">Uses contextual BERT embeddings for semantic similarity. Slower but captures meaning beyond exact wording.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- QA metrics -->
+            <div class="card">
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px;">
+                <div style="width:34px;height:34px;background:var(--emerald-light);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+                <div>
+                  <div style="font-size:14px;font-weight:700;">Question Answering</div>
+                  <div style="font-size:11.5px;color:var(--text-secondary);">Best for: SQuAD-style extraction, factual QA</div>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:9px;">
+                <div style="background:white;border:1px solid var(--border-subtle);border-radius:8px;padding:12px 14px;">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                    <span class="mono" style="font-size:12.5px;font-weight:700;color:var(--violet);">Exact Match</span>
+                    <span style="font-size:10.5px;background:var(--emerald-light);color:var(--emerald);padding:2px 7px;border-radius:4px;font-weight:600;">Primary</span>
+                  </div>
+                  <div style="font-size:13px;color:var(--text-primary);line-height:1.65;">Binary score: 1 if prediction matches ground truth exactly (after normalization), 0 otherwise. Simple and strict.</div>
+                </div>
+                <div style="background:white;border:1px solid var(--border-subtle);border-radius:8px;padding:12px 14px;">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                    <span class="mono" style="font-size:12.5px;font-weight:700;color:var(--violet);">Token F1</span>
+                    <span style="font-size:10.5px;background:var(--amber-light);color:var(--amber);padding:2px 7px;border-radius:4px;font-weight:600;">Secondary</span>
+                  </div>
+                  <div style="font-size:13px;color:var(--text-primary);line-height:1.65;">Softer version — measures token-level overlap between predicted and gold answer. More forgiving than Exact Match.</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Educational note -->
+          <div class="edu-panel" style="margin-top:16px;display:flex;align-items:center;gap:12px;background:white;border:1px solid var(--border-subtle);border-left:3px solid var(--violet);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            <div style="font-size:13px;color:var(--text-primary);">All metrics in the guide are <strong>linked to the Eval Wizard</strong> — hover any metric in the wizard to see its definition here, or click "Why this metric?" to jump to its explanation.</div>
+          </div>
+        </div>
+
+        <!-- Placeholder screens -->
+        <div id="screen-history" class="screen" style="padding:24px;">
+          <!-- Header -->
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;">
+            <div>
+              <h1 style="font-size:22px;font-weight:800;margin-bottom:3px;">Run History</h1>
+              <p style="font-size:13px;color:var(--text-secondary);">12 evaluation runs · Click any row to view full results and sample outputs</p>
+            </div>
+            <button class="btn-primary" onclick="showScreen('wizard')" style="font-size:12.5px;padding:7px 14px;">+ New Eval</button>
+          </div>
+
+          <!-- Filter bar -->
+          <div style="display:flex;gap:9px;margin-bottom:16px;align-items:center;">
+            <div style="display:flex;align-items:center;gap:7px;background:white;border:1.5px solid var(--border-default);border-radius:8px;padding:7px 12px;flex:1;max-width:280px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-tertiary);flex-shrink:0;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <span style="font-size:12.5px;color:var(--text-tertiary);">Filter runs...</span>
+            </div>
+            <select style="font-size:12.5px;padding:7px 12px;border:1.5px solid var(--border-default);border-radius:8px;background:white;color:var(--text-primary);font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;">
+              <option>All tasks</option><option>Summarization</option><option>Question Answering</option><option>Code</option><option>Reasoning</option>
+            </select>
+            <select style="font-size:12.5px;padding:7px 12px;border:1.5px solid var(--border-default);border-radius:8px;background:white;color:var(--text-primary);font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;">
+              <option>All models</option><option>llama3.2:8b</option><option>phi4:14b</option><option>mistral:7b</option>
+            </select>
+            <span style="font-size:12px;color:var(--text-tertiary);margin-left:4px;">Showing 5 of 12</span>
+          </div>
+
+          <!-- Table -->
+          <div class="card" style="padding:0;overflow:hidden;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th style="width:44px;">#</th>
+                  <th>Task / Dataset</th>
+                  <th>Models</th>
+                  <th style="width:72px;">Samples</th>
+                  <th>Top Score</th>
+                  <th>Duration</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                  <th style="width:80px;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="cursor:pointer;" onclick="showScreen('detail')">
+                  <td><span class="mono" style="font-size:13px;font-weight:700;color:var(--text-secondary);">12</span></td>
+                  <td>
+                    <div style="font-weight:600;font-size:13.5px;color:var(--text-primary);">Summarization — CNN/DailyMail</div>
+                    <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">ROUGE-1 · ROUGE-L · BERTScore</div>
+                  </td>
+                  <td>
+                    <div style="display:flex;gap:4px;align-items:center;">
+                      <div style="width:26px;height:26px;background:linear-gradient(135deg,#7C3AED,#8B5CF6);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white;font-family:'JetBrains Mono',monospace;">L3</div>
+                      <div style="width:26px;height:26px;background:linear-gradient(135deg,#0EA5E9,#38BDF8);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white;font-family:'JetBrains Mono',monospace;">P4</div>
+                      <span style="font-size:12px;color:var(--text-secondary);margin-left:2px;">2 models</span>
+                    </div>
+                  </td>
+                  <td><span class="mono" style="font-size:13.5px;font-weight:700;">20</span></td>
+                  <td><span class="score-badge score-excellent">72.4%</span></td>
+                  <td><span class="mono" style="font-size:12.5px;color:var(--text-secondary);">4m 12s</span></td>
+                  <td><span style="font-size:13px;color:var(--text-secondary);">Mar 13, 2026</span></td>
+                  <td><span style="background:var(--emerald-light);color:var(--emerald);font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:6px;">Done</span></td>
+                  <td><button class="btn-secondary" style="font-size:12px;padding:5px 11px;" onclick="event.stopPropagation();showScreen('detail')">View →</button></td>
+                </tr>
+                <tr style="cursor:pointer;" onclick="showScreen('detail')">
+                  <td><span class="mono" style="font-size:13px;font-weight:700;color:var(--text-secondary);">11</span></td>
+                  <td>
+                    <div style="font-weight:600;font-size:13.5px;color:var(--text-primary);">Question Answering — SQuAD</div>
+                    <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">Exact Match · Token F1 · ROUGE-L</div>
+                  </td>
+                  <td>
+                    <div style="display:flex;gap:4px;align-items:center;">
+                      <div style="width:26px;height:26px;background:linear-gradient(135deg,#7C3AED,#8B5CF6);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white;font-family:'JetBrains Mono',monospace;">L3</div>
+                      <div style="width:26px;height:26px;background:linear-gradient(135deg,#F59E0B,#FCD34D);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white;font-family:'JetBrains Mono',monospace;">MI</div>
+                      <div style="width:26px;height:26px;background:linear-gradient(135deg,#10B981,#34D399);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white;font-family:'JetBrains Mono',monospace;">QW</div>
+                      <span style="font-size:12px;color:var(--text-secondary);margin-left:2px;">3 models</span>
+                    </div>
+                  </td>
+                  <td><span class="mono" style="font-size:13.5px;font-weight:700;">50</span></td>
+                  <td><span class="score-badge score-good">68.8%</span></td>
+                  <td><span class="mono" style="font-size:12.5px;color:var(--text-secondary);">11m 07s</span></td>
+                  <td><span style="font-size:13px;color:var(--text-secondary);">Mar 12, 2026</span></td>
+                  <td><span style="background:var(--emerald-light);color:var(--emerald);font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:6px;">Done</span></td>
+                  <td><button class="btn-secondary" style="font-size:12px;padding:5px 11px;" onclick="event.stopPropagation();showScreen('detail')">View →</button></td>
+                </tr>
+                <tr style="cursor:pointer;" onclick="showScreen('detail')">
+                  <td><span class="mono" style="font-size:13px;font-weight:700;color:var(--text-secondary);">10</span></td>
+                  <td>
+                    <div style="font-weight:600;font-size:13.5px;color:var(--text-primary);">Code Generation — HumanEval</div>
+                    <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">Pass@1 · Pass@10 · CodeBLEU</div>
+                  </td>
+                  <td>
+                    <div style="display:flex;gap:4px;align-items:center;">
+                      <div style="width:26px;height:26px;background:linear-gradient(135deg,#7C3AED,#8B5CF6);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white;font-family:'JetBrains Mono',monospace;">L3</div>
+                      <span style="font-size:12px;color:var(--text-secondary);margin-left:2px;">1 model</span>
+                    </div>
+                  </td>
+                  <td><span class="mono" style="font-size:13.5px;font-weight:700;">30</span></td>
+                  <td><span class="score-badge score-fair">58.3%</span></td>
+                  <td><span class="mono" style="font-size:12.5px;color:var(--text-secondary);">6m 44s</span></td>
+                  <td><span style="font-size:13px;color:var(--text-secondary);">Mar 10, 2026</span></td>
+                  <td><span style="background:var(--emerald-light);color:var(--emerald);font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:6px;">Done</span></td>
+                  <td><button class="btn-secondary" style="font-size:12px;padding:5px 11px;" onclick="event.stopPropagation();showScreen('detail')">View →</button></td>
+                </tr>
+                <tr style="cursor:pointer;background:#FFFBF5;" onclick="showScreen('detail')">
+                  <td><span class="mono" style="font-size:13px;font-weight:700;color:var(--text-secondary);">9</span></td>
+                  <td>
+                    <div style="font-weight:600;font-size:13.5px;color:var(--text-primary);">Summarization — XSum</div>
+                    <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">ROUGE-1 · ROUGE-L · connection timeout</div>
+                  </td>
+                  <td>
+                    <div style="display:flex;gap:4px;align-items:center;">
+                      <div style="width:26px;height:26px;background:linear-gradient(135deg,#0EA5E9,#38BDF8);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white;font-family:'JetBrains Mono',monospace;">P4</div>
+                      <span style="font-size:12px;color:var(--text-secondary);margin-left:2px;">1 model</span>
+                    </div>
+                  </td>
+                  <td><span class="mono" style="font-size:13.5px;font-weight:700;">15</span></td>
+                  <td><span style="font-size:13px;color:var(--text-tertiary);">—</span></td>
+                  <td><span class="mono" style="font-size:12.5px;color:var(--text-secondary);">0m 43s</span></td>
+                  <td><span style="font-size:13px;color:var(--text-secondary);">Mar 8, 2026</span></td>
+                  <td><span style="background:var(--rose-light);color:var(--rose);font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:6px;">Failed</span></td>
+                  <td><button class="btn-secondary" style="font-size:12px;padding:5px 11px;" onclick="event.stopPropagation();showScreen('detail')">View →</button></td>
+                </tr>
+                <tr style="cursor:pointer;" onclick="showScreen('detail')">
+                  <td><span class="mono" style="font-size:13px;font-weight:700;color:var(--text-secondary);">8</span></td>
+                  <td>
+                    <div style="font-weight:600;font-size:13.5px;color:var(--text-primary);">Reasoning — GSM8K</div>
+                    <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">Accuracy · Pass@K</div>
+                  </td>
+                  <td>
+                    <div style="display:flex;gap:4px;align-items:center;">
+                      <div style="width:26px;height:26px;background:linear-gradient(135deg,#7C3AED,#8B5CF6);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white;font-family:'JetBrains Mono',monospace;">L3</div>
+                      <div style="width:26px;height:26px;background:linear-gradient(135deg,#F59E0B,#FCD34D);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:white;font-family:'JetBrains Mono',monospace;">MI</div>
+                      <span style="font-size:12px;color:var(--text-secondary);margin-left:2px;">2 models</span>
+                    </div>
+                  </td>
+                  <td><span class="mono" style="font-size:13.5px;font-weight:700;">100</span></td>
+                  <td><span class="score-badge score-good">71.0%</span></td>
+                  <td><span class="mono" style="font-size:12.5px;color:var(--text-secondary);">22m 31s</span></td>
+                  <td><span style="font-size:13px;color:var(--text-secondary);">Mar 6, 2026</span></td>
+                  <td><span style="background:var(--emerald-light);color:var(--emerald);font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:6px;">Done</span></td>
+                  <td><button class="btn-secondary" style="font-size:12px;padding:5px 11px;" onclick="event.stopPropagation();showScreen('detail')">View →</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <div style="padding:12px 20px;border-top:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between;">
+              <span style="font-size:12.5px;color:var(--text-tertiary);">Showing 5 of 12 runs</span>
+              <button class="btn-secondary" style="font-size:12px;padding:5px 11px;">Load More</button>
+            </div>
+          </div>
+        </div>
+        <div id="screen-detail" class="screen" style="padding:24px;">
+          <!-- Back nav + header -->
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;">
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                <button class="btn-secondary" style="font-size:12px;padding:4px 11px;" onclick="showScreen('history')">← Run History</button>
+                <span style="font-size:12.5px;color:var(--text-tertiary);">Run #12</span>
+                <span style="background:var(--emerald-light);color:var(--emerald);font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:6px;">Completed</span>
+              </div>
+              <h1 style="font-size:22px;font-weight:800;margin-bottom:3px;">Summarization · CNN/DailyMail</h1>
+              <p style="font-size:13px;color:var(--text-secondary);">Mar 13, 2026 at 2:41 PM · 2 models · 20 samples each · 4m 12s total runtime</p>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn-secondary" style="font-size:12.5px;padding:7px 13px;">Export CSV</button>
+              <button class="btn-primary" onclick="showScreen('wizard')" style="font-size:12.5px;padding:7px 13px;">Re-run →</button>
+            </div>
+          </div>
+
+          <!-- Score summary cards -->
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
+            <div class="stat-card" style="border-top:3px solid var(--emerald);">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-tertiary);margin-bottom:10px;">ROUGE-L · Best</div>
+              <div style="font-size:30px;font-weight:800;font-family:'JetBrains Mono',monospace;color:var(--emerald);line-height:1;">0.412</div>
+              <div style="font-size:12.5px;color:var(--text-secondary);margin-top:8px;">llama3.2:8b · ±0.031</div>
+            </div>
+            <div class="stat-card" style="border-top:3px solid var(--emerald);">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-tertiary);margin-bottom:10px;">ROUGE-1 · Best</div>
+              <div style="font-size:30px;font-weight:800;font-family:'JetBrains Mono',monospace;color:var(--emerald);line-height:1;">0.462</div>
+              <div style="font-size:12.5px;color:var(--text-secondary);margin-top:8px;">llama3.2:8b · ±0.028</div>
+            </div>
+            <div class="stat-card" style="border-top:3px solid #3B82F6;">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-tertiary);margin-bottom:10px;">BERTScore · Best</div>
+              <div style="font-size:30px;font-weight:800;font-family:'JetBrains Mono',monospace;color:#3B82F6;line-height:1;">0.874</div>
+              <div style="font-size:12.5px;color:var(--text-secondary);margin-top:8px;">llama3.2:8b · F1 score</div>
+            </div>
+            <div class="stat-card" style="border-top:3px solid var(--border-default);">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-tertiary);margin-bottom:10px;">Avg Speed</div>
+              <div style="font-size:30px;font-weight:800;font-family:'JetBrains Mono',monospace;color:var(--text-primary);line-height:1;">14.7</div>
+              <div style="font-size:12.5px;color:var(--text-secondary);margin-top:8px;">tokens / second</div>
+            </div>
+          </div>
+
+          <!-- Model comparison table -->
+          <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px;">
+            <div style="padding:16px 20px;border-bottom:1px solid var(--border-subtle);">
+              <h3 style="font-size:14.5px;font-weight:700;color:var(--text-primary);">Model Comparison</h3>
+              <p style="font-size:12.5px;color:var(--text-secondary);margin-top:3px;">Scores with 95% confidence intervals · 20 samples per model</p>
+            </div>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th>ROUGE-1 <span class="ltt" title="Unigram overlap between generated and reference text.">?</span></th>
+                  <th>ROUGE-2 <span class="ltt" title="Bigram overlap — more sensitive to fluency than ROUGE-1.">?</span></th>
+                  <th>ROUGE-L <span class="ltt" title="Longest Common Subsequence — considers sentence structure.">?</span></th>
+                  <th>BERTScore <span class="ltt" title="Semantic similarity via contextual BERT embeddings.">?</span></th>
+                  <th>Speed</th>
+                  <th>Rank</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                      <div style="width:34px;height:34px;background:linear-gradient(135deg,#7C3AED,#8B5CF6);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:white;font-family:'JetBrains Mono',monospace;flex-shrink:0;">L3</div>
+                      <div>
+                        <div style="font-weight:700;font-size:13.5px;font-family:'JetBrains Mono',monospace;color:var(--text-primary);">llama3.2:8b</div>
+                <div style="font-size:11.5px;color:var(--text-primary);margin-top:1px;">8B · Q4_K_M · Meta</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div style="display:flex;flex-direction:column;gap:4px;">
+                      <span class="score-badge score-excellent" style="align-self:flex-start;">0.462</span>
+                      <div class="score-bar-track" style="width:64px;"><div class="score-bar-fill" style="width:82%;background:var(--emerald);"></div></div>
+                    </div>
+                  </td>
+                  <td><span class="score-badge score-excellent">0.228</span></td>
+                  <td><span class="score-badge score-excellent">0.412</span></td>
+                  <td><span class="score-badge score-excellent">0.874</span></td>
+                  <td><span class="mono" style="font-size:13px;font-weight:700;color:var(--emerald);">18.3 t/s</span></td>
+                  <td><span style="background:var(--emerald-light);color:var(--emerald);font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:6px;">#1 Best</span></td>
+                </tr>
+                <tr>
+                  <td>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                      <div style="width:34px;height:34px;background:linear-gradient(135deg,#0EA5E9,#38BDF8);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:white;font-family:'JetBrains Mono',monospace;flex-shrink:0;">P4</div>
+                      <div>
+                        <div style="font-weight:700;font-size:13.5px;font-family:'JetBrains Mono',monospace;color:var(--text-primary);">phi4:14b</div>
+                <div style="font-size:11.5px;color:var(--text-primary);margin-top:1px;">14B · Q4_K_M · Microsoft</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div style="display:flex;flex-direction:column;gap:4px;">
+                      <span class="score-badge score-good" style="align-self:flex-start;">0.431</span>
+                      <div class="score-bar-track" style="width:64px;"><div class="score-bar-fill" style="width:73%;background:#3B82F6;"></div></div>
+                    </div>
+                  </td>
+                  <td><span class="score-badge score-good">0.201</span></td>
+                  <td><span class="score-badge score-good">0.389</span></td>
+                  <td><span class="score-badge score-good">0.861</span></td>
+                  <td><span class="mono" style="font-size:13px;font-weight:700;color:var(--amber);">11.2 t/s</span></td>
+                  <td><span style="background:#DBEAFE;color:#1D4ED8;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:6px;">#2</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Sample outputs -->
+          <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px;">
+            <div style="padding:16px 20px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between;">
+              <div>
+                <h3 style="font-size:14.5px;font-weight:700;color:var(--text-primary);">Sample Outputs</h3>
+                <p style="font-size:12.5px;color:var(--text-secondary);margin-top:3px;">3 of 20 samples shown · Expand any row to compare model responses side-by-side</p>
+              </div>
+              <button class="btn-secondary" style="font-size:12px;padding:5px 11px;">View All 20</button>
+            </div>
+
+            <!-- Sample 1 — expanded -->
+            <div style="padding:18px 20px;border-bottom:1px solid var(--border-subtle);">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;">
+                <div>
+                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-tertiary);margin-bottom:5px;">Sample 1 of 20</div>
+                  <div style="font-size:13.5px;font-weight:600;color:var(--text-primary);line-height:1.55;max-width:620px;">Source: "UN pledges $100B annually to developing nations for climate adaptation following COP30 negotiations in Dubai..."</div>
+                </div>
+                <span class="score-badge score-excellent" style="flex-shrink:0;margin-left:16px;font-size:12px;">ROUGE-L: 0.44</span>
+              </div>
+              <!-- Reference -->
+              <div style="background:var(--bg-muted);border-radius:9px;padding:13px 15px;margin-bottom:10px;">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-tertiary);margin-bottom:6px;">Reference Summary</div>
+                <div style="font-size:13.5px;color:var(--text-primary);line-height:1.65;">UN commits $100B yearly to help developing nations adapt to climate change, following COP30 negotiations in Dubai.</div>
+              </div>
+              <!-- Side-by-side model outputs -->
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div style="background:white;border:1.5px solid #BBF7D0;border-radius:9px;padding:13px 15px;">
+                  <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;">
+                    <div style="width:22px;height:22px;background:linear-gradient(135deg,#7C3AED,#8B5CF6);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:white;font-family:'JetBrains Mono',monospace;flex-shrink:0;">L3</div>
+                    <span style="font-size:12px;font-weight:700;color:var(--emerald);">llama3.2:8b · ROUGE-L 0.441</span>
+                  </div>
+                  <div style="font-size:13.5px;color:var(--text-primary);line-height:1.65;">The UN pledged $100 billion annually to developing countries for climate adaptation at the COP30 summit in Dubai.</div>
+                </div>
+                <div style="background:white;border:1.5px solid #BFDBFE;border-radius:9px;padding:13px 15px;">
+                  <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;">
+                    <div style="width:22px;height:22px;background:linear-gradient(135deg,#0EA5E9,#38BDF8);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:white;font-family:'JetBrains Mono',monospace;flex-shrink:0;">P4</div>
+                    <span style="font-size:12px;font-weight:700;color:#1D4ED8;">phi4:14b · ROUGE-L 0.401</span>
+                  </div>
+                  <div style="font-size:13.5px;color:var(--text-primary);line-height:1.65;">United Nations officials announced a $100 billion per year commitment for climate financing to support developing nations.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sample 2 — collapsed -->
+            <div style="padding:14px 20px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between;">
+              <div>
+                <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-tertiary);">Sample 2 of 20</span>
+                <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">BBC article on AI regulation — EU Parliament votes on landmark AI Act amendments...</div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:16px;">
+                <span class="score-badge score-good">ROUGE-L: 0.39</span>
+                <button class="btn-secondary" style="font-size:12px;padding:4px 10px;">Expand</button>
+              </div>
+            </div>
+
+            <!-- Sample 3 — collapsed -->
+            <div style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between;">
+              <div>
+                <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-tertiary);">Sample 3 of 20</span>
+                <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">Reuters article on Fed interest rates — Federal Reserve holds rates steady at 4.5%...</div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:16px;">
+                <span class="score-badge score-excellent">ROUGE-L: 0.45</span>
+                <button class="btn-secondary" style="font-size:12px;padding:4px 10px;">Expand</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Insight callout -->
+          <div style="background:white;border:1px solid var(--border-subtle);border-left:3px solid var(--violet);border-radius:10px;padding:15px 18px;display:flex;align-items:center;gap:14px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <div style="font-size:13.5px;color:var(--text-primary);line-height:1.65;flex:1;"><strong>llama3.2:8b</strong> scored higher on all reference-based metrics but ran at 18 t/s vs phi4's 11 t/s. For a human preference comparison, try <strong>Arena mode</strong> — blind voting often reveals qualitative differences that ROUGE scores miss.</div>
+            <button class="btn-secondary" style="flex-shrink:0;font-size:12.5px;padding:7px 13px;" onclick="showScreen('arena')">Open Arena →</button>
+          </div>
+        </div>
+        <div id="screen-leaderboard" class="screen" style="padding:24px;">
+          <h1 style="font-size:22px;font-weight:800;margin-bottom:6px;">🏆 Arena Leaderboard</h1>
+          <p style="color:var(--text-secondary);margin-bottom:20px;">ELO ratings from blind pairwise comparisons, updated after every Arena vote.</p>
+          <div class="edu-panel" style="display:flex;align-items:center;gap:10px;"><span style="font-size:18px;">💡</span><span>ELO is a chess-style rating system. A model gains more points by defeating a higher-rated opponent than a lower-rated one.</span></div>
+        </div>
+        <div id="screen-compare" class="screen" style="padding:24px;">
+          <h1 style="font-size:22px;font-weight:800;margin-bottom:6px;">Compare Models</h1>
+          <p style="color:var(--text-secondary);">Side-by-side metric comparison. Select up to 4 models and a task type to see a detailed score breakdown.</p>
+        </div>
+        <div id="screen-datasets" class="screen" style="padding:24px;">
+          <h1 style="font-size:22px;font-weight:800;margin-bottom:6px;">🗂️ Datasets</h1>
+          <p style="color:var(--text-secondary);">Built-in benchmark datasets and custom uploads for your own golden reference sets.</p>
+        </div>
+        <div id="screen-settings" class="screen" style="padding:24px;">
+          <h1 style="font-size:22px;font-weight:800;margin-bottom:6px;">⚙️ Settings</h1>
+          <p style="color:var(--text-secondary);">Configure Ollama connection, API keys for judge models, and evaluation defaults.</p>
+        </div>
+
+      </div><!-- end scroll area -->
+    </div><!-- end main -->
+  </div><!-- end app shell -->
+
+  <script>
+    const navMap = {
+      'dashboard': 'nav-dashboard', 'wizard': 'nav-wizard', 'running': 'nav-wizard',
+      'history': 'nav-history', 'models': 'nav-models', 'arena': 'nav-arena',
+      'leaderboard': 'nav-leaderboard', 'compare': 'nav-compare', 'learn': 'nav-learn',
+      'datasets': 'nav-datasets', 'settings': 'nav-settings',
+    };
+    const labels = {
+      'dashboard': 'Dashboard', 'wizard': 'Eval Wizard', 'running': 'Eval Wizard',
+      'history': 'Run History', 'models': 'Models', 'arena': 'Arena',
+      'leaderboard': 'Leaderboard', 'compare': 'Compare', 'learn': 'Metric Guide',
+      'datasets': 'Datasets', 'settings': 'Settings',
+    };
+
+    function showScreen(id) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      const el = document.getElementById('screen-' + id);
+      if (el) el.classList.add('active');
+
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      const nav = document.getElementById(navMap[id]);
+      if (nav) nav.classList.add('active');
+
+      const label = labels[id] || id;
+      document.getElementById('breadcrumb').innerHTML =
+        `<span style="color:var(--text-tertiary);cursor:pointer;" onclick="showScreen('dashboard')">EvalBench</span>
+         <span style="color:var(--border-default);margin:0 4px;">›</span>
+         <span style="font-weight:700;color:var(--text-primary);">${label}</span>`;
+
+      document.getElementById('scroll-area').scrollTop = 0;
+
+      document.querySelectorAll('.screen-nav-btn').forEach(b => b.classList.remove('current'));
+      const rb = document.getElementById('btn-' + id);
+      if (rb) rb.classList.add('current');
+    }
+
+    function selectTask(id) {
+      document.querySelectorAll('.task-card').forEach(c => c.classList.remove('selected'));
+      const card = document.getElementById('task-' + id);
+      if (card) card.classList.add('selected');
+    }
+
+    // Init
+    showScreen('dashboard');
+  </script>
+</body>
+</html>

@@ -30,6 +30,14 @@ export const EvalResultSchema = z.object({
   expectedOutput: z.string().nullable().optional(),
 });
 
+export const EvalStatSchema = z.object({
+  modelId: z.number(),
+  metricName: z.string(),
+  mean: z.number(),
+  moe: z.number(),
+  count: z.number(),
+});
+
 export const GoldenDatasetSchema = z.object({
   id: z.number(),
   name: z.string(),
@@ -78,6 +86,7 @@ export const LeaderboardEntrySchema = z.object({
 export type Model = z.infer<typeof ModelSchema>;
 export type EvalRun = z.infer<typeof EvalRunSchema>;
 export type EvalResult = z.infer<typeof EvalResultSchema>;
+export type EvalStat = z.infer<typeof EvalStatSchema>;
 export type GoldenDataset = z.infer<typeof GoldenDatasetSchema>;
 export type ArenaBattle = z.infer<typeof ArenaBattleSchema>;
 export type EloRating = z.infer<typeof EloRatingSchema>;
@@ -137,6 +146,14 @@ export const api = {
       path: '/api/eval-runs/:id/results' as const,
       responses: {
         200: z.array(EvalResultSchema),
+        404: errorSchemas.notFound,
+      }
+    },
+    stats: {
+      method: 'GET' as const,
+      path: '/api/eval-runs/:id/stats' as const,
+      responses: {
+        200: z.array(EvalStatSchema),
         404: errorSchemas.notFound,
       }
     }

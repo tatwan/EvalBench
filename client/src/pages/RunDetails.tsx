@@ -1,8 +1,8 @@
 import { useParams } from "wouter";
 import { useEffect, useRef, useState } from "react";
-import { useEvalRun, useEvalResults } from "@/hooks/use-eval";
+import { useEvalRun, useEvalResults, useEvalStats } from "@/hooks/use-eval";
 import { useModels } from "@/hooks/use-models";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/Badge";
 import { Activity, Cpu, ArrowLeft, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -24,7 +24,7 @@ const SCORE_PRECISION: Record<string, number> = {
 
 function formatScore(name: string, value: number): string {
   const prec = SCORE_PRECISION[name] ?? 3;
-  // Percentage-like scores (0–1 range)
+// Percentage-like scores (0-1 range)
   if (!["bleu", "chrf", "tokens_per_second", "total_latency_s", "load_latency_s", "prompt_tokens", "output_tokens"].includes(name)) {
     return `${(value * 100).toFixed(1)}%`;
   }
@@ -40,28 +40,13 @@ function metricLabel(name: string): string {
     tokens_per_second: "Tokens/sec", total_latency_s: "Latency (s)",
     load_latency_s: "Load Time (s)", prompt_tokens: "Prompt Tokens",
     output_tokens: "Output Tokens",
+    llm_coherence: "LLM Coherence", llm_relevance: "LLM Relevance", 
+    llm_fluency: "LLM Fluency",
   };
   return MAP[name] ?? name;
 }
 
-// Group results: { modelId → { metricName → avgScore } }
-function groupResults(results: any[]) {
-  const grouped: Record<number, Record<string, number[]>> = {};
-  for (const r of results) {
-    if (!grouped[r.modelId]) grouped[r.modelId] = {};
-    if (!grouped[r.modelId][r.metricName]) grouped[r.modelId][r.metricName] = [];
-    grouped[r.modelId][r.metricName].push(r.score);
-  }
-  // Average across items
-  const avg: Record<number, Record<string, number>> = {};
-  for (const [mid, metrics] of Object.entries(grouped)) {
-    avg[+mid] = {};
-    for (const [metric, scores] of Object.entries(metrics)) {
-      avg[+mid][metric] = scores.reduce((a, b) => a + b, 0) / scores.length;
-    }
-  }
-  return avg;
-}
+// We no longer manually group results here, we use the backend's /stats endpoint
 
 function getExamplesPerModel(results: any[]) {
   // filter out speed metrics for scoring
@@ -111,6 +96,7 @@ export default function RunDetails() {
 
   const { data: run, isLoading: runLoading, refetch: refetchRun } = useEvalRun(runId);
   const { data: results = [], refetch: refetchResults } = useEvalResults(runId);
+  const { data: stats = [], refetch: refetchStats } = useEvalStats(runId);
   const { data: models = [] } = useModels();
 
   // SSE progress
@@ -131,6 +117,7 @@ export default function RunDetails() {
         es.close();
         refetchRun();
         refetchResults();
+        refetchStats();
         setProgress(null);
       }
     };
@@ -156,13 +143,29 @@ export default function RunDetails() {
     );
   }
 
-  const grouped = groupResults(results as any[]);
+  // Build grouped stats: Record<modelId, Record<metricName, {mean, moe}>>
+  const grouped: Record<number, Record<string, { mean: number, moe: number }>> = {};
+  for (const s of (stats as any[])) {
+    if (!grouped[s.modelId]) grouped[s.modelId] = {};
+    grouped[s.modelId][s.metricName] = { mean: s.mean, moe: s.moe };
+  }
+
   const modelMap = Object.fromEntries((models as any[]).map((m: any) => [m.id, m]));
   const config = run.configJson as any ?? {};
-  const taskType = config.taskType ?? "—";
-  const allMetrics = Array.from(new Set((results as any[]).map((r: any) => r.metricName)));
+  const taskType = config.taskType ?? "-";
+  const allMetrics = Array.from(new Set((stats as any[]).map((s: any) => s.metricName)));
   const modelIds = Object.keys(grouped).map(Number);
   const examples = getExamplesPerModel(results as any[]);
+
+  const bestByMetric: Record<string, number> = {};
+  allMetrics.forEach((metric) => {
+    const values = modelIds
+      .map((mid) => grouped[mid]?.[metric]?.mean)
+      .filter((v): v is number => typeof v === "number");
+    if (values.length === 0) return;
+    const lowerIsBetter = LOWER_IS_BETTER.has(metric);
+    bestByMetric[metric] = lowerIsBetter ? Math.min(...values) : Math.max(...values);
+  });
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
@@ -174,14 +177,14 @@ export default function RunDetails() {
         <div>
           <h1 className="text-3xl font-bold">Run #{run.id}</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            {run.timestamp ? format(new Date(run.timestamp), "PPpp") : "Unknown time"} · Task: <span className="capitalize font-medium text-foreground">{taskType}</span>
+            {run.timestamp ? format(new Date(run.timestamp), "PPpp") : "Unknown time"} - Task: <span className="capitalize font-medium text-foreground">{taskType}</span>
           </p>
         </div>
         <span className={clsx(
           "text-sm px-3 py-1 rounded-full font-semibold",
           run.status === "completed" ? "bg-emerald-500/20 text-emerald-400" :
-          run.status === "running" ? "bg-amber-500/20 text-amber-400" :
-          "bg-white/10 text-muted-foreground"
+          run.status === "running" ? "bg-amber-100 text-amber-700" :
+          "bg-muted text-muted-foreground"
         )}>
           {run.status === "running" ? <Loader2 className="w-3 h-3 mr-1 animate-spin inline" /> : null}
           {run.status}
@@ -190,19 +193,19 @@ export default function RunDetails() {
 
       {/* Live progress bar */}
       {run.status === "running" && (
-        <Card className="border-amber-500/20 bg-amber-500/5">
+        <Card className="border-amber-200 bg-amber-50">
           <CardContent className="p-5">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-amber-300">Evaluation in progress…</span>
+              <span className="text-sm font-medium text-amber-700">Evaluation in progress...</span>
               {progress && (
                 <span className="text-sm font-mono text-muted-foreground">
-                  {progress.completed}/{progress.total} items — {progress.percent}%
+                  {progress.completed}/{progress.total} items - {progress.percent}%
                 </span>
               )}
             </div>
-            <div className="w-full bg-white/10 rounded-full h-2">
+            <div className="w-full bg-muted rounded-full h-2">
               <div
-                className="bg-amber-400 h-2 rounded-full transition-all duration-500"
+                className="bg-amber-500 h-2 rounded-full transition-all duration-500"
                 style={{ width: `${progress?.percent ?? 0}%` }}
               />
             </div>
@@ -226,8 +229,8 @@ export default function RunDetails() {
           <CardContent className="p-5 flex items-center gap-3">
             <Activity className="w-5 h-5 text-emerald-400" />
             <div>
-              <p className="text-xs text-muted-foreground">Metrics</p>
-              <p className="text-2xl font-bold">{allMetrics.length}</p>
+              <p className="text-xs text-foreground/70">Metrics</p>
+              <p className="text-2xl font-bold text-foreground">{allMetrics.length}</p>
             </div>
           </CardContent>
         </Card>
@@ -235,8 +238,8 @@ export default function RunDetails() {
           <CardContent className="p-5 flex items-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-purple-400" />
             <div>
-              <p className="text-xs text-muted-foreground">Results</p>
-              <p className="text-2xl font-bold">{(results as any[]).length}</p>
+              <p className="text-xs text-foreground/70">Results</p>
+              <p className="text-2xl font-bold text-foreground">{(results as any[]).length}</p>
             </div>
           </CardContent>
         </Card>
@@ -245,9 +248,9 @@ export default function RunDetails() {
       {/* Results table */}
       {allMetrics.length === 0 ? (
         <Card>
-          <CardContent className="py-16 text-center text-muted-foreground">
+          <CardContent className="py-16 text-center text-foreground/70">
             {run.status === "running"
-              ? "Results will appear as the evaluation completes…"
+              ? "Results will appear as the evaluation completes..."
               : "No results recorded yet. Run the evaluation to see scores here."}
           </CardContent>
         </Card>
@@ -259,42 +262,58 @@ export default function RunDetails() {
           <CardContent className="overflow-x-auto p-0">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-white/10 bg-white/5">
-                  <th className="text-left px-6 py-3 font-semibold text-muted-foreground">Model</th>
+                <tr className="border-b border-border bg-muted">
+                  <th className="text-left px-6 py-3 font-semibold text-foreground/80">Model</th>
                   {allMetrics.map(m => (
-                    <th key={m} className="text-right px-5 py-3 font-semibold text-muted-foreground whitespace-nowrap">
+                    <th key={m} className="text-right px-5 py-3 font-semibold text-foreground/80 whitespace-nowrap">
                       {metricLabel(m)}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-border">
                 {modelIds.map((mid, i) => {
                   const model = modelMap[mid];
                   return (
-                    <tr key={mid} className={clsx("hover:bg-white/3 transition-colors", i % 2 === 0 ? "" : "bg-white/[0.01]")}>
-                      <td className="px-6 py-4 font-mono text-xs">
+                    <tr key={mid} className={clsx("hover:bg-muted/40 transition-colors", i % 2 === 0 ? "" : "bg-muted/20")}>
+                      <td className="px-6 py-4 font-mono text-xs text-foreground/80">
                         <div className="flex items-center gap-2">
                           <Cpu className="w-3.5 h-3.5 text-primary flex-shrink-0" />
                           <span>{model?.name ?? `Model ${mid}`}</span>
                         </div>
                       </td>
                       {allMetrics.map(metric => {
-                        const val = grouped[mid]?.[metric];
+                        const stat = grouped[mid]?.[metric];
                         const lowerIsBetter = LOWER_IS_BETTER.has(metric);
+                        if (!stat) {
+                          return <td key={metric} className="px-5 py-4 text-right font-mono text-foreground/70">-</td>;
+                        }
+
+                        // Determine color threshold based on the mean
+                        const colorClass = clsx(
+                          "tabular-nums",
+                          !lowerIsBetter && stat.mean >= 0.5 ? "text-emerald-800" :
+                          !lowerIsBetter && stat.mean >= 0.3 ? "text-amber-800" : "text-foreground/80"
+                        );
+                        const isBest = Number.isFinite(bestByMetric[metric]) && Math.abs(stat.mean - bestByMetric[metric]) < 1e-8;
+
                         return (
                           <td key={metric} className="px-5 py-4 text-right font-mono">
-                            {val !== undefined ? (
-                              <span className={clsx(
-                                "tabular-nums",
-                                !lowerIsBetter && val >= 0.5 ? "text-emerald-400" :
-                                !lowerIsBetter && val >= 0.3 ? "text-amber-400" : "text-muted-foreground"
-                              )}>
-                                {formatScore(metric, val)}
+                            <div className="flex flex-col items-end">
+                              <span
+                                className={clsx(
+                                  colorClass,
+                                  isBest && "bg-amber-100 text-amber-900 ring-1 ring-amber-200 px-2 py-0.5 rounded-md"
+                                )}
+                              >
+                                {formatScore(metric, stat.mean)}
                               </span>
-                            ) : (
-                              <span className="text-white/20">—</span>
-                            )}
+                              {stat.moe > 0 && (
+                                <span className="text-[10px] text-foreground/70" title="95% Confidence Interval Margin of Error">
+                                  +/-{formatScore(metric, stat.moe)}
+                                </span>
+                              )}
+                            </div>
                           </td>
                         );
                       })}
@@ -316,9 +335,9 @@ export default function RunDetails() {
           </div>
 
           {/* Task Prompt Box */}
-          <div className="bg-primary/5 border border-primary/20 rounded-xl p-6 text-center max-w-3xl mx-auto">
-            <h3 className="text-xs font-bold text-primary uppercase tracking-widest mb-3">Task Prompt</h3>
-            <p className="text-lg font-medium text-white/90">
+          <div className="bg-white border border-border border-l-4 border-l-violet-500 rounded-xl p-6 text-center max-w-3xl mx-auto">
+            <h3 className="text-xs font-bold text-violet-700 uppercase tracking-widest mb-3">Task Prompt</h3>
+            <p className="text-lg font-medium text-foreground">
               {taskType === "summarization" ? "Summarize the following text in one or two sentences." :
                taskType === "qa" ? "Answer the following question based on the provided context." :
                taskType === "chat" ? "Respond thoughtfully to the user's conversational message." :
@@ -335,26 +354,26 @@ export default function RunDetails() {
              if (!ex) return null;
              return (
                <Card key={mid} className="overflow-hidden">
-                 <CardHeader className="bg-white/5 border-b border-white/10 py-4">
+                 <CardHeader className="bg-muted border-b border-border py-4">
                    <CardTitle className="text-lg flex items-center gap-2">
                      <Cpu className="w-5 h-5 text-primary" /> {modelName}
                    </CardTitle>
                  </CardHeader>
-                 <CardContent className="p-0 divide-y divide-white/10">
+                 <CardContent className="p-0 divide-y divide-border">
                    {ex.best && (
-                     <div className="p-6 bg-emerald-500/5">
-                       <h3 className="text-emerald-400 font-bold mb-4 flex items-center gap-2">
-                          <CheckCircle2 className="w-5 h-5"/> Highest Scoring Output (Score: {formatScore("quality", ex.best.avgScore)})
+                     <div className="p-6 bg-white">
+                       <h3 className="text-emerald-700 font-bold mb-4 flex items-center gap-2">
+                          <CheckCircle2 className="w-5 h-5"/> Highest Scoring Output (Average Quality Score: {formatScore("quality", ex.best.avgScore)})
                        </h3>
                        <div className="grid grid-cols-5 gap-6">
                          <div className="col-span-2 space-y-2">
-                           <p className="text-xs text-muted-foreground uppercase w-full tracking-widest font-semibold text-center border-b border-white/5 pb-2">Prompt Input</p>
+                          <p className="text-xs text-muted-foreground uppercase w-full tracking-widest font-semibold text-center border-b border-border pb-2">Prompt Input</p>
                            <div className="p-2 text-sm text-muted-foreground whitespace-pre-wrap font-mono h-[250px] overflow-y-auto">{ex.best.input}</div>
                          </div>
                          <div className="col-span-3 space-y-2">
-                           <p className="text-xs text-muted-foreground uppercase w-full tracking-widest font-semibold text-center border-b border-white/5 pb-2">Comparison</p>
+                          <p className="text-xs text-muted-foreground uppercase w-full tracking-widest font-semibold text-center border-b border-border pb-2">Comparison</p>
                            <div className="grid grid-rows-2 h-[250px] gap-4">
-                             <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl overflow-y-auto text-sm text-emerald-100/90 whitespace-pre-wrap">
+                             <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl overflow-y-auto text-sm text-foreground whitespace-pre-wrap">
                                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-2 block">Golden Truth</span>
                                {ex.best.expected}
                              </div>
@@ -368,19 +387,19 @@ export default function RunDetails() {
                      </div>
                    )}
                    {ex.worst && ex.worst.itemId !== ex.best?.itemId && (
-                     <div className="p-6 bg-rose-500/5">
-                       <h3 className="text-rose-400 font-bold mb-4 flex items-center gap-2">
-                          <AlertTriangle className="w-5 h-5"/> Lowest Scoring Output (Score: {formatScore("quality", ex.worst.avgScore)})
+                     <div className="p-6 bg-white">
+                       <h3 className="text-rose-700 font-bold mb-4 flex items-center gap-2">
+                          <AlertTriangle className="w-5 h-5"/> Lowest Scoring Output (Average Quality Score: {formatScore("quality", ex.worst.avgScore)})
                        </h3>
                        <div className="grid grid-cols-5 gap-6">
                          <div className="col-span-2 space-y-2">
-                           <p className="text-xs text-muted-foreground w-full uppercase tracking-widest font-semibold text-center border-b border-white/5 pb-2">Prompt Input</p>
+                          <p className="text-xs text-muted-foreground w-full uppercase tracking-widest font-semibold text-center border-b border-border pb-2">Prompt Input</p>
                            <div className="p-2 text-sm text-muted-foreground whitespace-pre-wrap font-mono h-[250px] overflow-y-auto">{ex.worst.input}</div>
                          </div>
                          <div className="col-span-3 space-y-2">
-                           <p className="text-xs text-muted-foreground w-full uppercase tracking-widest font-semibold text-center border-b border-white/5 pb-2">Comparison</p>
+                          <p className="text-xs text-muted-foreground w-full uppercase tracking-widest font-semibold text-center border-b border-border pb-2">Comparison</p>
                            <div className="grid grid-rows-2 h-[250px] gap-4">
-                             <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl overflow-y-auto text-sm text-rose-100/90 whitespace-pre-wrap">
+                             <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl overflow-y-auto text-sm text-foreground whitespace-pre-wrap">
                                <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-2 block">Golden Truth</span>
                                {ex.worst.expected}
                              </div>

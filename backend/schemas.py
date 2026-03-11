@@ -50,9 +50,21 @@ class EvalResultOut(CamelModel):
     score: float
     raw_output: Optional[str] = None
     item_id: Optional[int] = None
+    timestamp: datetime | None = None
+
+# --- Settings ---
+class SettingBase(CamelModel):
+    key: str
+    value: str | None = None
+
+class SettingOut(SettingBase):
+    pass
+
+class SettingUpdate(CamelModel):
+    value: str | None = None
 
 
-# --- Datasets ---
+# --- Run Schemas ---
 
 class GoldenDatasetOut(CamelModel):
     id: int

@@ -20,18 +20,18 @@ The plan below is organized into 4 phases, each with clear deliverables and a co
 
 ## What We Have vs. What We Need
 
-| Dimension | Current State 😔 | Target State 🏆 |
+| Dimension | Previous State 😔 | Current Target State 🏆 |
 |---|---|---|
-| **Backend** | Node.js/Express + PostgreSQL | Python FastAPI + SQLite (local-first) |
-| **Model Discovery** | 3 hardcoded strings | Live `GET /api/tags` from Ollama |
-| **Arena Responses** | `[Simulated Output A]` | Real `POST /api/generate` calls |
-| **Eval Scores** | `Math.random() * 50 + 20` | ROUGE, BLEU, BERTScore, METEOR, Pass@K |
-| **Metric Selection** | "Pick benchmarks" (MMLU toggle) | Task-type aware metric picker aligned with fm_metrics.html |
-| **Datasets** | "Coming soon" placeholder | Built-in subsets of MMLU/HumanEval/GSM8K + custom upload |
-| **LLM-as-Judge** | Not present | G-Eval via local Ollama model or API key |
-| **Educational Layer** | None | Inline metric explanations, the fm_metrics decision tree embedded |
-| **Export** | None | CSV, JSON, Markdown |
-| **Statistical Rigor** | None | Wilson CIs, McNemar significance tests |
+| **Backend** | Node.js/Express + PostgreSQL | Python FastAPI + SQLite (local-first) ✅ |
+| **Model Discovery** | 3 hardcoded strings | Live `GET /api/tags` from Ollama ✅ |
+| **Arena Responses** | `[Simulated Output A]` | Real `POST /api/generate` calls ✅ |
+| **Eval Scores** | `Math.random() * 50 + 20` | ROUGE, BLEU, BERTScore, METEOR, Pass@K ✅ |
+| **Metric Selection** | "Pick benchmarks" (MMLU toggle) | Task-type aware metric picker aligned with fm_metrics.html ✅ |
+| **Datasets** | "Coming soon" placeholder | Built-in subsets of MMLU/HumanEval/GSM8K + custom upload ✅ |
+| **LLM-as-Judge** | Not present | G-Eval via local Ollama model or API key ✅ |
+| **Educational Layer** | None | Inline metric explanations, the fm_metrics decision tree embedded ✅ |
+| **Export / Data Mgt** | None | CSV, JSON, Markdown, DB UI Builder (Pending Phase 5) |
+| **Statistical Rigor** | None | Confidence Intervals, standard error math ✅ |
 
 ---
 
@@ -43,16 +43,40 @@ The plan below is organized into 4 phases, each with clear deliverables and a co
 The existing [docs/superpowers/plans/2026-03-12-python-backend-migration.md](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/docs/superpowers/plans/2026-03-12-python-backend-migration.md) is a complete, chunk-by-chunk implementation guide. **Execute it as written.** Key outputs:
 
 - `backend/` replaces `server/` — FastAPI app with SQLAlchemy + SQLite
-- `backend/services/ollama.py` — async httpx client for Ollama
+- [backend/services/ollama.py](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/backend/services/ollama.py) — async httpx client for Ollama
 - Vite proxy: `/api` → `http://localhost:8001`
 - `concurrently` runs both Vite dev server + uvicorn together
-- `server/`, [drizzle.config.ts](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/drizzle.config.ts), [shared/schema.ts](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/shared/schema.ts) are deleted after parity
+- `server/`, [drizzle.config.ts](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/drizzle.config.ts), `shared/schema.ts` are deleted after parity
 
 **Completion criteria:** `GET /api/models` returns real Ollama models. The Models screen shows what you actually have installed.
 
+### 1.1.1 Legacy Code Cleanup (Cutover Gate)
+
+> [!IMPORTANT]
+> Only delete Node.js code **after** all API routes are verified working in FastAPI. Run the full test suite and manually exercise every screen before the cleanup commit.
+
+**Files/directories to delete after parity is confirmed:**
+
+| Path | Why it's deleted |
+|---|---|
+| `server/` | Entire Express.js backend — replaced by `backend/` |
+| `shared/schema.ts` | Drizzle ORM table defs — replaced by [backend/models.py](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/backend/models.py) |
+| [drizzle.config.ts](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/drizzle.config.ts) | Drizzle config — no longer needed |
+| `migrations/` | DB migration files — SQLAlchemy handles schema on startup |
+
+**Files to clean up (modify, not delete):**
+
+| Path | What changes |
+|---|---|
+| [shared/routes.ts](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/shared/routes.ts) | Remove all Drizzle imports; keep only Zod schemas the frontend uses |
+| [package.json](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/package.json) | Remove: `express`, `drizzle-orm`, `drizzle-kit`, `@neondatabase/serverless`, `connect-pg-simple`. Add: `concurrently` |
+| [vite.config.ts](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/vite.config.ts) | Add `/api` proxy → `http://localhost:8001`; remove Replit plugins |
+
+**The cleanup commit message:** `chore: remove Node.js/Express/Drizzle legacy backend after Python parity`
+
 ### 1.2 Real Arena Responses
 
-Once `backend/services/ollama.py` has the `generate()` function, wire `GET /api/arena/matchup` to call it. The arena becomes real: two models, the same prompt, real outputs, real votes.
+Once [backend/services/ollama.py](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/backend/services/ollama.py) has the [generate()](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/backend/services/ollama.py#25-47) function, wire `GET /api/arena/matchup` to call it. The arena becomes real: two models, the same prompt, real outputs, real votes.
 
 **UI enhancement:** Add a **custom prompt input** field to the Arena screen. Right now prompts are hardcoded — users should be able to type their own.
 
@@ -64,11 +88,11 @@ These require no reference data — perfect for filling the eval wizard with *re
 
 | Metric | How to compute | Where |
 |---|---|---|
-| Tokens/second (TPS) | `(eval_count / eval_duration_ns) * 1e9` from Ollama response | `backend/scoring/speed.py` |
-| Time to First Token (TTFT) | Ollama streaming: timestamp of first chunk | `backend/scoring/speed.py` |
-| Total latency | `total_duration_ns / 1e9` from Ollama response | `backend/scoring/speed.py` |
+| Tokens/second (TPS) | [(eval_count / eval_duration_ns) * 1e9](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/client/src/components/layout/Sidebar.tsx#6-9) from Ollama response | [backend/scoring/speed.py](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/backend/scoring/speed.py) |
+| Time to First Token (TTFT) | Ollama streaming: timestamp of first chunk | [backend/scoring/speed.py](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/backend/scoring/speed.py) |
+| Total latency | `total_duration_ns / 1e9` from Ollama response | [backend/scoring/speed.py](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/backend/scoring/speed.py) |
 | P50/P95/P99 latency | sample multiple runs, use `numpy.percentile` | Needs repeat-eval support |
-| Peak memory | Parse `ollama ps` or Ollama model info | `backend/services/ollama.py` |
+| Peak memory | Parse `ollama ps` or Ollama model info | [backend/services/ollama.py](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/backend/services/ollama.py) |
 
 Ollama's non-streaming `POST /api/generate` response already includes `eval_count`, `eval_duration`, `prompt_eval_count`, `load_duration`, `total_duration` — we get speed metrics for free from every generate call.
 
@@ -126,7 +150,7 @@ backend/scoring/
 └── stats.py        # wilson_ci, mcnemar_test, bootstrap_ci
 ```
 
-**Python dependencies to add to `requirements.txt`:**
+**Python dependencies to add to [requirements.txt](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/requirements.txt):**
 ```
 rouge-score==0.1.2
 sacrebleu==2.3.1
@@ -146,14 +170,14 @@ Without reference data, ROUGE/BLEU cannot run. Ship curated subsets:
 
 | Dataset | Task | Items | Source | Notes |
 |---|---|---|---|---|
-| CNN/DailyMail (100 samples) | Summarization | 100 article→summary pairs | HuggingFace `datasets` | Classic ROUGE benchmark |
+| CNN/DailyMail (100 samples) | Summarization | 100 article→summary pairs | HuggingFace [datasets](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/backend/routers/datasets.py#10-14) | Classic ROUGE benchmark |
 | WMT 2014 EN-FR (100 pairs) | Translation | 100 sentence pairs | sacrebleu built-in | Standard BLEU test set |
 | SQuAD v2 (100 QA pairs) | QA / Extraction | 100 question-context-answer | HuggingFace | EM + F1 standard |
 | MMLU (200 questions) | Knowledge | 200 MCQ across 10 subjects | HuggingFace | Accuracy metric |
 | HumanEval (30 problems) | Code | 30 Python coding problems | OpenAI | Pass@1 with sandbox execution |
 | GSM8K (50 problems) | Math Reasoning | 50 grade-school word problems | HuggingFace | Final answer accuracy |
 
-These seed the `golden_datasets` and `golden_items` tables at startup. The backend uses `datasets` library to download/cache them locally.
+These seed the `golden_datasets` and `golden_items` tables at startup. The backend uses [datasets](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/backend/routers/datasets.py#10-14) library to download/cache them locally.
 
 **Completion criteria:** A user can select "Summarization" in the wizard, pick CNN/DailyMail, run against two models, and get real ROUGE-1/2/L + BERTScore numbers comparing the two. The scores change depending on which models are selected, and they make sense relative to known baselines.
 
@@ -374,12 +398,13 @@ This enables mixed comparisons: *llama3.2:8b (local) vs. claude-haiku-3.5 (API) 
 
 ## Phase Delivery Plan
 
-| Phase | Milestone | Key Deliverable | Est. Sessions |
+| Phase | Milestone | Key Deliverable | Status |
 |---|---|---|---|
-| **Phase 1** | Backend Alive | Real Ollama models, real Arena responses, speed metrics | 2-3 |
-| **Phase 2** | Metrics Work | ROUGE/BLEU/BERTScore/METEOR live, task-type wizard, built-in datasets, SSE progress | 3-4 |
-| **Phase 3** | Full Coverage | LLM-judge, academic benchmarks, safety, statistical CIs, Settings page | 4-5 |
-| **Phase 4** | Winning State | Educational Learn tab (fm_metrics embedded), radar charts, dataset builder, export, multi-provider | 3-4 |
+| **Phase 1** | Backend Alive | Real Ollama models, real Arena responses, speed metrics | ✅ |
+| **Phase 2** | Metrics Work | ROUGE/BLEU/BERTScore/METEOR live, task-type wizard, built-in datasets, SSE progress | ✅ |
+| **Phase 3** | Full Coverage | LLM-judge, academic benchmarks, safety, statistical CIs, Settings page | ✅ |
+| **Phase 4** | Winning State | Educational Learn tab (fm_metrics embedded), radar charts, head-to-head compare | ✅ |
+| **Phase 5** | Dataset Management | Dataset builder UI, Export to CSV/JSON/Markdown | 🔄 In Progress |
 
 ---
 
@@ -415,9 +440,9 @@ This ensures EvalBench implements what you teach:
 Start where the plan is already written and the impact is highest:
 
 1. **Execute [2026-03-12-python-backend-migration.md](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/docs/superpowers/plans/2026-03-12-python-backend-migration.md) Chunk 1-6** — gets the FastAPI backend live with real Ollama calls. This is the most critical unblock.
-2. **Add `backend/scoring/speed.py`** — immediately makes every eval run produce real TPS/TTFT scores.
-3. **Wire Arena to real `generate()` calls** — transforms the Arena from a demo into a functional tool.
-4. **Add `backend/scoring/rouge.py`** with CNN/DailyMail sample data — first real quality metric.
+2. **Add [backend/scoring/speed.py](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/backend/scoring/speed.py)** — immediately makes every eval run produce real TPS/TTFT scores.
+3. **Wire Arena to real [generate()](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/backend/services/ollama.py#25-47) calls** — transforms the Arena from a demo into a functional tool.
+4. **Add [backend/scoring/rouge.py](file:///Users/tarekatwan/Repos/MyWork/Projects/EvalBench/backend/scoring/rouge.py)** with CNN/DailyMail sample data — first real quality metric.
 5. **Redesign the Eval Wizard Step 2** from "pick benchmarks" to "pick task type" — unlocks the entire metric taxonomy.
 
 > [!IMPORTANT]

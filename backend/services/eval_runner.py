@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from backend import models as db_models
 from backend.services import storage, ollama as ollama_svc
 from backend.scoring import rouge, bleu, meteor, exact_match, distinct, speed
+from backend.scoring.llm_judge import evaluate_with_llm
 from backend.database import SessionLocal
 
 # In-memory SSE queues keyed by run_id
@@ -28,9 +29,9 @@ _progress_queues: dict[int, asyncio.Queue] = {}
 # ─── Task-type → scorer mapping ─────────────────────────
 
 TASK_METRICS: dict[str, list[str]] = {
-    "summarization": ["rouge1", "rouge2", "rougeL", "meteor"],
-    "qa":            ["exact_match", "f1", "rouge1"],
-    "chat":          ["distinct1", "distinct2", "rouge1"],
+    "summarization": ["rouge1", "rouge2", "rougeL", "llm_coherence", "llm_relevance"],
+    "qa":            ["exact_match", "f1", "llm_relevance"],
+    "chat":          ["distinct1", "llm_fluency", "llm_coherence"],
     "translation":   ["bleu", "chrf", "meteor"],
     "code":          ["rouge1", "distinct1"],  # Pass@k in Phase 3
     "reasoning":     ["exact_match", "f1"],
@@ -62,9 +63,14 @@ def _score(task_type: str, prediction: str, reference: str, ollama_resp: dict) -
         scores.update(distinct.compute(prediction))
 
     # Always add speed metrics from Ollama timing
-    scores.update(speed.compute(ollama_resp))
+    if ollama_resp:
+        scores.update(speed.compute(ollama_resp))
 
     return scores
+
+def _get_llm_metrics_for_task(task_type: str) -> list[str]:
+    tt = task_type.lower()
+    return [m for m in TASK_METRICS.get(tt, []) if m.startswith("llm_")]
 
 
 def get_or_create_queue(run_id: int) -> asyncio.Queue:
@@ -141,6 +147,7 @@ async def run_eval(run_id: int) -> None:
 
                     item_scores = _score(task_type, prediction, item.expected_output, result)
 
+                    # Save traditional metrics
                     for metric_name, score_value in item_scores.items():
                         storage.save_eval_result(
                             db,
@@ -151,6 +158,23 @@ async def run_eval(run_id: int) -> None:
                             raw_output=prediction[:2000],
                             item_id=item.id,
                         )
+
+                    # Run and save LLM-as-Judge metrics
+                    llm_metrics = _get_llm_metrics_for_task(task_type)
+                    for metric_name in llm_metrics:
+                        llm_score, rationale = evaluate_with_llm(db, metric_name, item.input, prediction)
+                        # Save the score and embed the rationale in the raw_output field for now
+                        formatted_output = f"{prediction[:1500]}\n\n--- Judge Rationale ---\n{rationale}"
+                        storage.save_eval_result(
+                            db,
+                            run_id=run_id,
+                            model_id=model.id,
+                            metric_name=metric_name,
+                            score=float(llm_score),
+                            raw_output=formatted_output,
+                            item_id=item.id,
+                        )
+
                 except Exception as e:
                     await q.put({"type": "error", "message": str(e), "done": False})
 
