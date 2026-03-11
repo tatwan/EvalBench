@@ -4,7 +4,7 @@ import { useCreateEvalRun } from "@/hooks/use-eval";
 import { useDatasets } from "@/hooks/use-datasets";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Check, ChevronRight, Activity, Cpu, Layers, BookOpen, AlignLeft, MessageCircleQuestion, MessageSquare, Code2, BrainCircuit, Sparkles } from "lucide-react";
+import { Check, ChevronRight, Activity, Cpu, Layers, BookOpen, AlignLeft, MessageCircleQuestion, MessageSquare, Code2, BrainCircuit, Sparkles, Network } from "lucide-react";
 import { clsx } from "clsx";
 
 const TASK_TYPES = [
@@ -17,6 +17,7 @@ const TASK_TYPES = [
     goal: "Produce concise summaries without losing key facts.",
     metrics: ["ROUGE-1", "ROUGE-2", "ROUGE-L"],
     datasetHint: "EvalBench Summarization v1",
+    datasetLabel: "EvalBench Summarization v1",
   },
   {
     id: "qa",
@@ -27,6 +28,7 @@ const TASK_TYPES = [
     goal: "Return the exact correct answer with minimal noise.",
     metrics: ["Exact Match", "Token F1", "ROUGE-L"],
     datasetHint: "EvalBench QA v1",
+    datasetLabel: "EvalBench QA v1",
   },
   {
     id: "chat",
@@ -36,7 +38,8 @@ const TASK_TYPES = [
     tests: "Conversational quality, coherence, and safety.",
     goal: "Respond naturally and helpfully in open-ended tasks.",
     metrics: ["Distinct-N", "LLM Judge", "MAUVE"],
-    datasetHint: "EvalBench TruthfulQA",
+    datasetHint: "EvalBench TruthfulQA (Subset)",
+    datasetLabel: "EvalBench TruthfulQA (Subset)",
   },
   {
     id: "knowledge",
@@ -45,8 +48,20 @@ const TASK_TYPES = [
     desc: "Academic knowledge across professional domains.",
     tests: "Breadth of factual knowledge and reasoning.",
     goal: "Score well across standardized subject benchmarks.",
-    metrics: ["Accuracy", "Macro F1", "MMLU"],
-    datasetHint: "EvalBench MMLU",
+    metrics: ["Exact Match", "Token F1", "ROUGE-L"],
+    datasetHint: "EvalBench MMLU (Subset)",
+    datasetLabel: "EvalBench MMLU (Subset)",
+  },
+  {
+    id: "embedding",
+    label: "Embeddings / Retrieval",
+    icon: Network,
+    desc: "Semantic search and similarity for retrieval tasks.",
+    tests: "Nearest-neighbor ranking, semantic similarity, recall.",
+    goal: "Embed queries so relevant docs rank at the top.",
+    metrics: ["Cosine Sim", "Recall@1", "MRR"],
+    datasetHint: "EvalBench Embeddings v1",
+    datasetLabel: "EvalBench Embeddings v1",
   },
   {
     id: "code",
@@ -57,6 +72,7 @@ const TASK_TYPES = [
     goal: "Generate code that passes tests on first try.",
     metrics: ["Pass@1", "Pass@10", "CodeBLEU"],
     datasetHint: null,
+    datasetLabel: "HumanEval (planned)",
   },
   {
     id: "reasoning",
@@ -66,7 +82,8 @@ const TASK_TYPES = [
     tests: "Multi-step reasoning and mathematical accuracy.",
     goal: "Arrive at correct final answers consistently.",
     metrics: ["Accuracy", "Pass@K", "GSM8K"],
-    datasetHint: "EvalBench GSM8K",
+    datasetHint: "EvalBench GSM8K (Subset)",
+    datasetLabel: "EvalBench GSM8K (Subset)",
   },
 ];
 
@@ -158,7 +175,7 @@ export default function EvalWizard() {
                   key={task.id}
                   onClick={() => handleSelectTask(task.id)}
                   className={clsx(
-                    "p-5 rounded-xl border cursor-pointer transition-all bg-card shadow-soft flex flex-col gap-4 min-h-[240px]",
+                    "p-5 rounded-xl border cursor-pointer transition-all bg-card shadow-soft flex flex-col gap-4 min-h-[260px]",
                     isSelected ? "border-violet-400 bg-violet-50" : "border-border hover:border-violet-300 hover:shadow-md"
                   )}
                 >
@@ -168,16 +185,16 @@ export default function EvalWizard() {
                     </div>
                     <div>
                       <h4 className="font-semibold">{task.label}</h4>
-                      <p className="text-xs text-foreground/70 mt-1">{task.desc}</p>
+                      <p className="text-xs text-foreground/80 mt-1">{task.desc}</p>
                     </div>
                   </div>
-                  <div className="space-y-2 text-xs text-foreground/70">
+                  <div className="space-y-2 text-xs text-foreground/80">
                     <div>
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground/60">Tests</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-foreground/80">Tests</span>
                       <div>{task.tests}</div>
                     </div>
                     <div>
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground/60">Goal</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-foreground/80">Goal</span>
                       <div>{task.goal}</div>
                     </div>
                   </div>
@@ -199,9 +216,9 @@ export default function EvalWizard() {
               <div className="flex-1">
                 <div className="text-sm font-semibold text-violet-700">Auto-configured for {selectedTask.label}</div>
                   <div className="text-sm text-violet-900/70 mt-1">
-                  {selectedTask.datasetHint
+                {selectedTask.datasetHint
                     ? <>We'll use <strong>{selectedTask.datasetHint}</strong> and compute <strong>{selectedTask.metrics.join(", ")}</strong> automatically.</>
-                    : <>No built-in dataset yet - you can still run a qualitative eval with judge metrics.</>
+                    : <>No built-in dataset yet - you can still run a qualitative eval with judge metrics or Arena mode.</>
                   }
                 </div>
                 {selectedTask.datasetHint && (
@@ -212,7 +229,7 @@ export default function EvalWizard() {
                   </div>
                 )}
               </div>
-              <Button variant="ghost" size="sm" className="text-violet-700">Why this metric? -&gt;</Button>
+              <Button variant="ghost" size="sm" className="text-violet-700" onClick={() => window.location.href = "/learn"}>Why this metric? -&gt;</Button>
             </div>
           )}
 
@@ -341,13 +358,13 @@ export default function EvalWizard() {
           </div>
           <h2 className="text-xl font-bold mb-2">Evaluation Started!</h2>
           <p className="text-muted-foreground max-w-md mx-auto mb-6">
-            Your models are being scored in the background. Check the Dashboard or run details for live progress.
+            Your models are being scored in the background. Check Run History or run details for live progress.
           </p>
           <div className="flex justify-center gap-3">
             <Button variant="outline" onClick={() => { setStep(1); setSelectedModels([]); setSelectedTaskType(null); }}>
               Run Another
             </Button>
-            <Button onClick={() => window.location.href = "/"}>Go to Dashboard</Button>
+            <Button onClick={() => window.location.href = "/history"}>Go to Run History</Button>
           </div>
         </div>
       )}

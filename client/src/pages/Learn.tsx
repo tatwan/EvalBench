@@ -22,7 +22,9 @@ export default function Learn() {
             Use the interactive decision tree to get a personalized recommendation based on your task.
           </div>
         </div>
-        <Button className="text-sm">Open Decision Tree -&gt;</Button>
+        <Button className="text-sm" onClick={() => window.open("https://tatwan.github.io/fm_evaluation_metrics.html", "_blank")}>
+          Open Decision Tree -&gt;
+        </Button>
       </div>
 
       <div>

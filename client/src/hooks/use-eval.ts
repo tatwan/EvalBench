@@ -55,12 +55,13 @@ export function useEvalStats(runId: number) {
 }
 
 export function useAllEvalResults() {
-  // Eval results are always scoped to a run — use useEvalResults(runId) instead.
-  // This stub keeps backwards compatibility without breaking compilation.
   return useQuery({
-    queryKey: ["/api/eval-runs"],
-    queryFn: async () => [],
-    enabled: false,
+    queryKey: [api.evalResults.list.path],
+    queryFn: async () => {
+      const res = await fetch(api.evalResults.list.path, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch eval results");
+      return api.evalResults.list.responses[200].parse(await res.json());
+    },
   });
 }
 

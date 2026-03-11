@@ -133,6 +133,9 @@ def get_eval_run(db: Session, run_id: int) -> db_models.EvalRun | None:
 def get_eval_results(db: Session, run_id: int) -> list[db_models.EvalResult]:
     return db.query(db_models.EvalResult).filter_by(run_id=run_id).all()
 
+def get_all_eval_results(db: Session) -> list[db_models.EvalResult]:
+    return db.query(db_models.EvalResult).all()
+
 
 def save_eval_result(
     db: Session,

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from backend import models as db_models
 from backend.services import storage, ollama as ollama_svc
-from backend.scoring import rouge, bleu, meteor, exact_match, distinct, speed
+from backend.scoring import rouge, bleu, meteor, exact_match, distinct, speed, embeddings
 from backend.scoring.llm_judge import evaluate_with_llm
 from backend.database import SessionLocal
 
@@ -35,6 +35,8 @@ TASK_METRICS: dict[str, list[str]] = {
     "translation":   ["bleu", "chrf", "meteor"],
     "code":          ["rouge1", "distinct1"],  # Pass@k in Phase 3
     "reasoning":     ["exact_match", "f1"],
+    "knowledge":     ["exact_match", "f1", "llm_relevance"],
+    "embedding":     [],
 }
 
 
@@ -47,7 +49,7 @@ def _score(task_type: str, prediction: str, reference: str, ollama_resp: dict) -
         scores.update(rouge.compute(prediction, reference))
         scores.update(meteor.compute(prediction, reference))
 
-    if tt == "qa" or tt == "reasoning":
+    if tt in ("qa", "reasoning", "knowledge"):
         scores.update(exact_match.compute(prediction, reference))
         scores.update(rouge.compute(prediction, reference))
 
@@ -98,6 +100,7 @@ async def run_eval(run_id: int) -> None:
     db: Session = SessionLocal()
     q = get_or_create_queue(run_id)
 
+    start_time: datetime | None = None
     try:
         run = db.query(db_models.EvalRun).filter_by(id=run_id).first()
         if not run:
@@ -109,6 +112,8 @@ async def run_eval(run_id: int) -> None:
         dataset_id: int | None = config.get("datasetId")
 
         # ── update status ──
+        start_time = datetime.utcnow()
+        run.timestamp = start_time
         run.status = "running"
         db.commit()
 
@@ -125,8 +130,14 @@ async def run_eval(run_id: int) -> None:
                 .all()
             )
         else:
-            # Default: first matching task-type dataset
-            ds = db.query(db_models.GoldenDataset).first()
+            # Default: first dataset that roughly matches task type
+            ds = (
+                db.query(db_models.GoldenDataset)
+                .filter(db_models.GoldenDataset.name.ilike(f"%{task_type}%"))
+                .first()
+            )
+            if not ds:
+                ds = db.query(db_models.GoldenDataset).first()
             items = (
                 db.query(db_models.GoldenItem).filter_by(dataset_id=ds.id).all()
                 if ds
@@ -142,38 +153,77 @@ async def run_eval(run_id: int) -> None:
         for model in models:
             for item in items:
                 try:
-                    result = await ollama_svc.generate(model.name, item.input)
-                    prediction = result.get("response", "") if result["ok"] else ""
+                    if task_type == "embedding":
+                        context = json.loads(item.context or "{}") if item.context else {}
+                        candidates = context.get("candidates", [])
+                        answer_index = context.get("answer_index", 0)
 
-                    item_scores = _score(task_type, prediction, item.expected_output, result)
+                        query_res = await ollama_svc.embed(model.name, item.input)
+                        if not query_res["ok"]:
+                            raise RuntimeError(query_res.get("error", "Embedding failed"))
 
-                    # Save traditional metrics
-                    for metric_name, score_value in item_scores.items():
-                        storage.save_eval_result(
-                            db,
-                            run_id=run_id,
-                            model_id=model.id,
-                            metric_name=metric_name,
-                            score=float(score_value),
-                            raw_output=prediction[:2000],
-                            item_id=item.id,
-                        )
+                        candidate_vecs = []
+                        for cand in candidates:
+                            cand_res = await ollama_svc.embed(model.name, cand)
+                            if not cand_res["ok"]:
+                                raise RuntimeError(cand_res.get("error", "Embedding failed"))
+                            candidate_vecs.append(cand_res.get("embedding", []))
 
-                    # Run and save LLM-as-Judge metrics
-                    llm_metrics = _get_llm_metrics_for_task(task_type)
-                    for metric_name in llm_metrics:
-                        llm_score, rationale = evaluate_with_llm(db, metric_name, item.input, prediction)
-                        # Save the score and embed the rationale in the raw_output field for now
-                        formatted_output = f"{prediction[:1500]}\n\n--- Judge Rationale ---\n{rationale}"
-                        storage.save_eval_result(
-                            db,
-                            run_id=run_id,
-                            model_id=model.id,
-                            metric_name=metric_name,
-                            score=float(llm_score),
-                            raw_output=formatted_output,
-                            item_id=item.id,
-                        )
+                        query_vec = query_res.get("embedding", [])
+                        item_scores = embeddings.compute_embedding_metrics(query_vec, candidate_vecs, answer_index)
+
+                        ranked, sims = embeddings.rank_by_similarity(query_vec, candidate_vecs)
+                        top_idx = ranked[0] if ranked else None
+                        top_match = candidates[top_idx] if top_idx is not None and top_idx < len(candidates) else None
+                        raw_output = json.dumps({
+                            "top_match": top_match,
+                            "top_similarity": sims[top_idx] if top_idx is not None else None,
+                            "ranked_indices": ranked,
+                        })
+
+                        for metric_name, score_value in item_scores.items():
+                            storage.save_eval_result(
+                                db,
+                                run_id=run_id,
+                                model_id=model.id,
+                                metric_name=metric_name,
+                                score=float(score_value),
+                                raw_output=raw_output[:2000],
+                                item_id=item.id,
+                            )
+                    else:
+                        result = await ollama_svc.generate(model.name, item.input)
+                        prediction = result.get("response", "") if result["ok"] else ""
+
+                        item_scores = _score(task_type, prediction, item.expected_output, result)
+
+                        # Save traditional metrics
+                        for metric_name, score_value in item_scores.items():
+                            storage.save_eval_result(
+                                db,
+                                run_id=run_id,
+                                model_id=model.id,
+                                metric_name=metric_name,
+                                score=float(score_value),
+                                raw_output=prediction[:2000],
+                                item_id=item.id,
+                            )
+
+                        # Run and save LLM-as-Judge metrics
+                        llm_metrics = _get_llm_metrics_for_task(task_type)
+                        for metric_name in llm_metrics:
+                            llm_score, rationale = evaluate_with_llm(db, metric_name, item.input, prediction)
+                            # Save the score and embed the rationale in the raw_output field for now
+                            formatted_output = f"{prediction[:1500]}\n\n--- Judge Rationale ---\n{rationale}"
+                            storage.save_eval_result(
+                                db,
+                                run_id=run_id,
+                                model_id=model.id,
+                                metric_name=metric_name,
+                                score=float(llm_score),
+                                raw_output=formatted_output,
+                                item_id=item.id,
+                            )
 
                 except Exception as e:
                     await q.put({"type": "error", "message": str(e), "done": False})
@@ -189,6 +239,10 @@ async def run_eval(run_id: int) -> None:
                     "done": False,
                 })
 
+        duration_seconds = (datetime.utcnow() - (start_time or datetime.utcnow())).total_seconds()
+        updated_config = dict(config)
+        updated_config["durationSeconds"] = round(duration_seconds, 2)
+        run.config_json = updated_config
         run.status = "completed"
         db.commit()
         await q.put({"type": "done", "status": "completed", "done": True})
@@ -197,6 +251,12 @@ async def run_eval(run_id: int) -> None:
         try:
             run = db.query(db_models.EvalRun).filter_by(id=run_id).first()
             if run:
+                config = run.config_json or {}
+                if start_time:
+                    duration_seconds = (datetime.utcnow() - start_time).total_seconds()
+                    updated_config = dict(config)
+                    updated_config["durationSeconds"] = round(duration_seconds, 2)
+                    run.config_json = updated_config
                 run.status = "failed"
                 db.commit()
         except Exception:

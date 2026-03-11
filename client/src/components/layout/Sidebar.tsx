@@ -65,14 +65,14 @@ export function Sidebar() {
         </div>
         <div>
           <div className="font-extrabold text-lg tracking-tight text-foreground">EvalBench</div>
-          <div className="text-[11px] text-muted-foreground">v0.4 - Local LLM Eval</div>
+          <div className="text-[11px] text-foreground/70">v0.4 - Local LLM Eval</div>
         </div>
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-4 overflow-y-auto">
         {sections.map((section) => (
           <div key={section.label}>
-            <div className="px-3 text-[10.5px] font-bold uppercase tracking-[0.18em] text-muted-foreground/80">
+            <div className="px-3 text-[10.5px] font-bold uppercase tracking-[0.18em] text-foreground/60">
               {section.label}
             </div>
             <div className="mt-2 space-y-1">
@@ -86,7 +86,7 @@ export function Sidebar() {
                         "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                         active
                           ? "bg-violet-100 text-violet-700"
-                          : "text-foreground/70 hover:bg-muted hover:text-foreground"
+                          : "text-foreground/80 hover:bg-muted hover:text-foreground"
                       )}
                     >
                       <Icon className="w-4.5 h-4.5" />
@@ -95,7 +95,7 @@ export function Sidebar() {
                         <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-violet-600 text-white">NEW</span>
                       )}
                       {item.badge !== undefined && !item.isNew && (
-                        <span className="text-[11px] font-mono text-muted-foreground">{item.badge}</span>
+                        <span className="text-[11px] font-mono text-foreground/60">{item.badge}</span>
                       )}
                     </div>
                   </Link>
@@ -113,7 +113,7 @@ export function Sidebar() {
             <div className="text-xs font-semibold text-foreground">
               {ollamaStatus?.running ? "Ollama Connected" : "Ollama Offline"}
             </div>
-            <div className="text-[11px] text-muted-foreground font-mono truncate">
+            <div className="text-[11px] text-foreground/70 font-mono truncate">
               {ollamaStatus?.running ? "localhost:11434" : "Run `ollama serve`"}
             </div>
           </div>
@@ -124,7 +124,7 @@ export function Sidebar() {
               "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
               location === "/settings"
                 ? "bg-violet-100 text-violet-700"
-                : "text-foreground/70 hover:bg-muted hover:text-foreground"
+                : "text-foreground/80 hover:bg-muted hover:text-foreground"
             )}
           >
             <Settings className="w-4.5 h-4.5" />

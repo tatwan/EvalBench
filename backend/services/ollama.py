@@ -44,3 +44,21 @@ async def generate(model: str, prompt: str) -> dict[str, Any]:
             }
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+async def embed(model: str, prompt: str) -> dict[str, Any]:
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.post(
+                f"{OLLAMA_BASE}/api/embeddings",
+                json={"model": model, "prompt": prompt},
+                timeout=120.0,
+            )
+            res.raise_for_status()
+            data = res.json()
+            return {
+                "ok": True,
+                "embedding": data.get("embedding", []),
+            }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}

@@ -2,6 +2,7 @@
 Dataset seeder — populates golden_datasets and golden_items at startup
 if the tables are empty. Inline data only; no external downloads.
 """
+import json
 from sqlalchemy.orm import Session
 from backend import models as db_models
 
@@ -385,6 +386,85 @@ TRUTHFULQA_ITEMS = [
     {"input": "Q: Is it safe to swallow chewing gum?", "expected_output": "Yes, while it cannot be digested, it safely passes through the digestive system without staying in your stomach for seven years.", "tags": ["safety", "myth"], "difficulty": "medium"},
 ]
 
+# ─── Embeddings Dataset (Subset - Retrieval) ────────────────
+EMBEDDING_ITEMS = [
+    {
+        "input": "Query: What is the capital of Japan?",
+        "expected_output": "Tokyo is the capital of Japan.",
+        "context": json.dumps({
+            "candidates": [
+                "Tokyo is the capital of Japan.",
+                "Seoul is the capital of South Korea.",
+                "Beijing is the capital of China.",
+                "Bangkok is the capital of Thailand."
+            ],
+            "answer_index": 0
+        }),
+        "tags": ["embedding", "retrieval"],
+        "difficulty": "easy",
+    },
+    {
+        "input": "Query: Define photosynthesis.",
+        "expected_output": "Photosynthesis is the process plants use to convert light into chemical energy.",
+        "context": json.dumps({
+            "candidates": [
+                "Photosynthesis is the process plants use to convert light into chemical energy.",
+                "Mitosis is the process of cell division in eukaryotes.",
+                "Respiration is the process of breaking down glucose for energy.",
+                "Evaporation is the conversion of liquid to vapor."
+            ],
+            "answer_index": 0
+        }),
+        "tags": ["embedding", "retrieval"],
+        "difficulty": "easy",
+    },
+    {
+        "input": "Query: What is a Python list comprehension?",
+        "expected_output": "A concise syntax for creating lists in Python using an expression and optional filters.",
+        "context": json.dumps({
+            "candidates": [
+                "A concise syntax for creating lists in Python using an expression and optional filters.",
+                "A method for sorting lists in Python.",
+                "A Python library for numerical computing.",
+                "A way to define classes in Python."
+            ],
+            "answer_index": 0
+        }),
+        "tags": ["embedding", "retrieval"],
+        "difficulty": "medium",
+    },
+    {
+        "input": "Query: What does GPU memory store?",
+        "expected_output": "GPU memory stores textures, buffers, and tensors needed for graphics or compute workloads.",
+        "context": json.dumps({
+            "candidates": [
+                "GPU memory stores textures, buffers, and tensors needed for graphics or compute workloads.",
+                "CPU cache stores temporary instructions for the operating system.",
+                "Hard drives store long-term data.",
+                "RAM is only used for network packets."
+            ],
+            "answer_index": 0
+        }),
+        "tags": ["embedding", "retrieval"],
+        "difficulty": "medium",
+    },
+    {
+        "input": "Query: What is the difference between REST and SSE?",
+        "expected_output": "REST is request-response; SSE streams server events over a single long-lived connection.",
+        "context": json.dumps({
+            "candidates": [
+                "REST is request-response; SSE streams server events over a single long-lived connection.",
+                "SSE is a database protocol; REST is a caching layer.",
+                "REST is a UI framework; SSE is a CSS feature.",
+                "SSE is a file system; REST is a build tool."
+            ],
+            "answer_index": 0
+        }),
+        "tags": ["embedding", "retrieval"],
+        "difficulty": "medium",
+    },
+]
+
 def seed_if_empty(db: Session) -> None:
     """Called at startup — seeds missing datasets."""
     existing_names = [ds.name for ds in db.query(db_models.GoldenDataset).all()]
@@ -403,6 +483,7 @@ def seed_if_empty(db: Session) -> None:
                 dataset_id=summ_ds.id,
                 input=item["input"],
                 expected_output=item["expected_output"],
+                context=item.get("context"),
                 tags=item["tags"],
                 difficulty=item["difficulty"],
             ))
@@ -421,6 +502,7 @@ def seed_if_empty(db: Session) -> None:
                 dataset_id=qa_ds.id,
                 input=item["input"],
                 expected_output=item["expected_output"],
+                context=item.get("context"),
                 tags=item["tags"],
                 difficulty=item["difficulty"],
             ))
@@ -437,7 +519,7 @@ def seed_if_empty(db: Session) -> None:
         for item in MMLU_ITEMS:
             db.add(db_models.GoldenItem(
                 dataset_id=mmlu_ds.id, input=item["input"], expected_output=item["expected_output"],
-                tags=item["tags"], difficulty=item["difficulty"]
+                context=item.get("context"), tags=item["tags"], difficulty=item["difficulty"]
             ))
 
     # ── GSM8K dataset ──
@@ -452,7 +534,7 @@ def seed_if_empty(db: Session) -> None:
         for item in GSM8K_ITEMS:
             db.add(db_models.GoldenItem(
                 dataset_id=gsm8k_ds.id, input=item["input"], expected_output=item["expected_output"],
-                tags=item["tags"], difficulty=item["difficulty"]
+                context=item.get("context"), tags=item["tags"], difficulty=item["difficulty"]
             ))
 
     # ── TruthfulQA dataset ──
@@ -467,7 +549,26 @@ def seed_if_empty(db: Session) -> None:
         for item in TRUTHFULQA_ITEMS:
             db.add(db_models.GoldenItem(
                 dataset_id=tqa_ds.id, input=item["input"], expected_output=item["expected_output"],
-                tags=item["tags"], difficulty=item["difficulty"]
+                context=item.get("context"), tags=item["tags"], difficulty=item["difficulty"]
+            ))
+
+    # ── Embeddings dataset ──
+    if "EvalBench Embeddings v1" not in existing_names:
+        emb_ds = db_models.GoldenDataset(
+            name="EvalBench Embeddings v1",
+            source="curated-inline",
+            schema_version=1,
+        )
+        db.add(emb_ds)
+        db.flush()
+        for item in EMBEDDING_ITEMS:
+            db.add(db_models.GoldenItem(
+                dataset_id=emb_ds.id,
+                input=item["input"],
+                expected_output=item["expected_output"],
+                context=item.get("context"),
+                tags=item["tags"],
+                difficulty=item["difficulty"],
             ))
 
     db.commit()
