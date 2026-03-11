@@ -22,8 +22,14 @@ class EvalRun(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     timestamp = Column(FlexibleDateTime, default=datetime.utcnow)
-    config_json = Column(JSON, nullable=False)
-    status = Column(String, nullable=False)
+    status = Column(String(50), default="pending")  # pending, running, completed, failed
+    config_json = Column(JSON, nullable=True)  # Store criteria, taskType, etc.
+
+
+class Setting(Base):
+    __tablename__ = "settings"
+    key = Column(String(100), primary_key=True, index=True)
+    value = Column(String(1000), nullable=True)
 
 
 class EvalResult(Base):

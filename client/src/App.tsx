@@ -8,9 +8,13 @@ import { AppLayout } from "@/components/layout/AppLayout";
 
 // Pages
 import Dashboard from "@/pages/Dashboard";
+import RunHistory from "@/pages/RunHistory";
 import Models from "@/pages/Models";
+import CompareModels from "@/pages/CompareModels";
 import EvalWizard from "@/pages/EvalWizard";
 import RunDetails from "@/pages/RunDetails";
+import Learn from "@/pages/Learn";
+import Settings from "@/pages/Settings";
 import Arena from "@/pages/Arena";
 import ArenaLeaderboard from "@/pages/ArenaLeaderboard";
 
@@ -19,14 +23,18 @@ function Router() {
     <AppLayout>
       <Switch>
         <Route path="/" component={Dashboard}/>
+        <Route path="/history" component={RunHistory}/>
         <Route path="/models" component={Models}/>
+        <Route path="/compare" component={CompareModels}/>
         <Route path="/evaluate" component={EvalWizard}/>
         <Route path="/evaluate/:id" component={RunDetails}/>
+        <Route path="/learn" component={Learn}/>
+        <Route path="/settings" component={Settings} />
         <Route path="/arena" component={Arena}/>
         <Route path="/leaderboard" component={ArenaLeaderboard}/>
         {/* Placeholder for datasets page */}
         <Route path="/datasets">
-          <div className="flex flex-col items-center justify-center h-64 text-muted-foreground border-2 border-dashed border-white/10 rounded-2xl">
+          <div className="flex flex-col items-center justify-center h-64 text-muted-foreground border-2 border-dashed border-border rounded-2xl bg-muted/40">
             <h2 className="text-xl font-bold mb-2 text-foreground">Datasets coming soon</h2>
             <p>Golden dataset management is planned for v0.2</p>
           </div>

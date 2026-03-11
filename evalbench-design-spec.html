@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EvalBench Design Specification</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --violet: #7C3AED; --violet-light: #EDE9FE; --violet-dark: #5B21B6;
+      --amber: #D97706; --amber-light: #FEF3C7;
+      --emerald: #059669; --emerald-light: #D1FAE5;
+      --rose: #DC2626; --rose-light: #FEE2E2;
+      --sky: #0284C7;
+      --bg: #FAFAF9; --surface: #FFFFFF;
+      --muted: #F5F5F4; --subtle: #EFEDE9;
+      --t1: #1C1917; --t2: #57534E; --t3: #A8A29E;
+      --border: #E7E5E4; --border2: #D6D3D1;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg); color: var(--t1); line-height: 1.65; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .container { max-width: 860px; margin: 0 auto; padding: 48px 32px; }
+
+    h1 { font-size: 36px; font-weight: 800; margin-bottom: 8px; }
+    h2 { font-size: 22px; font-weight: 800; margin: 40px 0 12px; color: var(--t1); }
+    h3 { font-size: 16px; font-weight: 700; margin: 24px 0 8px; color: var(--t1); }
+    p { font-size: 14.5px; color: var(--t2); margin-bottom: 12px; }
+    ul, ol { padding-left: 20px; margin-bottom: 12px; }
+    li { font-size: 14.5px; color: var(--t2); margin-bottom: 5px; }
+
+    .divider { border: none; border-top: 1.5px solid var(--border); margin: 40px 0; }
+
+    .hero { background: linear-gradient(135deg, var(--violet-light), #E0F2FE); border-radius: 16px; padding: 32px 36px; margin-bottom: 40px; }
+    .hero h1 { background: linear-gradient(135deg, var(--violet), var(--sky)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 14px; }
+    .card-accent { border-left: 4px solid var(--violet); }
+
+    .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; }
+    .tag-v { background: var(--violet-light); color: var(--violet); }
+    .tag-g { background: var(--emerald-light); color: var(--emerald); }
+    .tag-a { background: var(--amber-light); color: var(--amber); }
+    .tag-r { background: var(--rose-light); color: var(--rose); }
+    .tag-b { background: #DBEAFE; color: #1D4ED8; }
+
+    .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
+    .before-card { background: #FFF7ED; border: 1.5px solid #FED7AA; border-radius: 12px; padding: 18px; }
+    .after-card { background: var(--emerald-light); border: 1.5px solid #6EE7B7; border-radius: 12px; padding: 18px; }
+    .before-card h4 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--amber); margin-bottom: 10px; }
+    .after-card h4 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--emerald); margin-bottom: 10px; }
+    .before-card li, .before-card p { color: #92400E; font-size: 13.5px; }
+    .after-card li, .after-card p { color: #065F46; font-size: 13.5px; }
+
+    .color-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+    .color-swatch { border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+    .color-swatch .swatch { height: 56px; }
+    .color-swatch .info { padding: 8px 10px; background: white; }
+    .color-swatch .name { font-size: 12px; font-weight: 700; color: var(--t1); }
+    .color-swatch .hex { font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--t3); }
+
+    .type-sample { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; margin-bottom: 10px; }
+
+    .screen-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .screen-item { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+    .screen-item .icon { font-size: 22px; margin-bottom: 8px; }
+    .screen-item h4 { font-size: 14px; font-weight: 700; margin-bottom: 5px; }
+    .screen-item p { font-size: 12.5px; color: var(--t2); margin: 0; }
+
+    .principle { display: flex; gap: 14px; align-items: flex-start; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; }
+    .principle-icon { font-size: 24px; flex-shrink: 0; }
+    .principle h4 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+    .principle p { font-size: 13px; color: var(--t2); margin: 0; }
+
+    .code-block { background: #1C1917; color: #A8A29E; border-radius: 10px; padding: 16px 18px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.8; margin-bottom: 14px; overflow-x: auto; }
+    .code-block .key { color: #8B5CF6; }
+    .code-block .val { color: #10B981; }
+    .code-block .comment { color: #57534E; }
+
+    .phase-card { border: 1.5px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 12px; }
+    .phase-card.p1 { border-color: var(--violet); background: var(--violet-light); }
+    .phase-card.p2 { border-color: #0284C7; background: #E0F2FE; }
+    .phase-card.p3 { border-color: var(--emerald); background: var(--emerald-light); }
+    .phase-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
+    .p1 .phase-badge { background: var(--violet); color: white; }
+    .p2 .phase-badge { background: var(--sky); color: white; }
+    .p3 .phase-badge { background: var(--emerald); color: white; }
+    .phase-card h4 { font-size: 15px; font-weight: 700; margin: 6px 0 4px; }
+    .phase-card p { font-size: 13px; margin: 0; }
+    .p1 p { color: #4C1D95; }
+    .p2 p { color: #0C4A6E; }
+    .p3 p { color: #065F46; }
+
+    @media print {
+      body { background: white; }
+      .container { padding: 24px; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <div style="width:48px;height:48px;background:linear-gradient(135deg,var(--violet),#8B5CF6);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;">⚗️</div>
+      <div>
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--violet);margin-bottom:2px;">Design Specification</div>
+        <h1>EvalBench Redesign</h1>
+      </div>
+    </div>
+    <p style="font-size:15px;color:#4C1D95;margin-bottom:14px;">A complete UI/UX overhaul shifting EvalBench from a cold dark dashboard to a warm, educational, and friendly evaluation workspace — one that teaches while it tests.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <span class="tag tag-v">v1.0 Concept</span>
+      <span class="tag tag-b">March 2026</span>
+      <span class="tag tag-g">Full Redesign</span>
+      <span class="tag tag-a">Educational Focus</span>
+    </div>
+  </div>
+
+  <!-- 1. Design Philosophy -->
+  <h2>1. Design Philosophy</h2>
+  <p>EvalBench has two kinds of users: practitioners who need reliable, fast evaluation tools, and learners (students, researchers) who are building intuition about what these metrics mean. The current design serves neither well — it's a cold UI shell with little educational scaffolding and a visual language that feels intimidating rather than inviting.</p>
+  <p>The redesign is built around a single principle: <strong>make evaluation feel like discovery, not busywork.</strong></p>
+
+  <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px;">
+    <div class="principle">
+      <div class="principle-icon">🔍</div>
+      <div>
+        <h4>Curiosity over Complexity</h4>
+        <p>Every screen should prompt "ooh, interesting!" not "what do I do here?" Use friendly copy, contextual hints, and educational callouts throughout — not just in a dedicated Learn tab.</p>
+      </div>
+    </div>
+    <div class="principle">
+      <div class="principle-icon">📖</div>
+      <div>
+        <h4>Numbers Need Context</h4>
+        <p>A ROUGE-L score of 0.412 means nothing to a new user. Every metric in the interface should carry a hint of what it means — "0.412 (Excellent for 8B models)" — anchoring the number to reality.</p>
+      </div>
+    </div>
+    <div class="principle">
+      <div class="principle-icon">🎓</div>
+      <div>
+        <h4>Learn While You Work</h4>
+        <p>The educational layer is not a tab you visit once. It's woven into the Eval Wizard ("Why ROUGE?"), the leaderboard (CI tooltips), and the Arena (ELO explanation). You absorb the curriculum by using the product.</p>
+      </div>
+    </div>
+    <div class="principle">
+      <div class="principle-icon">☀️</div>
+      <div>
+        <h4>Warm, Not Cold</h4>
+        <p>The current blue-gray dark mode signals "hacker terminal." The redesign uses a warm off-white light mode — like a well-designed research notebook. Accessible, inviting, and credible without being sterile.</p>
+      </div>
+    </div>
+    <div class="principle">
+      <div class="principle-icon">🎯</div>
+      <div>
+        <h4>Progressive Disclosure</h4>
+        <p>Start simple: the Eval Wizard presents 6 task cards. Advanced options (custom datasets, CI settings, judge configuration) are available but not visible until needed. Experts find depth; beginners find clarity.</p>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- 2. The Big Shift -->
+  <h2>2. Before vs. After</h2>
+  <p>Here's what changes at a high level:</p>
+
+  <div class="compare-grid">
+    <div class="before-card">
+      <h4>❌ Current Design</h4>
+      <ul>
+        <li>Cold dark blue-gray (#224 71% 4%)</li>
+        <li>Sky blue primary — feels corporate/SaaS</li>
+        <li>Flat nav list — no grouping or hierarchy</li>
+        <li>Glassmorphism cards — stylistic but low information density</li>
+        <li>No educational layer in the UI flow</li>
+        <li>Metrics shown as bare numbers with no context</li>
+        <li>Arena feels like a demo placeholder</li>
+        <li>Dashboard is a chart dump with no narrative</li>
+      </ul>
+    </div>
+    <div class="after-card">
+      <h4>✅ Redesign</h4>
+      <ul>
+        <li>Warm off-white (#FAFAF9) — approachable, like a research notebook</li>
+        <li>Violet primary (#7C3AED) — academic, smart, inviting</li>
+        <li>Grouped nav: Evaluate / Analyze / Learn — clear mental model</li>
+        <li>Clean white cards with subtle shadows — information-forward</li>
+        <li>Inline educational tooltips, "Why this metric?" links, edu panels</li>
+        <li>Score badges with color grades (Excellent/Good/Fair/Poor)</li>
+        <li>Arena as a real battle — dramatic split, satisfying vote buttons</li>
+        <li>Dashboard tells a story: stat cards → leaderboard → radar → activity</li>
+      </ul>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- 3. Design System -->
+  <h2>3. Design System</h2>
+
+  <h3>Color Palette</h3>
+  <p>The palette shifts from cold blue-gray to warm neutrals with violet as the brand anchor. Violet communicates intelligence and education without the coldness of blue.</p>
+
+  <div class="color-grid">
+    <div class="color-swatch">
+      <div class="swatch" style="background:#FAFAF9;border-bottom:1px solid #E7E5E4;"></div>
+      <div class="info"><div class="name">Background</div><div class="hex">#FAFAF9</div></div>
+    </div>
+    <div class="color-swatch">
+      <div class="swatch" style="background:#7C3AED;"></div>
+      <div class="info"><div class="name">Brand Violet</div><div class="hex">#7C3AED</div></div>
+    </div>
+    <div class="color-swatch">
+      <div class="swatch" style="background:#059669;"></div>
+      <div class="info"><div class="name">Success</div><div class="hex">#059669</div></div>
+    </div>
+    <div class="color-swatch">
+      <div class="swatch" style="background:#D97706;"></div>
+      <div class="info"><div class="name">Warning / Amber</div><div class="hex">#D97706</div></div>
+    </div>
+    <div class="color-swatch">
+      <div class="swatch" style="background:#DC2626;"></div>
+      <div class="info"><div class="name">Danger</div><div class="hex">#DC2626</div></div>
+    </div>
+    <div class="color-swatch">
+      <div class="swatch" style="background:#1C1917;"></div>
+      <div class="info"><div class="name">Text Primary</div><div class="hex">#1C1917</div></div>
+    </div>
+    <div class="color-swatch">
+      <div class="swatch" style="background:#57534E;"></div>
+      <div class="info"><div class="name">Text Secondary</div><div class="hex">#57534E</div></div>
+    </div>
+    <div class="color-swatch">
+      <div class="swatch" style="background:#E7E5E4;"></div>
+      <div class="info"><div class="name">Border</div><div class="hex">#E7E5E4</div></div>
+    </div>
+  </div>
+
+  <h3>Score Grading System</h3>
+  <p>Every numeric score gets a color-coded grade badge so users immediately understand quality without needing domain expertise:</p>
+  <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;">
+      <span style="background:var(--emerald-light);color:var(--emerald);font-size:12px;font-weight:700;padding:3px 9px;border-radius:6px;font-family:'JetBrains Mono',monospace;">0.412</span>
+      <span style="font-size:12.5px;color:var(--t2);">Excellent (≥ 0.40)</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;">
+      <span style="background:#DBEAFE;color:#1D4ED8;font-size:12px;font-weight:700;padding:3px 9px;border-radius:6px;font-family:'JetBrains Mono',monospace;">0.312</span>
+      <span style="font-size:12.5px;color:var(--t2);">Good (0.30 – 0.39)</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;">
+      <span style="background:var(--amber-light);color:var(--amber);font-size:12px;font-weight:700;padding:3px 9px;border-radius:6px;font-family:'JetBrains Mono',monospace;">0.214</span>
+      <span style="font-size:12.5px;color:var(--t2);">Fair (0.20 – 0.29)</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;">
+      <span style="background:var(--rose-light);color:var(--rose);font-size:12px;font-weight:700;padding:3px 9px;border-radius:6px;font-family:'JetBrains Mono',monospace;">0.091</span>
+      <span style="font-size:12.5px;color:var(--t2);">Poor (< 0.20)</span>
+    </div>
+  </div>
+  <p style="font-size:13px;color:var(--t3);font-style:italic;">Note: Grade thresholds should be per-metric. A BLEU of 0.30 is excellent for general text but mediocre for MT. Future phase: context-aware grading per metric + task type.</p>
+
+  <h3>Typography</h3>
+  <div class="type-sample">
+    <div style="font-size:28px;font-weight:800;margin-bottom:4px;">Page Titles (800, 22-28px)</div>
+    <div style="font-size:17px;font-weight:700;color:var(--t2);margin-bottom:4px;">Section Headings (700, 16-18px)</div>
+    <div style="font-size:14.5px;color:var(--t2);margin-bottom:8px;">Body text: Plus Jakarta Sans Regular, 14-14.5px, color #57534E for secondary information and descriptions across all pages.</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;background:var(--muted);padding:6px 10px;border-radius:6px;color:var(--violet);">Monospace (JetBrains Mono): All metric values, model names, latency, token counts</div>
+  </div>
+  <p><strong>Key rule:</strong> All numeric scores, model identifiers, and code use JetBrains Mono. Human-readable labels, descriptions, and navigation use Plus Jakarta Sans. This dual-font system instantly communicates "this is a data value, that is a label."</p>
+
+  <hr class="divider">
+
+  <!-- 4. Navigation -->
+  <h2>4. Navigation Architecture</h2>
+  <p>The current navigation is a flat list of 10 items with no grouping. This is fine for 5 items but becomes cognitively expensive at scale. The redesign groups items into three logical categories that match how users think:</p>
+
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
+    <div class="card">
+      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:10px;">Evaluate</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <div style="display:flex;gap:8px;align-items:center;font-size:13.5px;"><span>📊</span><span>Dashboard</span></div>
+        <div style="display:flex;gap:8px;align-items:center;font-size:13.5px;"><span>🧪</span><span>Eval Wizard</span></div>
+        <div style="display:flex;gap:8px;align-items:center;font-size:13.5px;"><span>📋</span><span>Run History</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:10px;">Analyze</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <div style="display:flex;gap:8px;align-items:center;font-size:13.5px;"><span>🤖</span><span>Models</span></div>
+        <div style="display:flex;gap:8px;align-items:center;font-size:13.5px;"><span>⚔️</span><span>Arena</span></div>
+        <div style="display:flex;gap:8px;align-items:center;font-size:13.5px;"><span>🏆</span><span>Leaderboard</span></div>
+        <div style="display:flex;gap:8px;align-items:center;font-size:13.5px;"><span>📈</span><span>Compare</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:10px;">Learn</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <div style="display:flex;gap:8px;align-items:center;font-size:13.5px;"><span>📚</span><span>Metric Guide</span></div>
+        <div style="display:flex;gap:8px;align-items:center;font-size:13.5px;"><span>🗂️</span><span>Datasets</span></div>
+      </div>
+    </div>
+  </div>
+
+  <p>Additional navigation changes: a <strong>count badge</strong> on Models ("5") and Run History ("12") gives at-a-glance status. A persistent <strong>Ollama connection indicator</strong> lives at the bottom of the sidebar so connection status is always visible. The <strong>"New Eval" button</strong> is duplicated in both the sidebar (as a "NEW" badge on Eval Wizard) and the topbar for immediate access from any screen.</p>
+
+  <hr class="divider">
+
+  <!-- 5. Page Redesigns -->
+  <h2>5. Page-by-Page Redesign Notes</h2>
+
+  <div class="screen-list">
+
+    <div class="screen-item">
+      <div class="icon">📊</div>
+      <h4>Dashboard</h4>
+      <p>Restructured as a narrative: <strong>stats → leaderboard → capability radar → activity</strong>. Stat cards have color-coded icons and trend arrows. The leaderboard embeds inline score bars so rankings are scannable at a glance. An educational callout at the bottom catches new users. The radar chart moves to a right-column card rather than occupying the full width — it's supporting context, not the hero.</p>
+    </div>
+
+    <div class="screen-item">
+      <div class="icon">🧪</div>
+      <h4>Eval Wizard</h4>
+      <p>The biggest UX improvement. Step 1 (task type) is now 6 large illustrated cards with metric chips shown inline — so users understand the implication of their choice before proceeding. An auto-configured info panel explains the chosen dataset, sample count, metrics, and estimated run time. A "Why ROUGE?" link connects directly to the Metric Guide. Steps 2-4 follow the same pattern of showing consequences before commitment.</p>
+    </div>
+
+    <div class="screen-item">
+      <div class="icon">⏳</div>
+      <h4>Eval Running (Live Progress)</h4>
+      <p>Replaces a blank "running…" state with a rich feedback screen: overall progress bar with shimmer animation, per-model cards with live-updating scores (prefixed with ▸ to indicate partial), and a terminal-style live log in dark-on-dark for the raw output. Users can watch scores converge in real time — which is both useful and educational.</p>
+    </div>
+
+    <div class="screen-item">
+      <div class="icon">⚔️</div>
+      <h4>Arena</h4>
+      <p>Redesigned as a genuine "battle" with spatial drama. The prompt gets its own violet banner at the top. The two responses are in adjacent panels separated by a minimal "VS" divider. Vote buttons are large, color-coded (blue vs. pink), and have a satisfying hover animation (lift + shadow). The hint text below each button ("More precise & structured") gives voters a nudge when unsure.</p>
+    </div>
+
+    <div class="screen-item">
+      <div class="icon">🤖</div>
+      <h4>Models</h4>
+      <p>Tables replaced with 3-column card grid. Each card shows a colored model icon, params/size/speed in a mini stats tray, best metric score, Arena ELO, and task tags. Un-evaluated models get a dashed border and an empty state with a CTA. The card hover lifts slightly with a violet shadow — making the interface feel alive.</p>
+    </div>
+
+    <div class="screen-item">
+      <div class="icon">📚</div>
+      <h4>Metric Guide (Learn)</h4>
+      <p>Rebuilt around two entry points: (1) the decision tree for users who don't know what to use, and (2) browseable metric cards grouped by task type. Each metric card shows primary vs. secondary status, a plain-English description, and when to use it. All metric cards link to the Eval Wizard pre-configured for that task — turning the guide into an on-ramp to action.</p>
+    </div>
+
+  </div>
+
+  <hr class="divider">
+
+  <!-- 6. Educational Layer -->
+  <h2>6. The Educational Layer — Design Patterns</h2>
+  <p>This is EvalBench's key differentiator. The educational layer is not a separate mode or tab — it's woven into every interaction through these repeating patterns:</p>
+
+  <h3>Pattern 1: The "?" Tooltip Badge</h3>
+  <div class="card card-accent">
+    <p style="margin-bottom:8px;">Every column header in the leaderboard, every metric name in a results table, gets a small circular <strong style="font-family:'JetBrains Mono',monospace;">?</strong> badge. Hovering shows a one-sentence tooltip: <em>"ROUGE-L: Longest Common Subsequence F1 between generated and reference text. Higher is better, max 1.0."</em></p>
+    <p style="margin:0;font-size:13px;color:var(--t3);">Implementation: Shadcn Tooltip component on a small styled span. No library needed beyond what's already installed.</p>
+  </div>
+
+  <h3>Pattern 2: The Educational Callout Panel</h3>
+  <div class="card card-accent">
+    <p style="margin-bottom:8px;">A warm gradient panel (violet → light green) with a left border accent, used in two ways: as a <strong>welcome prompt</strong> on the dashboard ("New to LLM evaluation? Start with the Wizard…") and as a <strong>contextual explanation</strong> in the wizard ("Auto-configured for Summarization: here's what that means…").</p>
+    <p style="margin:0;font-size:13px;color:var(--t3);">CSS: <span class="mono" style="font-size:11.5px;background:var(--muted);padding:1px 5px;border-radius:3px;">background: linear-gradient(135deg, var(--violet-light), #F0FDF4)</span> with a <span class="mono" style="font-size:11.5px;background:var(--muted);padding:1px 5px;border-radius:3px;">border-left: 3px solid var(--violet)</span>.</p>
+  </div>
+
+  <h3>Pattern 3: Auto-Configured Feedback</h3>
+  <div class="card card-accent">
+    <p style="margin-bottom:8px;">In the Eval Wizard, immediately after the user selects a task type, a summary panel appears explaining: the dataset chosen, number of samples, metrics to be run, and estimated time. The user understands the full scope of what they're committing to before clicking "Continue."</p>
+    <p style="margin:0;font-size:13px;color:var(--t3);">This also reduces anxiety for new users — they're not clicking into the unknown.</p>
+  </div>
+
+  <h3>Pattern 4: "Why this metric?" Links</h3>
+  <div class="card card-accent">
+    <p style="margin-bottom:8px;">Wherever a metric is mentioned in the wizard context panel, a subtle underlined link — <em>"Why ROUGE? →"</em> — routes to the relevant section of the Metric Guide with that metric's card highlighted. This is the core of the "learn while you work" experience.</p>
+    <p style="margin:0;font-size:13px;color:var(--t3);">Implementation: Simple router navigation with a query param to pre-scroll: <span class="mono" style="font-size:11.5px;background:var(--muted);padding:1px 5px;border-radius:3px;">/learn?highlight=rouge-l</span></p>
+  </div>
+
+  <h3>Pattern 5: Score Grading + Context</h3>
+  <div class="card card-accent">
+    <p style="margin-bottom:8px;">Rather than showing a raw 0.412, scores display as colored badge + a context note. <strong>Phase 4 enhancement</strong>: hover a score to see a popover that says "0.412 is in the top 25% of ROUGE-L scores we've seen for 8B models on CNN/DailyMail." This turns every number into a lesson.</p>
+    <p style="margin:0;font-size:13px;color:var(--t3);">Requires baseline data to be stored per-dataset per-metric. Could be hardcoded initially, then computed from accumulated eval history.</p>
+  </div>
+
+  <hr class="divider">
+
+  <!-- 7. Component Changes -->
+  <h2>7. Key Component Changes</h2>
+
+  <h3>Replacing the Current CSS Variables</h3>
+  <p>The current <code>index.css</code> uses a cold HSL-based dark palette. The redesign replaces it with warm hex values. The variable names stay the same to minimize refactoring effort:</p>
+
+  <div class="code-block">
+<span class="comment">/* index.css — Replace existing CSS variables */</span>
+:root {
+  <span class="comment">/* Backgrounds (warm light mode) */</span>
+  <span class="key">--background</span>: <span class="val">#FAFAF9</span>;         <span class="comment">/* was: 224 71% 4% (dark) */</span>
+  <span class="key">--foreground</span>: <span class="val">#1C1917</span>;         <span class="comment">/* warm near-black */</span>
+  <span class="key">--card</span>: <span class="val">#FFFFFF</span>;
+  <span class="key">--card-foreground</span>: <span class="val">#1C1917</span>;
+  <span class="key">--muted</span>: <span class="val">#F5F5F4</span>;
+  <span class="key">--muted-foreground</span>: <span class="val">#A8A29E</span>;
+  <span class="key">--border</span>: <span class="val">#E7E5E4</span>;
+
+  <span class="comment">/* Brand (violet replaces sky blue) */</span>
+  <span class="key">--primary</span>: <span class="val">#7C3AED</span>;             <span class="comment">/* was: 199 89% 48% (sky blue) */</span>
+  <span class="key">--primary-foreground</span>: <span class="val">#FFFFFF</span>;
+  <span class="key">--ring</span>: <span class="val">#7C3AED</span>;
+
+  <span class="comment">/* Semantic colors */</span>
+  <span class="key">--destructive</span>: <span class="val">#DC2626</span>;
+  <span class="key">--accent</span>: <span class="val">#F5F5F4</span>;
+  <span class="key">--accent-foreground</span>: <span class="val">#1C1917</span>;
+}
+  </div>
+
+  <h3>Sidebar Refactor</h3>
+  <p>The sidebar changes from a glass-morphism dark component to a clean white sidebar with section labels. The active state changes from a glow effect to a solid violet-light background with violet text. Key structural additions: section label dividers, a count badge on models/history, and a "NEW" pill on the Eval Wizard link.</p>
+
+  <h3>Score Badge Component</h3>
+  <p>Add a new <code>ScoreBadge</code> component that accepts a value, metric type, and optionally renders the color grade:</p>
+  <div class="code-block">
+<span class="comment">// ScoreBadge.tsx — new component</span>
+<span class="key">function</span> getGrade(value: number, metric: string) {
+  <span class="comment">// ROUGE-L grade thresholds</span>
+  <span class="key">if</span> (metric === <span class="val">'rouge_l'</span>) {
+    <span class="key">if</span> (value >= 0.40) <span class="key">return</span> <span class="val">'excellent'</span>;
+    <span class="key">if</span> (value >= 0.30) <span class="key">return</span> <span class="val">'good'</span>;
+    <span class="key">if</span> (value >= 0.20) <span class="key">return</span> <span class="val">'fair'</span>;
+    <span class="key">return</span> <span class="val">'poor'</span>;
+  }
+  <span class="comment">// Percentage scores (accuracy, F1...)</span>
+  <span class="key">if</span> (value >= 0.70) <span class="key">return</span> <span class="val">'excellent'</span>;
+  <span class="key">if</span> (value >= 0.55) <span class="key">return</span> <span class="val">'good'</span>;
+  <span class="key">if</span> (value >= 0.40) <span class="key">return</span> <span class="val">'fair'</span>;
+  <span class="key">return</span> <span class="val">'poor'</span>;
+}
+  </div>
+
+  <hr class="divider">
+
+  <!-- 8. Implementation Roadmap -->
+  <h2>8. Implementation Roadmap</h2>
+  <p>These changes are ordered from highest impact / lowest risk to most invasive. All CSS changes are in <code>index.css</code> or <code>tailwind.config.ts</code>. Component changes are additive (new components or variants) before being substitutive.</p>
+
+  <div class="phase-card p1">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+      <span class="phase-badge">Phase A · 1–2 days</span>
+      <span style="font-size:11px;color:var(--violet);">CSS Only — Zero Risk</span>
+    </div>
+    <h4>Design System Token Swap</h4>
+    <p>Replace CSS variables in <code>index.css</code>: background to warm off-white, primary to violet, remove grid background pattern, update font weights. Update <code>tailwind.config.ts</code> color aliases. Result: entire app shifts to new palette without touching any component JSX.</p>
+  </div>
+
+  <div class="phase-card p1">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+      <span class="phase-badge">Phase A cont.</span>
+      <span style="font-size:11px;color:var(--violet);">Sidebar — Low Risk</span>
+    </div>
+    <h4>Sidebar Redesign</h4>
+    <p>Add section label dividers (EVALUATE / ANALYZE / LEARN), count badges on nav items, Ollama status widget at bottom, and "NEW" pill on Eval Wizard. The active state styling changes from the current glow to solid violet-light fill. All changes in <code>Sidebar.tsx</code>.</p>
+  </div>
+
+  <div class="phase-card p2">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+      <span class="phase-badge">Phase B · 3–5 days</span>
+      <span style="font-size:11px;color:#0C4A6E;">Component Additions — Medium Risk</span>
+    </div>
+    <h4>Score Badges + Educational Tooltips</h4>
+    <p>Add <code>ScoreBadge</code> component. Add <code>MetricTooltip</code> (the "?" badge). Replace raw score numbers in leaderboard, results table, and Run Details with <code>ScoreBadge</code>. Add <code>EduCallout</code> component (gradient panel with left border) to Dashboard and Wizard. No functional changes — purely presentational additions.</p>
+  </div>
+
+  <div class="phase-card p2">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+      <span class="phase-badge">Phase B cont.</span>
+      <span style="font-size:11px;color:#0C4A6E;">Models Page — Medium Risk</span>
+    </div>
+    <h4>Models Page: Table → Card Grid</h4>
+    <p>Replace the current <code>Models.tsx</code> table layout with the card grid design. Cards are richer (show ELO, best score, task tags, inline stats tray) but use the same data from the existing <code>use-models</code> hook. Add empty state card for non-evaluated models.</p>
+  </div>
+
+  <div class="phase-card p3">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+      <span class="phase-badge">Phase C · 1 week</span>
+      <span style="font-size:11px;color:#065F46;">Major Page Refactors</span>
+    </div>
+    <h4>Dashboard, Arena, and Eval Wizard Overhauls</h4>
+    <p>Full structural refactor of Dashboard (stat cards + leaderboard table + right-column layout), Arena (split panel + dramatic vote buttons + prompt banner), and Eval Wizard (illustrated task cards + auto-config panel + step labels). These are the highest-impact changes and require the most QA.</p>
+  </div>
+
+  <hr class="divider">
+
+  <!-- 9. Open Design Questions -->
+  <h2>9. Open Questions & Future Decisions</h2>
+
+  <div style="display:flex;flex-direction:column;gap:10px;">
+    <div class="card">
+      <h4 style="margin-bottom:4px;">Dark Mode Toggle</h4>
+      <p style="margin:0;font-size:13.5px;color:var(--t2);">The redesign commits to light mode as the default. Given EvalBench's developer audience, a dark mode toggle (already supported via <code>next-themes</code>) should be preserved. Recommend: implement a dark mode variant of the new warm palette using deep charcoal (#1C1917 inverted) rather than reverting to the old cold blue-gray.</p>
+    </div>
+    <div class="card">
+      <h4 style="margin-bottom:4px;">Score Grade Thresholds</h4>
+      <p style="margin:0;font-size:13.5px;color:var(--t2);">The current thresholds (Excellent ≥ 0.40 for ROUGE-L) are approximate. Final thresholds should be validated against published ROUGE baselines for CNN/DailyMail and SQuAD. Per-dataset, per-metric thresholds would be most accurate but require more data.</p>
+    </div>
+    <div class="card">
+      <h4 style="margin-bottom:4px;">Mobile / Responsive</h4>
+      <p style="margin:0;font-size:13.5px;color:var(--t2);">EvalBench is a local desktop tool, so mobile-first is not a priority. However, the sidebar should collapse to icons-only at viewport widths below 1100px, and cards should reflow from 3-col to 2-col to 1-col. The Arena split-panel layout needs a stacked alternative for narrow viewports.</p>
+    </div>
+    <div class="card">
+      <h4 style="margin-bottom:4px;">Animation & Motion</h4>
+      <p style="margin:0;font-size:13.5px;color:var(--t2);">The current app uses Framer Motion for page transitions. The redesign proposes a simpler approach: CSS <code>animation: fadeIn</code> for screen transitions and <code>transition: all 0.15s</code> for hover states. Framer Motion can be retained for the eval progress screen's shimmer and the model card's staggered entrance animation.</p>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Footer -->
+  <div style="text-align:center;padding:24px 0;color:var(--t3);font-size:13px;">
+    <div style="font-size:22px;margin-bottom:8px;">⚗️</div>
+    <strong style="color:var(--t2);">EvalBench Design Specification</strong><br>
+    Created March 2026 · See <code>evalbench-mockup.html</code> for interactive screens
+  </div>
+
+</div>
+</body>
+</html>

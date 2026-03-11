@@ -3,8 +3,10 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import asyncio
 import json
+from collections import defaultdict
 
 from backend.database import get_db
+from backend.scoring.stats import calculate_confidence_interval
 from backend.services import storage
 from backend.services.eval_runner import run_eval, stream_progress
 from backend.schemas import EvalRunOut, EvalRunCreate
@@ -95,3 +97,30 @@ async def get_eval_progress(run_id: int, db: Session = Depends(get_db)):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/{run_id}/stats")
+def get_eval_stats(run_id: int, db: Session = Depends(get_db)):
+    """
+    Returns aggregated stats (mean, 95% CI margin of error) grouped by model and metric.
+    """
+    from backend import models as db_models
+    results = db.query(db_models.EvalResult).filter(db_models.EvalResult.run_id == run_id).all()
+    
+    # Group by (model_id, metric_name)
+    grouped = defaultdict(list)
+    for r in results:
+        grouped[(r.model_id, r.metric_name)].append(r.score)
+        
+    stats_out = []
+    for (model_id, metric_name), scores in grouped.items():
+        mean, lower, upper, moe = calculate_confidence_interval(scores)
+        stats_out.append({
+            "modelId": model_id,
+            "metricName": metric_name,
+            "mean": mean,
+            "moe": moe,
+            "count": len(scores)
+        })
+        
+    return stats_out
