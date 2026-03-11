@@ -190,7 +190,11 @@ export default function ModelDetails() {
                 {modelRuns.slice(0, 8).map((run) => {
                   const datasetName = run.configJson?.datasetId ? datasetMap[run.configJson.datasetId]?.name : "None";
                   return (
-                    <tr key={run.id} className="hover:bg-muted/50">
+                    <tr
+                      key={run.id}
+                      className="hover:bg-muted/50 cursor-pointer"
+                      onClick={() => (window.location.href = `/evaluate/${run.id}`)}
+                    >
                       <td className="px-5 py-3 font-mono text-primary">#{run.id}</td>
                       <td className="px-5 py-3 capitalize">{run.configJson?.taskType ?? "-"}</td>
                       <td className="px-5 py-3 text-muted-foreground">{datasetName}</td>

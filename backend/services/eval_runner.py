@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from backend import models as db_models
 from backend.services import storage, ollama as ollama_svc
-from backend.scoring import rouge, bleu, meteor, exact_match, distinct, speed, embeddings
+from backend.scoring import rouge, bleu, meteor, exact_match, distinct, speed, embeddings, code_exec, bertscore
 from backend.scoring.llm_judge import evaluate_with_llm
 from backend.database import SessionLocal
 
@@ -29,7 +29,7 @@ _progress_queues: dict[int, asyncio.Queue] = {}
 # ─── Task-type → scorer mapping ─────────────────────────
 
 TASK_METRICS: dict[str, list[str]] = {
-    "summarization": ["rouge1", "rouge2", "rougeL", "llm_coherence", "llm_relevance"],
+    "summarization": ["rouge1", "rouge2", "rougeL", "bertscore_f1", "llm_coherence", "llm_relevance"],
     "qa":            ["exact_match", "f1", "llm_relevance"],
     "chat":          ["distinct1", "llm_fluency", "llm_coherence"],
     "translation":   ["bleu", "chrf", "meteor"],
@@ -48,6 +48,7 @@ def _score(task_type: str, prediction: str, reference: str, ollama_resp: dict) -
     if tt in ("summarization", "chat"):
         scores.update(rouge.compute(prediction, reference))
         scores.update(meteor.compute(prediction, reference))
+        scores.update(bertscore.compute_single(prediction, reference))
 
     if tt in ("qa", "reasoning", "knowledge"):
         scores.update(exact_match.compute(prediction, reference))
@@ -150,6 +151,7 @@ async def run_eval(run_id: int) -> None:
         await q.put({"type": "start", "total": total, "done": False})
 
         # ── evaluate ──
+        warned_bertscore = False
         for model in models:
             for item in items:
                 try:
@@ -192,10 +194,32 @@ async def run_eval(run_id: int) -> None:
                                 item_id=item.id,
                             )
                     else:
+                        # Warn on first BERTScore usage (model download)
+                        if task_type in ("summarization", "chat") and not warned_bertscore:
+                            await q.put({
+                                "type": "warning",
+                                "message": "BERTScore may download a large model on first use (~400MB).",
+                                "done": False,
+                            })
+                            warned_bertscore = True
+
                         result = await ollama_svc.generate(model.name, item.input)
                         prediction = result.get("response", "") if result["ok"] else ""
 
                         item_scores = _score(task_type, prediction, item.expected_output, result)
+
+                        # Code execution scoring (Pass@1) when tests exist
+                        if task_type == "code" and item.context:
+                            try:
+                                ctx = json.loads(item.context)
+                                tests = ctx.get("tests")
+                                if tests:
+                                    score, err = code_exec.pass_at_1(prediction, tests)
+                                    item_scores["pass_at_1"] = score
+                                    if err and score == 0.0:
+                                        prediction = f"{prediction}\n\n# Eval error: {err}"
+                            except Exception:
+                                pass
 
                         # Save traditional metrics
                         for metric_name, score_value in item_scores.items():

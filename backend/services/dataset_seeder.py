@@ -358,6 +358,94 @@ MMLU_ITEMS = [
     {"input": "Q: In music theory, the relative minor of G major is:\nA. A minor\nB. E minor\nC. D minor\nD. C minor\nAnswer:", "expected_output": "B", "tags": ["music"], "difficulty": "medium"},
 ]
 
+# ─── HellaSwag Dataset (Subset) ──────────────────────────
+HELLASWAG_ITEMS = [
+    {
+        "input": "Context: A woman opens the fridge and takes out a carton of milk. She pours it into a glass. What happens next?\nA. She puts the milk back and closes the fridge.\nB. She throws the glass into the trash.\nC. She drops the glass and breaks it.\nD. She turns off the kitchen light and leaves.\nAnswer with the letter only.",
+        "expected_output": "A",
+        "tags": ["commonsense", "hellaswag"],
+        "difficulty": "easy",
+    },
+    {
+        "input": "Context: A man is assembling a piece of furniture. He reads the instructions and uses a screwdriver. What is he likely doing?\nA. Fixing a flat tire.\nB. Installing a shelf.\nC. Painting a wall.\nD. Cooking dinner.\nAnswer with the letter only.",
+        "expected_output": "B",
+        "tags": ["commonsense", "hellaswag"],
+        "difficulty": "easy",
+    },
+    {
+        "input": "Context: A student walks into a classroom, sits down, and opens a notebook. The teacher begins to speak. What is the student likely doing?\nA. Taking notes.\nB. Driving a car.\nC. Washing dishes.\nD. Playing tennis.\nAnswer with the letter only.",
+        "expected_output": "A",
+        "tags": ["commonsense", "hellaswag"],
+        "difficulty": "easy",
+    },
+]
+
+# ─── ARC Dataset (Subset) ────────────────────────────────
+ARC_ITEMS = [
+    {
+        "input": "Q: Which object is the best conductor of electricity?\nA. Rubber band\nB. Plastic spoon\nC. Copper wire\nD. Wooden stick\nAnswer with the letter only.",
+        "expected_output": "C",
+        "tags": ["science", "arc"],
+        "difficulty": "easy",
+    },
+    {
+        "input": "Q: Which process changes liquid water into water vapor?\nA. Condensation\nB. Freezing\nC. Evaporation\nD. Melting\nAnswer with the letter only.",
+        "expected_output": "C",
+        "tags": ["science", "arc"],
+        "difficulty": "easy",
+    },
+    {
+        "input": "Q: What force pulls objects toward Earth?\nA. Magnetism\nB. Gravity\nC. Friction\nD. Electricity\nAnswer with the letter only.",
+        "expected_output": "B",
+        "tags": ["science", "arc"],
+        "difficulty": "easy",
+    },
+]
+
+# ─── BoolQ Dataset (Subset) ──────────────────────────────
+BOOLQ_ITEMS = [
+    {
+        "input": "Q: Can penguins fly? Context: Penguins are flightless birds adapted to swimming. Answer yes or no.",
+        "expected_output": "no",
+        "tags": ["boolq", "science"],
+        "difficulty": "easy",
+    },
+    {
+        "input": "Q: Is the Great Wall of China visible from space with the naked eye? Context: It is a common myth. Answer yes or no.",
+        "expected_output": "no",
+        "tags": ["boolq", "history"],
+        "difficulty": "easy",
+    },
+    {
+        "input": "Q: Does water boil at 100°C at sea level? Context: At standard atmospheric pressure, it does. Answer yes or no.",
+        "expected_output": "yes",
+        "tags": ["boolq", "science"],
+        "difficulty": "easy",
+    },
+]
+
+# ─── CommonsenseQA Dataset (Subset) ──────────────────────
+CSQA_ITEMS = [
+    {
+        "input": "Q: Where would you store a toothbrush?\nA. In a refrigerator\nB. In a bathroom cabinet\nC. In a toolbox\nD. In a shoe\nAnswer with the letter only.",
+        "expected_output": "B",
+        "tags": ["commonsense", "csqa"],
+        "difficulty": "easy",
+    },
+    {
+        "input": "Q: Which object is used to write on paper?\nA. Spoon\nB. Hammer\nC. Pen\nD. Plate\nAnswer with the letter only.",
+        "expected_output": "C",
+        "tags": ["commonsense", "csqa"],
+        "difficulty": "easy",
+    },
+    {
+        "input": "Q: Where would you find a steering wheel?\nA. Bicycle\nB. Car\nC. Desk\nD. Refrigerator\nAnswer with the letter only.",
+        "expected_output": "B",
+        "tags": ["commonsense", "csqa"],
+        "difficulty": "easy",
+    },
+]
+
 # ─── GSM8K Dataset (Subset - Math Reasoning) ────────────
 GSM8K_ITEMS = [
     {"input": "Q: Natalia sold clips to 48 of her friends in April, and then she sold half as many clips in May. How many clips did Natalia sell altogether?", "expected_output": "72", "tags": ["math", "reasoning"], "difficulty": "medium"},
@@ -465,6 +553,49 @@ EMBEDDING_ITEMS = [
     },
 ]
 
+# ─── HumanEval Dataset (Subset - Code) ────────────────────
+HUMANEVAL_ITEMS = [
+    {
+        "input": "Write a function `add(a, b)` that returns the sum of two integers.",
+        "expected_output": "Return a + b.",
+        "context": json.dumps({
+            "tests": (
+                "assert add(1, 2) == 3\n"
+                "assert add(-5, 5) == 0\n"
+                "assert add(10, 0) == 10\n"
+            )
+        }),
+        "tags": ["code", "humaneval"],
+        "difficulty": "easy",
+    },
+    {
+        "input": "Write a function `is_palindrome(s)` that returns True if the string is a palindrome.",
+        "expected_output": "Return True if s reads the same forwards and backwards.",
+        "context": json.dumps({
+            "tests": (
+                "assert is_palindrome('racecar') is True\n"
+                "assert is_palindrome('abba') is True\n"
+                "assert is_palindrome('hello') is False\n"
+            )
+        }),
+        "tags": ["code", "humaneval"],
+        "difficulty": "easy",
+    },
+    {
+        "input": "Write a function `factorial(n)` that returns n! for n >= 0.",
+        "expected_output": "Return factorial of n.",
+        "context": json.dumps({
+            "tests": (
+                "assert factorial(0) == 1\n"
+                "assert factorial(5) == 120\n"
+                "assert factorial(7) == 5040\n"
+            )
+        }),
+        "tags": ["code", "humaneval"],
+        "difficulty": "medium",
+    },
+]
+
 def seed_if_empty(db: Session) -> None:
     """Called at startup — seeds missing datasets."""
     existing_names = [ds.name for ds in db.query(db_models.GoldenDataset).all()]
@@ -522,6 +653,66 @@ def seed_if_empty(db: Session) -> None:
                 context=item.get("context"), tags=item["tags"], difficulty=item["difficulty"]
             ))
 
+    # ── HellaSwag dataset ──
+    if "EvalBench HellaSwag (Subset)" not in existing_names:
+        hs_ds = db_models.GoldenDataset(
+            name="EvalBench HellaSwag (Subset)",
+            source="curated-inline",
+            schema_version=1,
+        )
+        db.add(hs_ds)
+        db.flush()
+        for item in HELLASWAG_ITEMS:
+            db.add(db_models.GoldenItem(
+                dataset_id=hs_ds.id, input=item["input"], expected_output=item["expected_output"],
+                context=item.get("context"), tags=item["tags"], difficulty=item["difficulty"]
+            ))
+
+    # ── ARC dataset ──
+    if "EvalBench ARC (Subset)" not in existing_names:
+        arc_ds = db_models.GoldenDataset(
+            name="EvalBench ARC (Subset)",
+            source="curated-inline",
+            schema_version=1,
+        )
+        db.add(arc_ds)
+        db.flush()
+        for item in ARC_ITEMS:
+            db.add(db_models.GoldenItem(
+                dataset_id=arc_ds.id, input=item["input"], expected_output=item["expected_output"],
+                context=item.get("context"), tags=item["tags"], difficulty=item["difficulty"]
+            ))
+
+    # ── BoolQ dataset ──
+    if "EvalBench BoolQ (Subset)" not in existing_names:
+        bq_ds = db_models.GoldenDataset(
+            name="EvalBench BoolQ (Subset)",
+            source="curated-inline",
+            schema_version=1,
+        )
+        db.add(bq_ds)
+        db.flush()
+        for item in BOOLQ_ITEMS:
+            db.add(db_models.GoldenItem(
+                dataset_id=bq_ds.id, input=item["input"], expected_output=item["expected_output"],
+                context=item.get("context"), tags=item["tags"], difficulty=item["difficulty"]
+            ))
+
+    # ── CommonsenseQA dataset ──
+    if "EvalBench CommonsenseQA (Subset)" not in existing_names:
+        csqa_ds = db_models.GoldenDataset(
+            name="EvalBench CommonsenseQA (Subset)",
+            source="curated-inline",
+            schema_version=1,
+        )
+        db.add(csqa_ds)
+        db.flush()
+        for item in CSQA_ITEMS:
+            db.add(db_models.GoldenItem(
+                dataset_id=csqa_ds.id, input=item["input"], expected_output=item["expected_output"],
+                context=item.get("context"), tags=item["tags"], difficulty=item["difficulty"]
+            ))
+
     # ── GSM8K dataset ──
     if "EvalBench GSM8K (Subset)" not in existing_names:
         gsm8k_ds = db_models.GoldenDataset(
@@ -564,6 +755,25 @@ def seed_if_empty(db: Session) -> None:
         for item in EMBEDDING_ITEMS:
             db.add(db_models.GoldenItem(
                 dataset_id=emb_ds.id,
+                input=item["input"],
+                expected_output=item["expected_output"],
+                context=item.get("context"),
+                tags=item["tags"],
+                difficulty=item["difficulty"],
+            ))
+
+    # ── HumanEval dataset ──
+    if "EvalBench HumanEval (Subset)" not in existing_names:
+        code_ds = db_models.GoldenDataset(
+            name="EvalBench HumanEval (Subset)",
+            source="curated-inline",
+            schema_version=1,
+        )
+        db.add(code_ds)
+        db.flush()
+        for item in HUMANEVAL_ITEMS:
+            db.add(db_models.GoldenItem(
+                dataset_id=code_ds.id,
                 input=item["input"],
                 expected_output=item["expected_output"],
                 context=item.get("context"),

@@ -37,10 +37,12 @@ function metricLabel(name: string): string {
     meteor: "METEOR", bleu: "BLEU", chrf: "chrF",
     exact_match: "Exact Match", f1: "Token F1",
     distinct1: "Distinct-1", distinct2: "Distinct-2",
+    pass_at_1: "Pass@1", pass_at_10: "Pass@10",
     tokens_per_second: "Tokens/sec", total_latency_s: "Latency (s)",
     load_latency_s: "Load Time (s)", prompt_tokens: "Prompt Tokens",
     output_tokens: "Output Tokens",
     cosine_sim: "Cosine Sim", recall_at_1: "Recall@1", recall_at_3: "Recall@3", mrr: "MRR",
+    bertscore_f1: "BERTScore F1",
     llm_coherence: "LLM Coherence", llm_relevance: "LLM Relevance", 
     llm_fluency: "LLM Fluency",
   };
@@ -114,6 +116,9 @@ export default function RunDetails() {
       if (event.type === "progress") {
         setProgress({ completed: event.completed, total: event.total, percent: event.percent });
       }
+      if (event.type === "warning") {
+        setSseError(event.message);
+      }
       if (event.done) {
         es.close();
         refetchRun();
@@ -168,28 +173,86 @@ export default function RunDetails() {
     bestByMetric[metric] = lowerIsBetter ? Math.min(...values) : Math.max(...values);
   });
 
+  const downloadFile = (name: string, content: string, type: string) => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const formatStat = (metric: string, stat?: { mean: number; moe: number }) => {
+    if (!stat) return "";
+    const mean = formatScore(metric, stat.mean);
+    if (stat.moe > 0) {
+      const moe = formatScore(metric, stat.moe);
+      return `${mean} ± ${moe}`;
+    }
+    return mean;
+  };
+
+  const exportCsv = () => {
+    const headers = ["Model", ...allMetrics.map(metricLabel)];
+    const rows = modelIds.map((mid) => {
+      const modelName = modelMap[mid]?.name ?? `Model ${mid}`;
+      const values = allMetrics.map((metric) => {
+        const stat = grouped[mid]?.[metric];
+        return stat ? formatStat(metric, stat) : "";
+      });
+      return [modelName, ...values].map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",");
+    });
+    downloadFile(`evalbench-run-${run.id}.csv`, [headers.join(","), ...rows].join("\n"), "text/csv");
+  };
+
+  const exportMarkdown = () => {
+    const headers = ["Model", ...allMetrics.map(metricLabel)];
+    const separator = headers.map(() => "---");
+    const rows = modelIds.map((mid) => {
+      const modelName = modelMap[mid]?.name ?? `Model ${mid}`;
+      const values = allMetrics.map((metric) => {
+        const stat = grouped[mid]?.[metric];
+        return stat ? formatStat(metric, stat) : "-";
+      });
+      return [modelName, ...values].join(" | ");
+    });
+    const md = [
+      `| ${headers.join(" | ")} |`,
+      `| ${separator.join(" | ")} |`,
+      ...rows.map((r) => `| ${r} |`),
+    ].join("\n");
+    downloadFile(`evalbench-run-${run.id}.md`, md, "text/markdown");
+  };
+
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => window.location.href = "/"}>
-          <ArrowLeft className="w-5 h-5" />
-        </Button>
-        <div>
-          <h1 className="text-3xl font-bold">Run #{run.id}</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            {run.timestamp ? format(new Date(run.timestamp), "PPpp") : "Unknown time"} - Task: <span className="capitalize font-medium text-foreground">{taskType}</span>
-          </p>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => window.location.href = "/"}>
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold">Run #{run.id}</h1>
+            <p className="text-muted-foreground text-sm mt-1">
+              {run.timestamp ? format(new Date(run.timestamp), "PPpp") : "Unknown time"} - Task: <span className="capitalize font-medium text-foreground">{taskType}</span>
+            </p>
+          </div>
+          <span className={clsx(
+            "text-sm px-3 py-1 rounded-full font-semibold",
+            run.status === "completed" ? "bg-emerald-500/20 text-emerald-400" :
+            run.status === "running" ? "bg-amber-100 text-amber-700" :
+            "bg-muted text-muted-foreground"
+          )}>
+            {run.status === "running" ? <Loader2 className="w-3 h-3 mr-1 animate-spin inline" /> : null}
+            {run.status}
+          </span>
         </div>
-        <span className={clsx(
-          "text-sm px-3 py-1 rounded-full font-semibold",
-          run.status === "completed" ? "bg-emerald-500/20 text-emerald-400" :
-          run.status === "running" ? "bg-amber-100 text-amber-700" :
-          "bg-muted text-muted-foreground"
-        )}>
-          {run.status === "running" ? <Loader2 className="w-3 h-3 mr-1 animate-spin inline" /> : null}
-          {run.status}
-        </span>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={exportCsv}>Export CSV</Button>
+          <Button variant="outline" size="sm" onClick={exportMarkdown}>Export Markdown</Button>
+        </div>
       </div>
 
       {/* Live progress bar */}
