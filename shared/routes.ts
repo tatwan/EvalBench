@@ -158,6 +158,13 @@ export const api = {
       }
     }
   },
+  evalResults: {
+    list: {
+      method: 'GET' as const,
+      path: '/api/eval-results' as const,
+      responses: { 200: z.array(EvalResultSchema) },
+    }
+  },
   datasets: {
     list: {
       method: 'GET' as const,

@@ -34,6 +34,9 @@ evalbench.db
 evalbench.db-shm
 evalbench.db-wal
 
+# Local planning docs (keep private)
+docs/superpowers/plans/
+
 # Editor / IDEs
 .vscode/
 .idea/

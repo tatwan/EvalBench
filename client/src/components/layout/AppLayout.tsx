@@ -25,7 +25,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     (location.startsWith("/evaluate") ? "Eval Wizard" : "EvalBench");
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground overflow-hidden">
+    <div className="flex h-screen bg-background text-foreground overflow-hidden">
       <Sidebar />
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
         <header className="h-14 bg-card border-b border-border px-6 flex items-center justify-between sticky top-0 z-10">
@@ -45,9 +45,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <Link href="/evaluate">
               <Button size="sm" className="gap-2">+ New Eval</Button>
             </Link>
-            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-violet-400 text-white text-xs font-bold flex items-center justify-center">
-              T
-            </div>
           </div>
         </header>
         <main className="flex-1 overflow-y-auto overflow-x-hidden">

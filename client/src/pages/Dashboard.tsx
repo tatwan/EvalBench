@@ -145,8 +145,11 @@ export default function Dashboard() {
 
   const recentRuns = useMemo(() => {
     return [...(runs as any[])]
-      .filter((r) => r.timestamp)
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .sort((a, b) => {
+        const aTime = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const bTime = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return bTime - aTime;
+      })
       .slice(0, 3);
   }, [runs]);
 
@@ -360,7 +363,7 @@ export default function Dashboard() {
                   <div>
                     <div className="text-sm font-semibold">{run.configJson?.taskType ?? "Eval run"}</div>
                     <div className="text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(run.timestamp), { addSuffix: true })}
+                      {run.timestamp ? formatDistanceToNow(new Date(run.timestamp), { addSuffix: true }) : "Unknown time"}
                     </div>
                   </div>
                 </div>

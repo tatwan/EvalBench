@@ -6,6 +6,7 @@ from backend.routers import ollama as ollama_router
 from backend.routers import models as models_router
 from backend.routers import arena as arena_router
 from backend.routers import eval_runs as eval_runs_router
+from backend.routers import eval_results as eval_results_router
 from backend.routers import datasets as datasets_router
 from backend.routers import settings as settings_router
 from backend.services import dataset_seeder
@@ -38,5 +39,6 @@ app.include_router(ollama_router.router)
 app.include_router(models_router.router)
 app.include_router(arena_router.router)
 app.include_router(eval_runs_router.router)
+app.include_router(eval_results_router.router)
 app.include_router(datasets_router.router)
 app.include_router(settings_router.router)

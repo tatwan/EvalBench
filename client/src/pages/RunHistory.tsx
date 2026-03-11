@@ -8,6 +8,17 @@ import { Button } from "@/components/ui/Button";
 import { Activity, Clock, CheckCircle2, ChevronRight, RefreshCw, Cpu, Database, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
 
+function formatDuration(seconds?: number): string {
+  if (seconds === undefined || seconds === null || Number.isNaN(seconds)) return "—";
+  const total = Math.max(0, Math.round(seconds));
+  const hrs = Math.floor(total / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hrs > 0) return `${hrs}h ${mins}m`;
+  if (mins > 0) return `${mins}m ${secs}s`;
+  return `${secs}s`;
+}
+
 export default function RunHistory() {
   const { data: runs = [], isLoading: runsLoading, refetch, isRefetching } = useEvalRuns();
   const { data: models = [] } = useModels();
@@ -34,7 +45,7 @@ export default function RunHistory() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gradient">Run History</h1>
-          <p className="text-foreground/70 mt-2">View all your past evaluations.</p>
+          <p className="text-foreground/80 mt-2">View all your past evaluations.</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isRefetching}>
           <RefreshCw className={clsx("w-4 h-4 mr-2", isRefetching && "animate-spin")} />
@@ -47,13 +58,14 @@ export default function RunHistory() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted">
-                <th className="text-left px-6 py-4 font-semibold text-foreground/70">Run ID</th>
-                <th className="text-left px-6 py-4 font-semibold text-foreground/70">Time</th>
-                <th className="text-left px-6 py-4 font-semibold text-foreground/70">Task Type</th>
-                <th className="text-left px-6 py-4 font-semibold text-foreground/70">Dataset</th>
-                <th className="text-left px-6 py-4 font-semibold text-foreground/70">Models Evaluated</th>
-                <th className="text-left px-6 py-4 font-semibold text-foreground/70">Status</th>
-                <th className="text-right px-6 py-4 font-semibold text-foreground/70"></th>
+                <th className="text-left px-6 py-4 font-semibold text-foreground/85">Run ID</th>
+                <th className="text-left px-6 py-4 font-semibold text-foreground/85">Time</th>
+                <th className="text-left px-6 py-4 font-semibold text-foreground/85">Duration</th>
+                <th className="text-left px-6 py-4 font-semibold text-foreground/85">Task Type</th>
+                <th className="text-left px-6 py-4 font-semibold text-foreground/85">Dataset</th>
+                <th className="text-left px-6 py-4 font-semibold text-foreground/85">Models Evaluated</th>
+                <th className="text-left px-4 py-4 font-semibold text-foreground/85">Status</th>
+                <th className="text-right px-4 py-4 font-semibold text-foreground/85"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -61,44 +73,52 @@ export default function RunHistory() {
                 const config = run.configJson || {};
                 const modelIds = config.modelIds || [];
                 const datasetName = config.datasetId ? dsMap[config.datasetId]?.name : "None (Ad-hoc)";
+                const durationText = typeof config.durationSeconds === "number"
+                  ? formatDuration(config.durationSeconds)
+                  : run.status === "running"
+                    ? "Running..."
+                    : "—";
                 
                 return (
                   <tr key={run.id} className="hover:bg-muted/50 transition-colors group">
                     <td className="px-6 py-4 font-mono text-primary font-medium">#{run.id}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2 text-foreground/70">
+                      <div className="flex items-center gap-2 text-foreground/80">
                         <Clock className="w-3.5 h-3.5" />
                         {run.timestamp ? format(new Date(run.timestamp), "MMM d, yyyy h:mm a") : "Unknown"}
                       </div>
                     </td>
-                    <td className="px-6 py-4 capitalize text-foreground/80">{config.taskType ?? "-"}</td>
+                    <td className="px-6 py-4 text-foreground/80 font-mono text-xs whitespace-nowrap">
+                      {durationText}
+                    </td>
+                    <td className="px-6 py-4 capitalize text-foreground/90">{config.taskType ?? "-"}</td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center gap-2 text-foreground/70">
+                      <div className="flex items-center gap-2 text-foreground/80">
                         <Database className="w-3.5 h-3.5" />
                         <span className="truncate max-w-[150px]" title={datasetName}>{datasetName}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-1.5 text-xs text-foreground/70 mb-1">
+                        <div className="flex items-center gap-1.5 text-xs text-foreground/80 mb-1">
                           <Cpu className="w-3.5 h-3.5" />
                           <span>{modelIds.length} Models</span>
                         </div>
                         <div className="flex flex-wrap gap-1">
                           {modelIds.slice(0, 3).map((mid: number) => (
-                            <span key={mid} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-foreground/80 truncate max-w-[100px]" title={modelMap[mid]?.name}>
+                            <span key={mid} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-foreground/90 truncate max-w-[100px]" title={modelMap[mid]?.name}>
                               {modelMap[mid]?.name ?? `Model ${mid}`}
                             </span>
                           ))}
                           {modelIds.length > 3 && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-foreground/70">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-foreground/80">
                               +{modelIds.length - 3} more
                             </span>
                           )}
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-4">
                       <span className={clsx(
                         "text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap",
                         run.status === "completed" ? "bg-emerald-100 text-emerald-700" :
@@ -110,10 +130,10 @@ export default function RunHistory() {
                         {run.status}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-4 py-4 text-right">
                       <Link href={`/evaluate/${run.id}`}>
-                        <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                          View details <ChevronRight className="w-4 h-4 ml-1" />
+                        <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity text-xs px-2">
+                          View <ChevronRight className="w-4 h-4 ml-1" />
                         </Button>
                       </Link>
                     </td>
@@ -122,7 +142,7 @@ export default function RunHistory() {
               })}
               {sortedRuns.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
+                  <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
                     No runs found.
                   </td>
                 </tr>

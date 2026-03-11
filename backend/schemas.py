@@ -37,7 +37,7 @@ class EvalRunOut(CamelModel):
 
 class EvalRunCreate(CamelModel):
     model_ids: list[int]
-    task_type: str = "qa"          # summarization | qa | chat | translation | code | reasoning
+    task_type: str = "qa"          # summarization | qa | chat | translation | code | reasoning | knowledge | embedding
     benchmark_keys: list[str] = []  # legacy compat
     dataset_id: Optional[int] = None
 
@@ -119,4 +119,3 @@ class OllamaStatusOut(BaseModel):
     running: bool
     model_count: int
     error: Optional[str] = None
-

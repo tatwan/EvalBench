@@ -10,6 +10,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import Dashboard from "@/pages/Dashboard";
 import RunHistory from "@/pages/RunHistory";
 import Models from "@/pages/Models";
+import ModelDetails from "@/pages/ModelDetails";
 import CompareModels from "@/pages/CompareModels";
 import EvalWizard from "@/pages/EvalWizard";
 import RunDetails from "@/pages/RunDetails";
@@ -25,6 +26,7 @@ function Router() {
         <Route path="/" component={Dashboard}/>
         <Route path="/history" component={RunHistory}/>
         <Route path="/models" component={Models}/>
+        <Route path="/models/:id" component={ModelDetails}/>
         <Route path="/compare" component={CompareModels}/>
         <Route path="/evaluate" component={EvalWizard}/>
         <Route path="/evaluate/:id" component={RunDetails}/>

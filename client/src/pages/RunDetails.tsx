@@ -40,6 +40,7 @@ function metricLabel(name: string): string {
     tokens_per_second: "Tokens/sec", total_latency_s: "Latency (s)",
     load_latency_s: "Load Time (s)", prompt_tokens: "Prompt Tokens",
     output_tokens: "Output Tokens",
+    cosine_sim: "Cosine Sim", recall_at_1: "Recall@1", recall_at_3: "Recall@3", mrr: "MRR",
     llm_coherence: "LLM Coherence", llm_relevance: "LLM Relevance", 
     llm_fluency: "LLM Fluency",
   };
@@ -229,7 +230,7 @@ export default function RunDetails() {
           <CardContent className="p-5 flex items-center gap-3">
             <Activity className="w-5 h-5 text-emerald-400" />
             <div>
-              <p className="text-xs text-foreground/70">Metrics</p>
+              <p className="text-xs text-foreground/80">Metrics</p>
               <p className="text-2xl font-bold text-foreground">{allMetrics.length}</p>
             </div>
           </CardContent>
@@ -238,7 +239,7 @@ export default function RunDetails() {
           <CardContent className="p-5 flex items-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-purple-400" />
             <div>
-              <p className="text-xs text-foreground/70">Results</p>
+              <p className="text-xs text-foreground/80">Results</p>
               <p className="text-2xl font-bold text-foreground">{(results as any[]).length}</p>
             </div>
           </CardContent>
@@ -263,9 +264,9 @@ export default function RunDetails() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted">
-                  <th className="text-left px-6 py-3 font-semibold text-foreground/80">Model</th>
+                  <th className="text-left px-6 py-3 font-semibold text-foreground/90">Model</th>
                   {allMetrics.map(m => (
-                    <th key={m} className="text-right px-5 py-3 font-semibold text-foreground/80 whitespace-nowrap">
+                    <th key={m} className="text-right px-5 py-3 font-semibold text-foreground/90 whitespace-nowrap">
                       {metricLabel(m)}
                     </th>
                   ))}
@@ -276,7 +277,7 @@ export default function RunDetails() {
                   const model = modelMap[mid];
                   return (
                     <tr key={mid} className={clsx("hover:bg-muted/40 transition-colors", i % 2 === 0 ? "" : "bg-muted/20")}>
-                      <td className="px-6 py-4 font-mono text-xs text-foreground/80">
+                      <td className="px-6 py-4 font-mono text-xs text-foreground/90">
                         <div className="flex items-center gap-2">
                           <Cpu className="w-3.5 h-3.5 text-primary flex-shrink-0" />
                           <span>{model?.name ?? `Model ${mid}`}</span>
@@ -286,14 +287,14 @@ export default function RunDetails() {
                         const stat = grouped[mid]?.[metric];
                         const lowerIsBetter = LOWER_IS_BETTER.has(metric);
                         if (!stat) {
-                          return <td key={metric} className="px-5 py-4 text-right font-mono text-foreground/70">-</td>;
+                          return <td key={metric} className="px-5 py-4 text-right font-mono text-foreground/80">-</td>;
                         }
 
                         // Determine color threshold based on the mean
                         const colorClass = clsx(
                           "tabular-nums",
                           !lowerIsBetter && stat.mean >= 0.5 ? "text-emerald-800" :
-                          !lowerIsBetter && stat.mean >= 0.3 ? "text-amber-800" : "text-foreground/80"
+                          !lowerIsBetter && stat.mean >= 0.3 ? "text-amber-900" : "text-foreground/90"
                         );
                         const isBest = Number.isFinite(bestByMetric[metric]) && Math.abs(stat.mean - bestByMetric[metric]) < 1e-8;
 
@@ -309,7 +310,7 @@ export default function RunDetails() {
                                 {formatScore(metric, stat.mean)}
                               </span>
                               {stat.moe > 0 && (
-                                <span className="text-[10px] text-foreground/70" title="95% Confidence Interval Margin of Error">
+                                <span className="text-[10px] text-foreground/80" title="95% Confidence Interval Margin of Error">
                                   +/-{formatScore(metric, stat.moe)}
                                 </span>
                               )}
@@ -342,6 +343,7 @@ export default function RunDetails() {
                taskType === "qa" ? "Answer the following question based on the provided context." :
                taskType === "chat" ? "Respond thoughtfully to the user's conversational message." :
                taskType === "translation" ? "Translate the following text accurately." :
+               taskType === "embedding" ? "Embed the query and rank candidates by semantic similarity." :
                taskType === "code" ? "Write or explain the code for the given problem." :
                taskType === "reasoning" ? "Think step-by-step and solve the logic puzzle." :
                "Process the input according to the evaluation task instructions."}
