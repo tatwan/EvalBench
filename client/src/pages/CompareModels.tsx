@@ -4,7 +4,34 @@ import { useEvalRuns, useAllEvalResults } from "@/hooks/use-eval";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/Badge";
-import { Swords, AlignLeft, RefreshCw } from "lucide-react";
+import { Swords, AlignLeft } from "lucide-react";
+import { computeCI } from "@/lib/stats";
+
+const SPEED_METRICS = new Set([
+  "tokens_per_second",
+  "total_latency_s",
+  "load_latency_s",
+  "prompt_tokens",
+  "output_tokens",
+]);
+
+const isLowerBetter = (metric: string) => metric.includes("latency");
+
+const formatMetricValue = (metric: string, value: number) => {
+  if (metric.includes("tokens_per_second")) return `${value.toFixed(1)} t/s`;
+  if (metric.includes("latency")) return `${value.toFixed(2)}s`;
+  if (metric.includes("tokens")) return `${value.toFixed(0)}`;
+  if (SPEED_METRICS.has(metric)) return value.toFixed(2);
+  return `${(value * 100).toFixed(1)}%`;
+};
+
+const formatMetricMoe = (metric: string, moe: number) => {
+  if (metric.includes("tokens_per_second")) return `${moe.toFixed(1)} t/s`;
+  if (metric.includes("latency")) return `${moe.toFixed(2)}s`;
+  if (metric.includes("tokens")) return `${moe.toFixed(0)}`;
+  if (SPEED_METRICS.has(metric)) return moe.toFixed(2);
+  return `${(moe * 100).toFixed(1)}%`;
+};
 
 export default function CompareModels() {
   const { data: models = [], isLoading: modelsLoading } = useModels();
@@ -44,26 +71,25 @@ export default function CompareModels() {
     if (filtered.length === 0) return null;
 
     // Group by metric
-    const metricAverages: Record<string, number> = {};
-    const metricCounts: Record<string, number> = {};
+    const metricScores: Record<string, number[]> = {};
     
     filtered.forEach(r => {
-      if (!metricAverages[r.metricName]) {
-        metricAverages[r.metricName] = 0;
-        metricCounts[r.metricName] = 0;
+      if (!metricScores[r.metricName]) {
+        metricScores[r.metricName] = [];
       }
-      metricAverages[r.metricName] += Number(r.score);
-      metricCounts[r.metricName]++;
+      metricScores[r.metricName].push(Number(r.score));
     });
 
-    Object.keys(metricAverages).forEach(m => {
-      metricAverages[m] = metricAverages[m] / metricCounts[m];
+    const metricStats: Record<string, { mean: number; moe: number }> = {};
+    Object.keys(metricScores).forEach(m => {
+      const stats = computeCI(metricScores[m]);
+      if (stats) metricStats[m] = stats;
     });
 
     // Get a sample output if available
     const outputSample = filtered.find(r => r.rawOutput)?.rawOutput || "No sample output available.";
 
-    return { metrics: metricAverages, sample: outputSample, evalsCount: filtered.length };
+    return { metrics: metricStats, sample: outputSample, evalsCount: filtered.length };
   };
 
   const statsA = modelA ? getModelStats(Number(modelA)) : null;
@@ -160,14 +186,25 @@ export default function CompareModels() {
                       {allMetrics.map(metric => {
                         const valA = statsA.metrics[metric];
                         const valB = statsB?.metrics[metric];
-                        const isWinner = valA !== undefined && valB !== undefined && valA > valB;
+                        const meanA = valA?.mean;
+                        const meanB = valB?.mean;
+                        const isWinner = meanA !== undefined && meanB !== undefined
+                          ? isLowerBetter(metric)
+                            ? meanA < meanB
+                            : meanA > meanB
+                          : false;
                         
                         return (
                           <div key={metric} className="flex items-center justify-between">
-                            <span className="text-sm text-muted-foreground">{metric}</span>
-                            <span className={`font-mono font-medium ${isWinner ? 'text-emerald-400' : 'text-foreground'}`}>
-                              {valA !== undefined ? (valA * 100).toFixed(1) + '%' : '-'}
-                            </span>
+                            <span className="text-sm text-muted-foreground">{metric.replace(/_/g, " ")}</span>
+                            <div className="flex flex-col items-end gap-1">
+                              <span className={`font-mono font-medium ${isWinner ? 'text-emerald-400' : 'text-foreground'}`}>
+                                {meanA !== undefined ? formatMetricValue(metric, meanA) : '-'}
+                              </span>
+                              {valA?.moe && valA.moe > 0 ? (
+                                <span className="text-[10px] text-muted-foreground">± {formatMetricMoe(metric, valA.moe)}</span>
+                              ) : null}
+                            </div>
                           </div>
                         );
                       })}
@@ -215,14 +252,25 @@ export default function CompareModels() {
                       {allMetrics.map(metric => {
                         const valB = statsB.metrics[metric];
                         const valA = statsA?.metrics[metric];
-                        const isWinner = valB !== undefined && valA !== undefined && valB > valA;
+                        const meanB = valB?.mean;
+                        const meanA = valA?.mean;
+                        const isWinner = meanB !== undefined && meanA !== undefined
+                          ? isLowerBetter(metric)
+                            ? meanB < meanA
+                            : meanB > meanA
+                          : false;
                         
                         return (
                           <div key={metric} className="flex items-center justify-between">
-                            <span className="text-sm text-muted-foreground">{metric}</span>
-                            <span className={`font-mono font-medium ${isWinner ? 'text-emerald-400' : 'text-foreground'}`}>
-                              {valB !== undefined ? (valB * 100).toFixed(1) + '%' : '-'}
-                            </span>
+                            <span className="text-sm text-muted-foreground">{metric.replace(/_/g, " ")}</span>
+                            <div className="flex flex-col items-end gap-1">
+                              <span className={`font-mono font-medium ${isWinner ? 'text-emerald-400' : 'text-foreground'}`}>
+                                {meanB !== undefined ? formatMetricValue(metric, meanB) : '-'}
+                              </span>
+                              {valB?.moe && valB.moe > 0 ? (
+                                <span className="text-[10px] text-muted-foreground">± {formatMetricMoe(metric, valB.moe)}</span>
+                              ) : null}
+                            </div>
                           </div>
                         );
                       })}

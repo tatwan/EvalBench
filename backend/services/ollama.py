@@ -2,13 +2,29 @@ import os
 import httpx
 from typing import Any
 
-OLLAMA_BASE = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+from backend.database import SessionLocal
+from backend.models import Setting
+
+
+def get_ollama_base() -> str:
+    db = SessionLocal()
+    try:
+        setting = db.query(Setting).filter_by(key="ollama_host").first()
+        if setting and setting.value:
+            return setting.value.rstrip("/")
+    except Exception:
+        pass
+    finally:
+        db.close()
+
+    return os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
 
 
 async def check_status() -> dict[str, Any]:
     try:
+        base = get_ollama_base()
         async with httpx.AsyncClient() as client:
-            res = await client.get(f"{OLLAMA_BASE}/api/tags", timeout=3.0)
+            res = await client.get(f"{base}/api/tags", timeout=3.0)
             res.raise_for_status()
             data = res.json()
             models = data.get("models", [])
@@ -24,9 +40,10 @@ async def list_models() -> list[dict]:
 
 async def generate(model: str, prompt: str) -> dict[str, Any]:
     try:
+        base = get_ollama_base()
         async with httpx.AsyncClient() as client:
             res = await client.post(
-                f"{OLLAMA_BASE}/api/generate",
+                f"{base}/api/generate",
                 json={"model": model, "prompt": prompt, "stream": False},
                 timeout=120.0,
             )
@@ -48,9 +65,10 @@ async def generate(model: str, prompt: str) -> dict[str, Any]:
 
 async def embed(model: str, prompt: str) -> dict[str, Any]:
     try:
+        base = get_ollama_base()
         async with httpx.AsyncClient() as client:
             res = await client.post(
-                f"{OLLAMA_BASE}/api/embeddings",
+                f"{base}/api/embeddings",
                 json={"model": model, "prompt": prompt},
                 timeout=120.0,
             )

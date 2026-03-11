@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useSettings, useUpdateSetting } from "@/hooks/use-settings";
-import { useModels } from "@/hooks/use-models";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +9,6 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function Settings() {
   const { data: settings = [], isLoading: settingsLoading } = useSettings();
-  const { data: models = [], isLoading: modelsLoading } = useModels();
   const updateSetting = useUpdateSetting();
   const { toast } = useToast();
 
@@ -48,7 +46,7 @@ export default function Settings() {
     }
   };
 
-  if (settingsLoading || modelsLoading) {
+  if (settingsLoading) {
     return <div className="flex items-center justify-center py-24"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>;
   }
 
@@ -78,7 +76,7 @@ export default function Settings() {
                 placeholder="http://localhost:11434"
                 className="font-mono bg-muted"
               />
-              <p className="text-xs text-muted-foreground">Requires restarting the backend server to completely take effect right now.</p>
+              <p className="text-xs text-muted-foreground">Applies immediately for discovery, evaluation runs, and judge calls.</p>
             </div>
           </CardContent>
         </Card>
@@ -94,29 +92,32 @@ export default function Settings() {
               <label className="text-sm font-medium">Judge Model</label>
               <Select value={judgeModel} onValueChange={setJudgeModel}>
                 <SelectTrigger className="w-full bg-muted">
-                  <SelectValue placeholder="Select a powerful model (e.g., Llama 3 8B+ or GPT-4o)" />
+                  <SelectValue placeholder="Select a frontier judge model (GPT-5.4, Claude Opus 4.1, Gemini 3 Pro)" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectLabel>Cloud Models (Frontier)</SelectLabel>
-                    <SelectItem value="gpt-4o">OpenAI: GPT-4o</SelectItem>
-                    <SelectItem value="gpt-4o-mini">OpenAI: GPT-4o-Mini</SelectItem>
-                    <SelectItem value="claude-3-5-sonnet-latest">Anthropic: Claude 3.5 Sonnet</SelectItem>
-                    <SelectItem value="gemini-1.5-pro">Google: Gemini 1.5 Pro</SelectItem>
-                    <SelectItem value="grok-beta">xAI: Grok Beta</SelectItem>
+                    <SelectLabel>OpenAI (Frontier)</SelectLabel>
+                    <SelectItem value="gpt-5.4">GPT-5.4 (Flagship)</SelectItem>
+                    <SelectItem value="gpt-5-mini-2025-08-07">GPT-5 mini (2025-08-07)</SelectItem>
                   </SelectGroup>
                   <SelectSeparator />
                   <SelectGroup>
-                    <SelectLabel>Local Models (Ollama)</SelectLabel>
-                    {models.map((m: any) => (
-                      <SelectItem key={m.id} value={m.name}>
-                        {m.name} {m.sizeGb ? `(${m.sizeGb.toFixed(1)}GB)` : ""}
-                      </SelectItem>
-                    ))}
-                    {models.length === 0 && <SelectItem value="none" disabled>No local models found</SelectItem>}
+                    <SelectLabel>Anthropic (Claude)</SelectLabel>
+                    <SelectItem value="claude-opus-4-1-20250805">Claude Opus 4.1 (2025-08-05)</SelectItem>
+                    <SelectItem value="claude-sonnet-4-20250514">Claude Sonnet 4 (2025-05-14)</SelectItem>
+                    <SelectItem value="claude-3-5-haiku-latest">Claude Haiku 3.5 (Latest)</SelectItem>
+                  </SelectGroup>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectLabel>Google (Gemini)</SelectLabel>
+                    <SelectItem value="gemini-3-pro-preview">Gemini 3 Pro Preview</SelectItem>
+                    <SelectItem value="gemini-3-flash-preview">Gemini 3 Flash Preview</SelectItem>
+                    <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
+                    <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
                   </SelectGroup>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">These are the latest frontier model IDs from each provider.</p>
             </div>
           </CardContent>
         </Card>

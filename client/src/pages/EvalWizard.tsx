@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useModels } from "@/hooks/use-models";
 import { useCreateEvalRun } from "@/hooks/use-eval";
 import { useDatasets } from "@/hooks/use-datasets";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Check, ChevronRight, Activity, Cpu, Layers, BookOpen, AlignLeft, MessageCircleQuestion, MessageSquare, Code2, BrainCircuit, Sparkles, Network } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -15,9 +16,10 @@ const TASK_TYPES = [
     desc: "How well does the model condense articles or documents?",
     tests: "Compression, coverage, and faithfulness to source.",
     goal: "Produce concise summaries without losing key facts.",
-    metrics: ["ROUGE-1", "ROUGE-2", "ROUGE-L"],
+    metrics: ["ROUGE-1", "ROUGE-2", "ROUGE-L", "BERTScore", "METEOR", "LLM Coherence", "LLM Relevance"],
     datasetHint: "EvalBench Summarization v1",
     datasetLabel: "EvalBench Summarization v1",
+    usesJudge: true,
   },
   {
     id: "qa",
@@ -26,9 +28,10 @@ const TASK_TYPES = [
     desc: "Factual accuracy and extraction from provided context.",
     tests: "Answer accuracy, span extraction, and grounding.",
     goal: "Return the exact correct answer with minimal noise.",
-    metrics: ["Exact Match", "Token F1", "ROUGE-L"],
+    metrics: ["Exact Match", "Token F1", "ROUGE-1", "ROUGE-2", "ROUGE-L", "LLM Relevance"],
     datasetHint: "EvalBench QA v1",
     datasetLabel: "EvalBench QA v1",
+    usesJudge: true,
   },
   {
     id: "chat",
@@ -37,9 +40,10 @@ const TASK_TYPES = [
     desc: "Diversity, fluency, and quality of open-ended responses.",
     tests: "Conversational quality, coherence, and safety.",
     goal: "Respond naturally and helpfully in open-ended tasks.",
-    metrics: ["Distinct-N", "LLM Judge", "MAUVE"],
+    metrics: ["ROUGE-1", "ROUGE-2", "ROUGE-L", "BERTScore", "METEOR", "Distinct-1", "Distinct-2", "LLM Fluency", "LLM Coherence"],
     datasetHint: "EvalBench TruthfulQA (Subset)",
     datasetLabel: "EvalBench TruthfulQA (Subset)",
+    usesJudge: true,
   },
   {
     id: "knowledge",
@@ -48,9 +52,10 @@ const TASK_TYPES = [
     desc: "Academic knowledge across professional domains.",
     tests: "Breadth of factual knowledge and reasoning.",
     goal: "Score well across standardized subject benchmarks.",
-    metrics: ["Exact Match", "Token F1", "ROUGE-L"],
+    metrics: ["Exact Match", "Token F1", "ROUGE-1", "ROUGE-2", "ROUGE-L", "LLM Relevance"],
     datasetHint: "EvalBench MMLU (Subset)",
     datasetLabel: "EvalBench MMLU (Subset)",
+    usesJudge: true,
   },
   {
     id: "embedding",
@@ -59,9 +64,10 @@ const TASK_TYPES = [
     desc: "Semantic search and similarity for retrieval tasks.",
     tests: "Nearest-neighbor ranking, semantic similarity, recall.",
     goal: "Embed queries so relevant docs rank at the top.",
-    metrics: ["Cosine Sim", "Recall@1", "MRR"],
+    metrics: ["Cosine Sim", "Recall@1", "Recall@3", "MRR"],
     datasetHint: "EvalBench Embeddings v1",
     datasetLabel: "EvalBench Embeddings v1",
+    usesJudge: false,
   },
   {
     id: "code",
@@ -70,9 +76,10 @@ const TASK_TYPES = [
     desc: "Functional correctness via code execution sandbox.",
     tests: "Correctness, edge cases, and code reliability.",
     goal: "Generate code that passes tests on first try.",
-    metrics: ["Pass@1", "Pass@10", "CodeBLEU"],
-    datasetHint: null,
-    datasetLabel: "HumanEval (planned)",
+    metrics: ["Pass@1", "ROUGE-1", "ROUGE-2", "ROUGE-L", "Distinct-1", "Distinct-2"],
+    datasetHint: "EvalBench HumanEval (Subset)",
+    datasetLabel: "EvalBench HumanEval (Subset)",
+    usesJudge: false,
   },
   {
     id: "reasoning",
@@ -81,9 +88,10 @@ const TASK_TYPES = [
     desc: "Problem-solving and chain-of-thought evaluation.",
     tests: "Multi-step reasoning and mathematical accuracy.",
     goal: "Arrive at correct final answers consistently.",
-    metrics: ["Accuracy", "Pass@K", "GSM8K"],
+    metrics: ["Exact Match", "Token F1", "ROUGE-1", "ROUGE-2", "ROUGE-L"],
     datasetHint: "EvalBench GSM8K (Subset)",
     datasetLabel: "EvalBench GSM8K (Subset)",
+    usesJudge: false,
   },
 ];
 
@@ -92,25 +100,53 @@ export default function EvalWizard() {
   const [selectedModels, setSelectedModels] = useState<number[]>([]);
   const [selectedTaskType, setSelectedTaskType] = useState<string | null>(null);
   const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
+  const [lastRunId, setLastRunId] = useState<number | null>(null);
 
   const { data: models = [], isLoading: modelsLoading } = useModels();
   const { data: datasets = [] } = useDatasets();
   const createRun = useCreateEvalRun();
 
   const selectedTask = TASK_TYPES.find((t) => t.id === selectedTaskType);
+  const selectedDataset = (datasets as any[]).find((d) => d.id === selectedDatasetId);
+
+  const datasetKeywords: Record<string, string[]> = {
+    summarization: ["summarization"],
+    qa: ["qa"],
+    chat: ["truthfulqa"],
+    knowledge: ["mmlu", "hellaswag", "arc", "boolq", "commonsenseqa"],
+    embedding: ["embeddings"],
+    code: ["humaneval"],
+    reasoning: ["gsm8k"],
+  };
+
+  const datasetOptions = useMemo(() => {
+    if (!selectedTaskType) return [];
+    const keywords = datasetKeywords[selectedTaskType] ?? [];
+    return (datasets as any[]).filter((d) =>
+      keywords.some((k) => d.name.toLowerCase().includes(k))
+    );
+  }, [datasets, selectedTaskType]);
 
   const handleSelectTask = (taskId: string) => {
     setSelectedTaskType(taskId);
     const task = TASK_TYPES.find((t) => t.id === taskId);
     if (task?.datasetHint) {
+      const keywords = datasetKeywords[taskId] ?? [];
       const ds = (datasets as any[]).find((d) =>
-        d.name.toLowerCase().includes(task.datasetHint!.toLowerCase().split(" ")[1])
+        keywords.some((k) => d.name.toLowerCase().includes(k))
       );
       setSelectedDatasetId(ds?.id ?? null);
     } else {
       setSelectedDatasetId(null);
     }
   };
+
+  useEffect(() => {
+    if (!selectedTaskType) return;
+    if (!selectedDatasetId && datasetOptions.length > 0) {
+      setSelectedDatasetId(datasetOptions[0].id);
+    }
+  }, [selectedTaskType, selectedDatasetId, datasetOptions]);
 
   const handleRun = () => {
     if (!selectedTaskType) return;
@@ -120,7 +156,11 @@ export default function EvalWizard() {
         taskType: selectedTaskType,
         datasetId: selectedDatasetId ?? undefined,
       } as any,
-      { onSuccess: () => setStep(4) }
+      { onSuccess: (run: any) => {
+          setLastRunId(run?.id ?? null);
+          setStep(4);
+        }
+      }
     );
   };
 
@@ -175,10 +215,15 @@ export default function EvalWizard() {
                   key={task.id}
                   onClick={() => handleSelectTask(task.id)}
                   className={clsx(
-                    "p-5 rounded-xl border cursor-pointer transition-all bg-card shadow-soft flex flex-col gap-4 min-h-[260px]",
+                    "p-5 rounded-xl border cursor-pointer transition-all bg-card shadow-soft flex flex-col gap-4 min-h-[260px] relative",
                     isSelected ? "border-violet-400 bg-violet-50" : "border-border hover:border-violet-300 hover:shadow-md"
                   )}
                 >
+                  {task.usesJudge && (
+                    <span className="absolute top-3 right-3 text-[9px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                      LLM Judge
+                    </span>
+                  )}
                   <div className="flex items-center gap-3">
                     <div className={clsx("h-10 w-10 rounded-lg flex items-center justify-center", isSelected ? "bg-violet-100 text-violet-700" : "bg-muted text-violet-600")}>
                       <task.icon className="w-5 h-5" />
@@ -217,7 +262,7 @@ export default function EvalWizard() {
                 <div className="text-sm font-semibold text-violet-700">Auto-configured for {selectedTask.label}</div>
                   <div className="text-sm text-violet-900/70 mt-1">
                 {selectedTask.datasetHint
-                    ? <>We'll use <strong>{selectedTask.datasetHint}</strong> and compute <strong>{selectedTask.metrics.join(", ")}</strong> automatically.</>
+                    ? <>We'll use <strong>{selectedDataset?.name ?? selectedTask.datasetHint}</strong> and compute <strong>{selectedTask.metrics.join(", ")}</strong> automatically.</>
                     : <>No built-in dataset yet - you can still run a qualitative eval with judge metrics or Arena mode.</>
                   }
                 </div>
@@ -226,6 +271,21 @@ export default function EvalWizard() {
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white text-violet-700 border border-violet-200">Dataset</span>
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white text-violet-700 border border-violet-200">{selectedTask.metrics.length} metrics</span>
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white text-violet-700 border border-violet-200">~3 min/model</span>
+                  </div>
+                )}
+                {datasetOptions.length > 1 && (
+                  <div className="mt-3 max-w-[260px]">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-violet-700 mb-1">Dataset</div>
+                    <Select value={selectedDatasetId ? String(selectedDatasetId) : ""} onValueChange={(v) => setSelectedDatasetId(Number(v))}>
+                      <SelectTrigger className="h-8 text-xs bg-white">
+                        <SelectValue placeholder="Select dataset" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {datasetOptions.map((ds) => (
+                          <SelectItem key={ds.id} value={String(ds.id)}>{ds.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
               </div>
@@ -328,7 +388,7 @@ export default function EvalWizard() {
               </div>
               {selectedTask.datasetHint && (
                 <p className="text-xs text-muted-foreground mt-3 flex items-center gap-1">
-                  <BookOpen className="w-3 h-3" /> {selectedTask.datasetHint}
+                  <BookOpen className="w-3 h-3" /> {selectedDataset?.name ?? selectedTask.datasetHint}
                 </p>
               )}
             </div>
@@ -364,7 +424,9 @@ export default function EvalWizard() {
             <Button variant="outline" onClick={() => { setStep(1); setSelectedModels([]); setSelectedTaskType(null); }}>
               Run Another
             </Button>
-            <Button onClick={() => window.location.href = "/history"}>Go to Run History</Button>
+            <Button onClick={() => window.location.href = lastRunId ? `/evaluate/${lastRunId}` : "/history"}>
+              {lastRunId ? "View Latest Run" : "Go to Run History"}
+            </Button>
           </div>
         </div>
       )}

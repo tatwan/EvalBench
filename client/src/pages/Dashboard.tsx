@@ -9,6 +9,7 @@ import { formatDistanceToNow } from "date-fns";
 import { Link } from "wouter";
 import { useMemo, useState } from "react";
 import { clsx } from "clsx";
+import { computeCI } from "@/lib/stats";
 import {
   Radar,
   RadarChart,
@@ -68,10 +69,11 @@ export default function Dashboard() {
     return anyResults.filter((r) => runMap[r.runId]?.configJson?.taskType === selectedTask);
   }, [results, selectedTask, runMap]);
 
-  const getMetricAvg = (modelId: number, names: string[], source: any[]) => {
+  const getMetricStats = (modelId: number, names: string[], source: any[]) => {
     const items = source.filter((r) => r.modelId === modelId && names.includes(r.metricName));
     if (items.length === 0) return null;
-    return items.reduce((sum, r) => sum + Number(r.score), 0) / items.length;
+    const scores = items.map((r) => Number(r.score));
+    return computeCI(scores);
   };
 
   const summaries = useMemo(() => {
@@ -86,20 +88,22 @@ export default function Dashboard() {
 
     return (models as any[]).map((model) => {
       const modelResults = qualityResults.filter((r) => r.modelId === model.id);
-      const avgScore =
-        modelResults.length > 0
-          ? modelResults.reduce((sum, r) => sum + Number(r.score), 0) / modelResults.length
-          : 0;
-      const rouge = getMetricAvg(model.id, ["rougeL", "rouge_l", "rouge-l"], qualityResults);
-      const bleu = getMetricAvg(model.id, ["bleu", "sacrebleu"], qualityResults);
-      const latency = getMetricAvg(model.id, ["total_latency_s", "latency"], results as any[]);
+      const avgScoreStats = computeCI(modelResults.map((r) => Number(r.score)));
+      const avgScore = avgScoreStats?.mean ?? 0;
+      const rougeStats = getMetricStats(model.id, ["rougeL", "rouge_l", "rouge-l"], qualityResults);
+      const bleuStats = getMetricStats(model.id, ["bleu", "sacrebleu"], qualityResults);
+      const latencyStats = getMetricStats(model.id, ["total_latency_s", "latency"], results as any[]);
       const tasks = Array.from(tasksByModel.get(model.id) ?? []);
       return {
         ...model,
         avgScore,
-        rouge,
-        bleu,
-        latency,
+        avgScoreMoe: avgScoreStats?.moe ?? null,
+        rouge: rougeStats?.mean ?? null,
+        rougeMoe: rougeStats?.moe ?? null,
+        bleu: bleuStats?.mean ?? null,
+        bleuMoe: bleuStats?.moe ?? null,
+        latency: latencyStats?.mean ?? null,
+        latencyMoe: latencyStats?.moe ?? null,
         tasks,
         evalsCount: modelResults.length,
       };
@@ -261,22 +265,50 @@ export default function Dashboard() {
                       </div>
                     </td>
                     <td className="px-5 py-3">
-                      <div className="flex items-center gap-2">
-                        <ScoreBadge value={model.avgScore * 100} format="percent" precision={1} />
-                        <div className="h-1.5 w-14 rounded-full bg-muted overflow-hidden">
-                          <div className="h-full bg-emerald-500" style={{ width: `${Math.min(model.avgScore * 100, 100)}%` }} />
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <ScoreBadge value={model.avgScore * 100} format="percent" precision={1} />
+                          <div className="h-1.5 w-14 rounded-full bg-muted overflow-hidden">
+                            <div className="h-full bg-emerald-500" style={{ width: `${Math.min(model.avgScore * 100, 100)}%` }} />
+                          </div>
                         </div>
+                        {model.avgScoreMoe !== null && model.avgScoreMoe > 0 ? (
+                          <div className="text-[10px] text-muted-foreground">± {(model.avgScoreMoe * 100).toFixed(1)}%</div>
+                        ) : null}
                       </div>
                     </td>
                     <td className="px-5 py-3">
-                      {model.rouge !== null ? <ScoreBadge value={model.rouge} metric="rougeL" /> : <span className="text-muted-foreground">-</span>}
+                      {model.rouge !== null ? (
+                        <div className="flex flex-col gap-1">
+                          <ScoreBadge value={model.rouge} metric="rougeL" />
+                          {model.rougeMoe !== null && model.rougeMoe > 0 ? (
+                            <span className="text-[10px] text-muted-foreground">± {model.rougeMoe.toFixed(3)}</span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
                     </td>
                     <td className="px-5 py-3">
-                      {model.bleu !== null ? <ScoreBadge value={model.bleu} metric="bleu" /> : <span className="text-muted-foreground">-</span>}
+                      {model.bleu !== null ? (
+                        <div className="flex flex-col gap-1">
+                          <ScoreBadge value={model.bleu} metric="bleu" />
+                          {model.bleuMoe !== null && model.bleuMoe > 0 ? (
+                            <span className="text-[10px] text-muted-foreground">± {model.bleuMoe.toFixed(3)}</span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       {model.latency !== null ? (
-                        <span className="font-mono text-xs text-muted-foreground">{model.latency.toFixed(2)}s</span>
+                        <div className="flex flex-col gap-1">
+                          <span className="font-mono text-xs text-muted-foreground">{model.latency.toFixed(2)}s</span>
+                          {model.latencyMoe !== null && model.latencyMoe > 0 ? (
+                            <span className="text-[10px] text-muted-foreground">± {model.latencyMoe.toFixed(2)}s</span>
+                          ) : null}
+                        </div>
                       ) : (
                         <span className="text-muted-foreground">-</span>
                       )}

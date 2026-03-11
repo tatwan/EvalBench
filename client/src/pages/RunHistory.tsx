@@ -3,10 +3,12 @@ import { useModels } from "@/hooks/use-models";
 import { useDatasets } from "@/hooks/use-datasets";
 import { Link } from "wouter";
 import { format } from "date-fns";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/Button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Activity, Clock, CheckCircle2, ChevronRight, RefreshCw, Cpu, Database, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
+import { useEffect, useMemo, useState } from "react";
 
 function formatDuration(seconds?: number): string {
   if (seconds === undefined || seconds === null || Number.isNaN(seconds)) return "—";
@@ -23,9 +25,43 @@ export default function RunHistory() {
   const { data: runs = [], isLoading: runsLoading, refetch, isRefetching } = useEvalRuns();
   const { data: models = [] } = useModels();
   const { data: datasets = [] } = useDatasets();
+  const [taskFilter, setTaskFilter] = useState("all");
+  const [modelFilter, setModelFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [savedViews, setSavedViews] = useState<Array<{ name: string; task: string; model: string; status: string }>>([]);
+  const [selectedView, setSelectedView] = useState<string>("");
 
   const modelMap = Object.fromEntries((models as any[]).map(m => [m.id, m]));
   const dsMap = Object.fromEntries((datasets as any[]).map(d => [d.id, d]));
+
+  useEffect(() => {
+    const raw = window.localStorage.getItem("evalbench.runHistoryViews");
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setSavedViews(parsed);
+      }
+    } catch {
+      // ignore corrupted values
+    }
+  }, []);
+
+  const persistViews = (views: Array<{ name: string; task: string; model: string; status: string }>) => {
+    setSavedViews(views);
+    window.localStorage.setItem("evalbench.runHistoryViews", JSON.stringify(views));
+  };
+
+  const handleSaveView = () => {
+    const name = window.prompt("Name this view?");
+    if (!name) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const payload = { name: trimmed, task: taskFilter, model: modelFilter, status: statusFilter };
+    const next = [...savedViews.filter((v) => v.name !== trimmed), payload];
+    persistViews(next);
+    setSelectedView(trimmed);
+  };
 
   if (runsLoading) {
     return (
@@ -35,8 +71,30 @@ export default function RunHistory() {
     );
   }
 
+  const taskOptions = useMemo(() => {
+    const tasks = new Set<string>();
+    (runs as any[]).forEach((r) => {
+      if (r.configJson?.taskType) tasks.add(r.configJson.taskType);
+    });
+    return Array.from(tasks).sort();
+  }, [runs]);
+
+  const statusOptions = ["pending", "running", "completed", "failed"];
+
+  const filteredRuns = useMemo(() => {
+    return (runs as any[]).filter((run) => {
+      const config = run.configJson || {};
+      const matchesTask = taskFilter === "all" || config.taskType === taskFilter;
+      const matchesStatus = statusFilter === "all" || run.status === statusFilter;
+      const matchesModel =
+        modelFilter === "all" ||
+        (config.modelIds ?? []).includes(Number(modelFilter));
+      return matchesTask && matchesStatus && matchesModel;
+    });
+  }, [runs, taskFilter, statusFilter, modelFilter]);
+
   // Sort runs newest first
-  const sortedRuns = [...runs].sort((a: any, b: any) => {
+  const sortedRuns = [...filteredRuns].sort((a: any, b: any) => {
     return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
   });
 
@@ -52,6 +110,97 @@ export default function RunHistory() {
           Refresh
         </Button>
       </div>
+
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="text-xs font-semibold text-muted-foreground">Filter</div>
+          <div className="w-[170px]">
+            <Select value={taskFilter} onValueChange={(value) => {
+              setTaskFilter(value);
+              setSelectedView("");
+            }}>
+              <SelectTrigger className="h-8 text-xs capitalize">
+                <SelectValue placeholder="Task" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All tasks</SelectItem>
+                {taskOptions.map((task) => (
+                  <SelectItem key={task} value={task} className="capitalize">{task}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-[190px]">
+            <Select value={modelFilter} onValueChange={(value) => {
+              setModelFilter(value);
+              setSelectedView("");
+            }}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Model" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All models</SelectItem>
+                {(models as any[]).map((m) => (
+                  <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-[150px]">
+            <Select value={statusFilter} onValueChange={(value) => {
+              setStatusFilter(value);
+              setSelectedView("");
+            }}>
+              <SelectTrigger className="h-8 text-xs capitalize">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All status</SelectItem>
+                {statusOptions.map((status) => (
+                  <SelectItem key={status} value={status} className="capitalize">{status}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-[190px]">
+            <Select
+              value={selectedView}
+              onValueChange={(value) => {
+                setSelectedView(value);
+                const view = savedViews.find((v) => v.name === value);
+                if (view) {
+                  setTaskFilter(view.task);
+                  setModelFilter(view.model);
+                  setStatusFilter(view.status);
+                }
+              }}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Saved views" />
+              </SelectTrigger>
+              <SelectContent>
+                {savedViews.length === 0 && (
+                  <SelectItem value="none" disabled>No saved views</SelectItem>
+                )}
+                {savedViews.map((view) => (
+                  <SelectItem key={view.name} value={view.name}>{view.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button variant="outline" size="sm" className="text-xs" onClick={handleSaveView}>
+            Save View
+          </Button>
+          <Button variant="ghost" size="sm" className="text-xs" onClick={() => {
+            setTaskFilter("all");
+            setModelFilter("all");
+            setStatusFilter("all");
+            setSelectedView("");
+          }}>
+            Reset
+          </Button>
+        </div>
+      </Card>
 
       <Card>
         <CardContent className="p-0 overflow-x-auto">
