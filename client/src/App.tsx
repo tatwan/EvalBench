@@ -10,6 +10,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import Dashboard from "@/pages/Dashboard";
 import Models from "@/pages/Models";
 import EvalWizard from "@/pages/EvalWizard";
+import RunDetails from "@/pages/RunDetails";
 import Arena from "@/pages/Arena";
 import ArenaLeaderboard from "@/pages/ArenaLeaderboard";
 
@@ -20,6 +21,7 @@ function Router() {
         <Route path="/" component={Dashboard}/>
         <Route path="/models" component={Models}/>
         <Route path="/evaluate" component={EvalWizard}/>
+        <Route path="/evaluate/:id" component={RunDetails}/>
         <Route path="/arena" component={Arena}/>
         <Route path="/leaderboard" component={ArenaLeaderboard}/>
         {/* Placeholder for datasets page */}

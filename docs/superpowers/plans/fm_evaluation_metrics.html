@@ -1,0 +1,1802 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Foundation Model Evaluation Metrics - Interactive Decision Tree</title>
+  <meta name="description"
+    content="Interactive decision tree for choosing the right evaluation metrics for LLMs and Foundation Models: Perplexity, ROUGE, BERTScore, LLM-as-Judge, RAGAS, and more.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #94a3b8;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #64748b;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    // Icons as simple SVG components
+    const ChevronRight = ({ className }) => (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+      </svg>
+    );
+
+    const ChevronLeft = ({ className }) => (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+      </svg>
+    );
+
+    const Info = ({ className }) => (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    );
+
+    const Home = ({ className }) => (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+      </svg>
+    );
+
+    const List = ({ className }) => (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+      </svg>
+    );
+
+    const Brain = ({ className }) => (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 15.5m14.8-.2l.2 1.7a2.25 2.25 0 01-2.212 2.5H6.212A2.25 2.25 0 014 17l.2-1.7m14.6 0a24.11 24.11 0 00-14.6 0" />
+      </svg>
+    );
+
+    const FMEvaluationMetrics = () => {
+      const [path, setPath] = useState([]);
+      const [currentNode, setCurrentNode] = useState('start');
+      const [showQuickRef, setShowQuickRef] = useState(false);
+
+      // Decision tree structure
+      const tree = {
+        start: {
+          question: "What aspect of your Foundation Model are you evaluating?",
+          type: "decision",
+          info: "Choose the evaluation goal that best matches your needs. Different aspects require different metric families.",
+          options: [
+            { label: "Language Modeling Quality", next: "intrinsic", desc: "How well does the model predict/understand text?" },
+            { label: "Generation vs Reference", next: "reference_based", desc: "Compare outputs against gold standard text" },
+            { label: "Task Performance", next: "task_accuracy", desc: "Classification, QA, extraction, ranking accuracy" },
+            { label: "Human-like Quality", next: "quality_preference", desc: "Helpfulness, coherence, overall preference" },
+            { label: "Safety & Alignment", next: "safety", desc: "Toxicity, bias, policy compliance" },
+            { label: "Factuality & Hallucination", next: "factuality", desc: "Truthfulness, grounding, RAG faithfulness" }
+          ]
+        },
+
+        // ========== INTRINSIC METRICS ==========
+        intrinsic: {
+          question: "Intrinsic Language Modeling Metrics",
+          type: "metric",
+          goal: "Measure how well the model fits/understands text distributions",
+          info: "These metrics evaluate the model's core language modeling capability without task-specific generation.",
+          metrics: [
+            {
+              name: "Perplexity (PPL)",
+              priority: "Primary Metric",
+              description: "Measures how 'surprised' the model is by real text. Lower perplexity = better language model.",
+              range: "1 to infinity (lower is better)",
+              formula: "PPL = exp(-1/N * sum(log P(token_i)))",
+              when: "Comparing LMs, monitoring training, evaluating domain fit",
+              pros: ["Standard benchmark", "Easy to compute", "Interpretable"],
+              cons: ["Doesn't capture generation quality", "Tokenizer-dependent", "Not task-specific"],
+              note: "A perplexity of 10 means the model is as uncertain as choosing from 10 equally likely options"
+            },
+            {
+              name: "Cross-Entropy Loss",
+              priority: "Training Metric",
+              description: "Average negative log-likelihood per token. Directly related to perplexity (PPL = exp(CE)).",
+              range: "0 to infinity (lower is better)",
+              formula: "CE = -1/N * sum(log P(token_i))",
+              when: "Training loss monitoring, fine-tuning evaluation",
+              note: "What you actually optimize during training"
+            },
+            {
+              name: "Bits-per-Byte (BPB)",
+              priority: "Tokenizer-Agnostic",
+              description: "Cross-entropy normalized by bytes, not tokens. Allows comparison across different tokenizers.",
+              range: "0 to infinity (lower is better)",
+              formula: "BPB = CE * tokens / bytes * log2(e)",
+              when: "Comparing models with different tokenizers",
+              pros: ["Fair comparison across tokenizers", "Used in GPT-4 report"],
+              note: "Increasingly used in frontier model papers"
+            },
+            {
+              name: "Bits-per-Character (BPC)",
+              priority: "Character-Level",
+              description: "Similar to BPB but normalized per character. Common for character-level models.",
+              when: "Character-level model evaluation",
+              note: "Less common for modern tokenizer-based LLMs"
+            }
+          ],
+          additionalInfo: {
+            title: "When to use intrinsic metrics:",
+            points: [
+              "Pre-training evaluation and monitoring",
+              "Comparing language models on same corpus",
+              "Domain adaptation assessment",
+              "NOT sufficient alone for user-facing quality"
+            ]
+          },
+          continueOptions: [
+            { label: "Also need generation quality", next: "reference_based" },
+            { label: "Evaluate task performance", next: "task_accuracy" }
+          ]
+        },
+
+        // ========== REFERENCE-BASED METRICS ==========
+        reference_based: {
+          question: "What type of generation task?",
+          type: "decision",
+          info: "Different tasks emphasize different aspects of similarity to reference text.",
+          options: [
+            { label: "Summarization", next: "summarization_metrics", desc: "Capture key content from source" },
+            { label: "Translation", next: "translation_metrics", desc: "Accurate meaning transfer between languages" },
+            { label: "General Text Generation", next: "general_generation", desc: "Open-ended generation quality" },
+            { label: "Semantic Similarity", next: "semantic_metrics", desc: "Meaning preservation regardless of wording" }
+          ]
+        },
+        summarization_metrics: {
+          question: "Summarization Evaluation Metrics",
+          type: "metric",
+          goal: "Measure how well the summary captures reference content",
+          metrics: [
+            {
+              name: "ROUGE-1",
+              priority: "Unigram Overlap",
+              description: "Unigram (word) overlap between generated and reference summary. Recall-oriented.",
+              range: "0 to 1 (higher is better)",
+              formula: "ROUGE-1 = |matched unigrams| / |reference unigrams|",
+              when: "Content coverage at word level",
+              variants: ["ROUGE-1-R (recall)", "ROUGE-1-P (precision)", "ROUGE-1-F (F1)"]
+            },
+            {
+              name: "ROUGE-2",
+              priority: "Bigram Fluency",
+              description: "Bigram overlap. Captures some phrase-level similarity.",
+              range: "0 to 1 (higher is better)",
+              when: "Phrase-level content matching",
+              note: "More sensitive to word order than ROUGE-1"
+            },
+            {
+              name: "ROUGE-L",
+              priority: "Sequence Matching",
+              description: "Longest Common Subsequence. Captures sentence-level structure.",
+              range: "0 to 1 (higher is better)",
+              when: "Sentence structure similarity",
+              pros: ["Order-sensitive", "No fixed n-gram length"],
+              note: "Good for longer summaries"
+            },
+            {
+              name: "ROUGE-Lsum",
+              priority: "Multi-Sentence",
+              description: "ROUGE-L computed at summary level (across sentences).",
+              when: "Multi-sentence summary evaluation",
+              note: "Default for summarization benchmarks"
+            },
+            {
+              name: "BERTScore",
+              priority: "Semantic (Recommended)",
+              description: "Embedding-based similarity using BERT. Captures paraphrases better than n-gram methods.",
+              range: "0 to 1 (higher is better)",
+              when: "Semantic similarity matters, paraphrasing acceptable",
+              pros: ["Handles paraphrases", "Semantic matching", "Correlates with human judgment"],
+              cons: ["Slower to compute", "Model-dependent"],
+              tools: "bert-score Python package"
+            },
+            {
+              name: "SummaC",
+              priority: "Consistency Check",
+              description: "NLI-based metric checking if summary is consistent with source document.",
+              when: "Detecting unfaithful summaries",
+              paper: "SummaC: Re-Visiting NLI-based Models for Inconsistency Detection (2022)",
+              note: "Complements ROUGE with faithfulness"
+            }
+          ],
+          additionalInfo: {
+            title: "Summarization metric selection:",
+            points: [
+              "ROUGE-1/2/L: Standard baseline, always report",
+              "BERTScore: Better correlation with humans",
+              "SummaC: Add for faithfulness checking",
+              "Combine multiple metrics for complete picture"
+            ]
+          }
+        },
+        translation_metrics: {
+          question: "Machine Translation Metrics",
+          type: "metric",
+          goal: "Measure translation quality against reference translations",
+          metrics: [
+            {
+              name: "BLEU",
+              priority: "Classic Standard",
+              description: "Precision-oriented n-gram overlap with brevity penalty. Industry standard for decades.",
+              range: "0 to 100 (higher is better)",
+              formula: "BLEU = BP * exp(sum(w_n * log(p_n)))",
+              when: "Standard MT evaluation, comparing to literature",
+              pros: ["Well-understood", "Fast", "Corpus-level reliable"],
+              cons: ["Poor at sentence-level", "Ignores semantics", "Exact match only"],
+              variants: ["BLEU-4 (up to 4-grams)", "SacreBLEU (standardized)"],
+              note: "Always use SacreBLEU for reproducibility"
+            },
+            {
+              name: "chrF / chrF++",
+              priority: "Character-Level",
+              description: "Character n-gram F-score. Better for morphologically rich languages.",
+              range: "0 to 100 (higher is better)",
+              when: "Agglutinative languages, word segmentation issues",
+              pros: ["No tokenization needed", "Works across writing systems"],
+              tools: "SacreBLEU"
+            },
+            {
+              name: "METEOR",
+              priority: "Semantic Matching",
+              description: "Considers synonyms, stems, and paraphrases. Better correlation with human judgment.",
+              range: "0 to 1 (higher is better)",
+              when: "Want semantic matching beyond exact overlap",
+              pros: ["Handles synonyms", "Recall-focused"],
+              cons: ["Language-specific resources needed"]
+            },
+            {
+              name: "COMET",
+              priority: "Neural (Recommended)",
+              description: "Learned neural metric trained on human judgments. State-of-the-art correlation.",
+              range: "Varies by model (higher is better)",
+              when: "Best correlation with human quality assessment",
+              pros: ["Best human correlation", "Reference-free variants available"],
+              cons: ["Requires model inference", "Slower"],
+              paper: "COMET: A Neural Framework for MT Evaluation (2020)",
+              tools: "Unbabel/COMET"
+            },
+            {
+              name: "BLEURT",
+              priority: "Learned Metric",
+              description: "BERT-based learned metric. Pre-trained then fine-tuned on human ratings.",
+              range: "Typically 0-1 (higher is better)",
+              when: "Neural semantic similarity for translation",
+              tools: "Google BLEURT"
+            }
+          ],
+          additionalInfo: {
+            title: "MT metric recommendations:",
+            points: [
+              "Always report BLEU (SacreBLEU) for comparability",
+              "Add COMET for better human correlation",
+              "chrF for morphologically rich languages",
+              "Consider reference-free COMET for production"
+            ]
+          }
+        },
+        general_generation: {
+          question: "General Text Generation Metrics",
+          type: "metric",
+          goal: "Evaluate open-ended text generation quality",
+          metrics: [
+            {
+              name: "MAUVE",
+              priority: "Distribution-Level",
+              description: "Compares distribution of generated text to human text. Captures diversity and coherence.",
+              range: "0 to 1 (higher is better, closer to human)",
+              when: "Open-ended generation, story writing, dialogue",
+              pros: ["Captures diversity", "Distribution-level comparison", "No single reference needed"],
+              cons: ["Needs corpus of generations", "Computationally heavier"],
+              paper: "MAUVE: Measuring the Gap Between Neural Text and Human Text (2021)",
+              note: "Best for evaluating creative/diverse generation"
+            },
+            {
+              name: "Distinct-n",
+              priority: "Diversity",
+              description: "Ratio of unique n-grams to total n-grams. Measures lexical diversity.",
+              range: "0 to 1 (higher = more diverse)",
+              when: "Checking for repetitive/boring generation",
+              variants: ["Distinct-1 (unigrams)", "Distinct-2 (bigrams)"],
+              note: "Simple but useful diversity check"
+            },
+            {
+              name: "Self-BLEU",
+              priority: "Diversity (Inverse)",
+              description: "BLEU of each generation against others. Lower = more diverse.",
+              range: "0 to 100 (lower is more diverse)",
+              when: "Measuring generation diversity in a set",
+              note: "High Self-BLEU = repetitive outputs"
+            },
+            {
+              name: "Repetition Rate",
+              priority: "Degeneration Check",
+              description: "Frequency of repeated n-grams within a single generation.",
+              when: "Detecting degenerate repetition",
+              note: "Critical for long-form generation"
+            },
+            {
+              name: "PARENT",
+              priority: "Data-to-Text",
+              description: "For data-to-text generation. Balances fidelity to data and fluency.",
+              when: "Table-to-text, structured data generation",
+              paper: "Handling Divergent Reference Texts (2019)"
+            }
+          ],
+          continueOptions: [
+            { label: "Need human-like quality assessment", next: "quality_preference" }
+          ]
+        },
+        semantic_metrics: {
+          question: "Semantic Similarity Metrics",
+          type: "metric",
+          goal: "Measure meaning preservation regardless of exact wording",
+          metrics: [
+            {
+              name: "BERTScore",
+              priority: "Standard Choice",
+              description: "Token-level cosine similarity using BERT embeddings. Handles paraphrases well.",
+              range: "0 to 1 (higher is better)",
+              formula: "BERTScore = F1 of precision and recall over token similarities",
+              when: "Paraphrase detection, semantic equivalence",
+              pros: ["Semantic matching", "Pre-trained models available"],
+              cons: ["Model choice affects scores", "Not perfectly calibrated"],
+              tools: "bert-score, HuggingFace evaluate"
+            },
+            {
+              name: "MoverScore",
+              priority: "Optimal Transport",
+              description: "Uses Word Mover's Distance with contextualized embeddings.",
+              range: "0 to 1 (higher is better)",
+              when: "Need soft alignment between words",
+              paper: "MoverScore: Text Generation Evaluating with Contextualized Embeddings (2019)"
+            },
+            {
+              name: "Sentence Transformers Similarity",
+              priority: "Sentence-Level",
+              description: "Cosine similarity of sentence embeddings from models like all-MiniLM.",
+              range: "-1 to 1 (higher is better)",
+              when: "Quick semantic similarity check",
+              pros: ["Fast", "Good sentence-level semantics"],
+              tools: "sentence-transformers library"
+            },
+            {
+              name: "SimCSE",
+              priority: "Contrastive",
+              description: "Contrastively trained sentence embeddings. Strong semantic similarity.",
+              when: "High-quality sentence similarity needed",
+              paper: "SimCSE: Simple Contrastive Learning of Sentence Embeddings (2021)"
+            },
+            {
+              name: "BLEURT",
+              priority: "Learned Quality",
+              description: "BERT fine-tuned on human quality judgments. Captures more than pure similarity.",
+              when: "Need quality score, not just similarity",
+              tools: "Google BLEURT"
+            }
+          ]
+        },
+
+        // ========== TASK ACCURACY METRICS ==========
+        task_accuracy: {
+          question: "What type of task output?",
+          type: "decision",
+          options: [
+            { label: "Classification / Labels", next: "classification_metrics", desc: "Single or multi-label prediction" },
+            { label: "Question Answering", next: "qa_metrics", desc: "Extractive or generative QA" },
+            { label: "Information Extraction", next: "extraction_metrics", desc: "NER, relation extraction, JSON" },
+            { label: "Ranking / Retrieval", next: "ranking_metrics", desc: "Search results, recommendations" },
+            { label: "Reasoning / Math", next: "reasoning_metrics", desc: "Logic, math, chain-of-thought" },
+            { label: "Code Generation", next: "code_metrics", desc: "Programming, code completion" }
+          ]
+        },
+        classification_metrics: {
+          question: "Classification Metrics for LLMs",
+          type: "metric",
+          goal: "Evaluate LLM classification accuracy",
+          info: "When using LLMs for classification, extract the predicted label and compute standard metrics.",
+          metrics: [
+            {
+              name: "Accuracy",
+              priority: "Balanced Data Only",
+              description: "Fraction of correct predictions. Misleading for imbalanced classes.",
+              range: "0 to 1 (higher is better)",
+              formula: "Accuracy = Correct / Total",
+              when: "Balanced classes only",
+              warning: "Avoid for imbalanced data"
+            },
+            {
+              name: "Macro F1",
+              priority: "Imbalanced Data",
+              description: "Average F1 across classes. Treats all classes equally regardless of size.",
+              range: "0 to 1 (higher is better)",
+              when: "Imbalanced classes, care about minority classes",
+              note: "Standard for LLM classification benchmarks"
+            },
+            {
+              name: "Weighted F1",
+              priority: "Proportional",
+              description: "F1 weighted by class frequency.",
+              when: "Want to weight by class prevalence"
+            },
+            {
+              name: "AUC-ROC / AUC-PR",
+              priority: "Probability-Based",
+              description: "If LLM outputs probabilities/logits, use AUC for threshold-independent evaluation.",
+              when: "Have probability outputs, especially imbalanced data"
+            },
+            {
+              name: "Cohen's Kappa",
+              priority: "Chance-Corrected",
+              description: "Agreement beyond chance. Good for multi-class with class imbalance.",
+              range: "-1 to 1 (1 is perfect)",
+              when: "Want to account for chance agreement"
+            }
+          ],
+          additionalInfo: {
+            title: "LLM classification evaluation tips:",
+            points: [
+              "Parse LLM output carefully for label extraction",
+              "Consider constrained decoding for valid labels",
+              "Report macro F1 for benchmark comparability",
+              "Include confusion matrix for error analysis"
+            ]
+          }
+        },
+        qa_metrics: {
+          question: "Question Answering Metrics",
+          type: "metric",
+          goal: "Evaluate QA system accuracy",
+          metrics: [
+            {
+              name: "Exact Match (EM)",
+              priority: "Strict Correctness",
+              description: "Binary: is the predicted answer exactly equal to gold answer (after normalization)?",
+              range: "0 to 1 (higher is better)",
+              when: "Short, factoid answers (SQuAD-style)",
+              normalization: "Lowercase, remove articles/punctuation",
+              note: "Standard for extractive QA"
+            },
+            {
+              name: "F1 Score (Token-Level)",
+              priority: "Partial Credit",
+              description: "Token overlap F1 between prediction and gold. Gives partial credit.",
+              range: "0 to 1 (higher is better)",
+              when: "Want to reward partial matches",
+              formula: "F1 over shared tokens",
+              note: "More forgiving than EM"
+            },
+            {
+              name: "ROUGE-L",
+              priority: "Generative QA",
+              description: "For longer generative answers. LCS-based similarity.",
+              when: "Long-form answers, not just extractive"
+            },
+            {
+              name: "BERTScore",
+              priority: "Semantic QA",
+              description: "Semantic similarity for answers that may be paraphrased.",
+              when: "Answers may use different wording"
+            },
+            {
+              name: "LLM-as-Judge",
+              priority: "Open-Ended QA",
+              description: "Use GPT-4 or Claude to judge answer correctness. Flexible but requires validation.",
+              when: "Complex, open-ended questions",
+              note: "Validate against human judgments first"
+            }
+          ],
+          additionalInfo: {
+            title: "QA metric selection:",
+            points: [
+              "EM + F1: Standard for extractive QA (SQuAD)",
+              "Add BERTScore for semantic equivalence",
+              "LLM-judge for complex open-domain QA",
+              "Always include human evaluation for high-stakes"
+            ]
+          }
+        },
+        extraction_metrics: {
+          question: "Information Extraction Metrics",
+          type: "metric",
+          goal: "Evaluate NER, relation extraction, and structured output",
+          metrics: [
+            {
+              name: "Span-Level F1",
+              priority: "NER Standard",
+              description: "F1 computed over entity spans. Requires exact boundary match.",
+              range: "0 to 1 (higher is better)",
+              when: "Named Entity Recognition",
+              variants: ["Strict (exact match)", "Partial (overlap credit)"]
+            },
+            {
+              name: "Token-Level F1",
+              priority: "Sequence Labeling",
+              description: "F1 over individual token labels (B-I-O scheme).",
+              when: "Token classification approach"
+            },
+            {
+              name: "Relation F1",
+              priority: "Relation Extraction",
+              description: "F1 over (head, relation, tail) triplets.",
+              when: "Knowledge graph extraction"
+            },
+            {
+              name: "JSON/Schema Accuracy",
+              priority: "Structured Output",
+              description: "Does the LLM output valid JSON matching expected schema?",
+              when: "Function calling, structured extraction",
+              metrics: ["Valid JSON rate", "Schema compliance rate", "Field accuracy"]
+            },
+            {
+              name: "Key-Value Accuracy",
+              priority: "Form Extraction",
+              description: "Per-field accuracy for document/form extraction.",
+              when: "Document understanding, form parsing"
+            }
+          ]
+        },
+        ranking_metrics: {
+          question: "Ranking & Retrieval Metrics",
+          type: "metric",
+          goal: "Evaluate ordering and retrieval quality",
+          info: "Same as traditional IR metrics. Focus on top-K performance.",
+          metrics: [
+            {
+              name: "NDCG@K",
+              priority: "Graded Relevance",
+              description: "Normalized Discounted Cumulative Gain. Handles graded relevance, rewards top positions.",
+              range: "0 to 1 (higher is better)",
+              when: "Have relevance grades (e.g., 0-3), position matters",
+              note: "Industry standard for search"
+            },
+            {
+              name: "MRR (Mean Reciprocal Rank)",
+              priority: "First Relevant",
+              description: "Average of 1/rank of first relevant result.",
+              range: "0 to 1 (higher is better)",
+              when: "Care most about first correct answer",
+              formula: "MRR = mean(1/rank_first_relevant)"
+            },
+            {
+              name: "Precision@K",
+              priority: "Top-K Quality",
+              description: "Fraction of top-K results that are relevant.",
+              range: "0 to 1 (higher is better)",
+              when: "How many top results are good"
+            },
+            {
+              name: "Recall@K",
+              priority: "Coverage",
+              description: "Fraction of all relevant items found in top-K.",
+              range: "0 to 1 (higher is better)",
+              when: "Need to find most relevant items"
+            },
+            {
+              name: "MAP (Mean Average Precision)",
+              priority: "Binary Relevance",
+              description: "Mean of AP across queries. AP = average precision at each relevant item's position.",
+              range: "0 to 1 (higher is better)",
+              when: "Binary relevance, order matters"
+            },
+            {
+              name: "Hit Rate@K",
+              priority: "Simple Check",
+              description: "Did at least one relevant item appear in top-K?",
+              range: "0 to 1 (higher is better)",
+              when: "Just need one good result"
+            }
+          ]
+        },
+        reasoning_metrics: {
+          question: "Reasoning & Math Metrics",
+          type: "metric",
+          goal: "Evaluate logical reasoning and mathematical ability",
+          metrics: [
+            {
+              name: "Accuracy (Final Answer)",
+              priority: "Primary Metric",
+              description: "Is the final numerical/logical answer correct?",
+              when: "GSM8K, MATH, logic puzzles",
+              note: "Extract final answer, compare to gold"
+            },
+            {
+              name: "Pass@K",
+              priority: "Multiple Samples",
+              description: "Probability of getting correct answer in K samples. Accounts for sampling variance.",
+              range: "0 to 1 (higher is better)",
+              formula: "Pass@K = 1 - C(n-c, k)/C(n, k)",
+              when: "Using temperature sampling",
+              note: "More robust than single-sample accuracy"
+            },
+            {
+              name: "Chain-of-Thought Validity",
+              priority: "Process Evaluation",
+              description: "Are the intermediate reasoning steps correct?",
+              when: "Care about reasoning process, not just answer",
+              methods: ["Human annotation", "LLM-as-judge on steps", "Formal verification"]
+            },
+            {
+              name: "Self-Consistency",
+              priority: "Robustness",
+              description: "Sample multiple CoT paths, majority vote. Measures reasoning stability.",
+              when: "Testing reasoning robustness",
+              paper: "Self-Consistency Improves Chain of Thought Reasoning (2022)"
+            },
+            {
+              name: "MATH Difficulty Levels",
+              priority: "Stratified",
+              description: "Report accuracy per difficulty level (1-5) on MATH benchmark.",
+              when: "Understanding capability curve"
+            }
+          ],
+          additionalInfo: {
+            title: "Key reasoning benchmarks:",
+            points: [
+              "GSM8K: Grade school math word problems",
+              "MATH: Competition math (5 difficulty levels)",
+              "ARC: Science reasoning",
+              "HellaSwag: Commonsense reasoning",
+              "MMLU: Multitask knowledge/reasoning"
+            ]
+          }
+        },
+        code_metrics: {
+          question: "Code Generation Metrics",
+          type: "metric",
+          goal: "Evaluate code generation quality and correctness",
+          metrics: [
+            {
+              name: "Pass@K",
+              priority: "Functional Correctness",
+              description: "Probability that at least one of K samples passes all unit tests.",
+              range: "0 to 1 (higher is better)",
+              when: "Standard code generation evaluation",
+              formula: "Unbiased estimator using n samples",
+              note: "HumanEval standard: Pass@1, Pass@10, Pass@100"
+            },
+            {
+              name: "Pass@1",
+              priority: "Single-Shot",
+              description: "Probability of first sample being correct. Most practical metric.",
+              when: "Real-world single-query scenario",
+              note: "Often use greedy decoding for Pass@1"
+            },
+            {
+              name: "HumanEval / HumanEval+",
+              priority: "Standard Benchmark",
+              description: "164 Python functions with docstrings and test cases. HumanEval+ adds more tests.",
+              note: "De facto standard for code LLM evaluation"
+            },
+            {
+              name: "MBPP",
+              priority: "Alternative Benchmark",
+              description: "Mostly Basic Python Problems. 974 crowd-sourced problems.",
+              note: "Broader coverage than HumanEval"
+            },
+            {
+              name: "CodeBLEU",
+              priority: "Syntax-Aware",
+              description: "BLEU variant considering code syntax (AST matching, data flow).",
+              when: "Want to measure code similarity beyond text",
+              components: ["N-gram match", "Weighted n-gram", "Syntax match", "Dataflow match"]
+            },
+            {
+              name: "Execution-Based Metrics",
+              priority: "Ground Truth",
+              description: "Run generated code, check outputs match expected.",
+              when: "Have test cases or expected outputs",
+              note: "Most reliable but requires execution environment"
+            },
+            {
+              name: "SWE-Bench",
+              priority: "Real-World",
+              description: "Resolve actual GitHub issues from popular repos. Tests real software engineering.",
+              paper: "SWE-bench: Can Language Models Resolve Real-World GitHub Issues? (2024)",
+              note: "Most realistic but challenging benchmark"
+            }
+          ],
+          additionalInfo: {
+            title: "Code evaluation best practices:",
+            points: [
+              "Always use execution-based testing when possible",
+              "Report Pass@1 for practical performance",
+              "Report Pass@10/100 to show potential with sampling",
+              "SWE-Bench for real-world agent capability"
+            ]
+          }
+        },
+
+        // ========== QUALITY & PREFERENCE ==========
+        quality_preference: {
+          question: "How do you want to measure quality?",
+          type: "decision",
+          options: [
+            { label: "Human Evaluation", next: "human_eval", desc: "Gold standard but expensive" },
+            { label: "LLM-as-Judge", next: "llm_judge", desc: "Scalable automatic evaluation" },
+            { label: "Preference & Comparison", next: "preference_metrics", desc: "Pairwise comparisons, Elo, win rates" },
+            { label: "Benchmark Suites", next: "benchmark_suites", desc: "Standard multi-task benchmarks" }
+          ]
+        },
+        human_eval: {
+          question: "Human Evaluation Dimensions",
+          type: "metric",
+          goal: "Human assessment of generation quality",
+          metrics: [
+            {
+              name: "Helpfulness",
+              priority: "Core Dimension",
+              description: "Does the response actually help the user accomplish their goal?",
+              scale: "Typically 1-5 or 1-7 Likert",
+              when: "Assistant/chatbot evaluation"
+            },
+            {
+              name: "Fluency",
+              priority: "Language Quality",
+              description: "Is the text grammatically correct and natural sounding?",
+              scale: "1-5 Likert or binary",
+              note: "Modern LLMs rarely fail here"
+            },
+            {
+              name: "Coherence",
+              priority: "Logical Flow",
+              description: "Does the response make logical sense? Is it well-organized?",
+              when: "Long-form generation"
+            },
+            {
+              name: "Relevance",
+              priority: "On-Topic",
+              description: "Does the response address what was asked?",
+              when: "Checking for off-topic drift"
+            },
+            {
+              name: "Factual Accuracy",
+              priority: "Truthfulness",
+              description: "Are the claims in the response correct?",
+              when: "Factual/knowledge-intensive tasks",
+              note: "Often requires fact-checking"
+            },
+            {
+              name: "Safety",
+              priority: "Harm Prevention",
+              description: "Is the response free from harmful, biased, or inappropriate content?",
+              when: "Always for user-facing applications"
+            },
+            {
+              name: "A/B Preference",
+              priority: "Comparative",
+              description: "Which of two responses is better? Side-by-side comparison.",
+              when: "Comparing two models/versions",
+              note: "More reliable than absolute ratings"
+            }
+          ],
+          additionalInfo: {
+            title: "Human evaluation best practices:",
+            points: [
+              "Use clear rubrics with examples",
+              "Calculate inter-annotator agreement (Kappa, Krippendorff's alpha)",
+              "Minimum 3 annotators per item",
+              "Prefer pairwise comparison over absolute scores"
+            ]
+          }
+        },
+        llm_judge: {
+          question: "LLM-as-Judge Methods",
+          type: "metric",
+          goal: "Use strong LLMs to evaluate other models",
+          info: "Scalable alternative to human evaluation. Correlates well with humans when done correctly.",
+          metrics: [
+            {
+              name: "G-Eval",
+              priority: "Structured Evaluation",
+              description: "Chain-of-thought evaluation with defined criteria. LLM outputs scores with reasoning.",
+              when: "Need interpretable automatic scores",
+              paper: "G-Eval: NLG Evaluation using GPT-4 (2023)",
+              pros: ["Interpretable", "Customizable criteria"],
+              setup: "Prompt with evaluation steps, extract score"
+            },
+            {
+              name: "MT-Bench",
+              priority: "Multi-Turn Dialogue",
+              description: "80 multi-turn questions across 8 categories. GPT-4 judges responses 1-10.",
+              when: "Chat/assistant model comparison",
+              paper: "Judging LLM-as-a-Judge (2023)",
+              note: "Standard for instruction-tuned LLMs"
+            },
+            {
+              name: "AlpacaEval",
+              priority: "Win Rate",
+              description: "Compare model outputs to reference (GPT-4/Claude). Report win rate.",
+              range: "0-100% win rate",
+              when: "Quick model comparison",
+              variants: ["AlpacaEval 1.0", "AlpacaEval 2.0 (length-controlled)"],
+              note: "Length-controlled version reduces length bias"
+            },
+            {
+              name: "Arena-Hard",
+              priority: "Challenging",
+              description: "500 hard prompts from Chatbot Arena. More discriminative than MT-Bench.",
+              when: "Distinguishing frontier models",
+              paper: "From Crowdsourced Data to High-Quality Benchmarks (2024)"
+            },
+            {
+              name: "Pairwise Preference",
+              priority: "Comparative",
+              description: "LLM chooses which of two responses is better. Can swap order to reduce bias.",
+              when: "Model comparison",
+              note: "Average scores over position swaps"
+            },
+            {
+              name: "Rubric-Based Scoring",
+              priority: "Customizable",
+              description: "Define custom rubric, LLM scores each dimension.",
+              when: "Domain-specific evaluation criteria",
+              setup: "Clear rubric + examples in prompt"
+            }
+          ],
+          additionalInfo: {
+            title: "LLM-as-Judge best practices:",
+            points: [
+              "Use GPT-4 or Claude as judges (stronger = better)",
+              "Swap response positions to reduce order bias",
+              "Validate against human judgments on subset",
+              "Be aware of self-preference bias",
+              "Length bias: control for or use length-controlled variants"
+            ]
+          }
+        },
+        preference_metrics: {
+          question: "Preference & Comparison Metrics",
+          type: "metric",
+          goal: "Compare models through head-to-head evaluation",
+          metrics: [
+            {
+              name: "Elo Rating",
+              priority: "Ranking System",
+              description: "Chess-style rating from pairwise comparisons. Used by Chatbot Arena.",
+              when: "Ranking multiple models",
+              pros: ["Transitive rankings", "Handles varying opponents"],
+              note: "Chatbot Arena has 1M+ human votes"
+            },
+            {
+              name: "Win Rate",
+              priority: "Simple Comparison",
+              description: "Percentage of head-to-head wins against baseline.",
+              range: "0-100%",
+              when: "Comparing to specific baseline (e.g., GPT-4)",
+              note: "Report ties separately"
+            },
+            {
+              name: "Bradley-Terry Model",
+              priority: "Statistical",
+              description: "Probabilistic model for pairwise comparisons. Estimates win probabilities.",
+              when: "Statistical analysis of preferences"
+            },
+            {
+              name: "TrueSkill",
+              priority: "Bayesian",
+              description: "Bayesian rating system. Handles uncertainty in ratings.",
+              when: "Want confidence intervals on rankings"
+            },
+            {
+              name: "Human Preference Rate",
+              priority: "Gold Standard",
+              description: "Percentage of humans preferring model A over B.",
+              when: "Ground truth for model comparison",
+              note: "Expensive but most reliable"
+            }
+          ]
+        },
+        benchmark_suites: {
+          question: "Standard Benchmark Suites",
+          type: "metric",
+          goal: "Comprehensive model evaluation across tasks",
+          metrics: [
+            {
+              name: "MMLU",
+              priority: "Knowledge Breadth",
+              description: "Massive Multitask Language Understanding. 57 subjects from STEM to humanities.",
+              when: "General knowledge evaluation",
+              note: "5-shot, report overall and per-category"
+            },
+            {
+              name: "MMLU-Pro",
+              priority: "Harder MMLU",
+              description: "More challenging version with 10 choices and harder questions.",
+              paper: "MMLU-Pro: A More Robust and Challenging Multi-Task Language Understanding Benchmark (2024)"
+            },
+            {
+              name: "HellaSwag",
+              priority: "Commonsense",
+              description: "Commonsense reasoning about situations.",
+              note: "Adversarially filtered for difficulty"
+            },
+            {
+              name: "ARC (AI2 Reasoning Challenge)",
+              priority: "Science Reasoning",
+              description: "Science exam questions. ARC-Easy and ARC-Challenge splits.",
+              when: "Scientific reasoning evaluation"
+            },
+            {
+              name: "WinoGrande",
+              priority: "Pronoun Resolution",
+              description: "Winograd-style commonsense pronoun resolution.",
+              when: "Commonsense coreference"
+            },
+            {
+              name: "TruthfulQA",
+              priority: "Truthfulness",
+              description: "Questions that elicit common misconceptions. Tests for truthfulness.",
+              when: "Evaluating tendency to generate falsehoods",
+              paper: "TruthfulQA: Measuring How Models Mimic Human Falsehoods (2021)"
+            },
+            {
+              name: "BigBench / BigBench-Hard",
+              priority: "Diverse Tasks",
+              description: "200+ diverse tasks. BBH subset focuses on hard reasoning.",
+              when: "Broad capability assessment"
+            },
+            {
+              name: "Open LLM Leaderboard",
+              priority: "Standardized Suite",
+              description: "HuggingFace leaderboard with standardized evaluations.",
+              tasks: ["MMLU", "ARC", "HellaSwag", "TruthfulQA", "Winogrande", "GSM8K"],
+              note: "De facto standard for open model comparison"
+            }
+          ],
+          additionalInfo: {
+            title: "Benchmark reporting:",
+            points: [
+              "Always report evaluation settings (n-shot, prompt format)",
+              "Use standardized evaluation harness (lm-eval)",
+              "Report confidence intervals when possible",
+              "Be aware of data contamination concerns"
+            ]
+          }
+        },
+
+        // ========== SAFETY & ALIGNMENT ==========
+        safety: {
+          question: "What safety aspect are you evaluating?",
+          type: "decision",
+          options: [
+            { label: "Toxicity & Hate Speech", next: "toxicity_metrics", desc: "Harmful language detection" },
+            { label: "Bias & Fairness", next: "bias_metrics", desc: "Demographic and social biases" },
+            { label: "Privacy & PII", next: "privacy_metrics", desc: "Personal information leakage" },
+            { label: "Policy Compliance", next: "policy_metrics", desc: "Refusals, jailbreaks, red-teaming" }
+          ]
+        },
+        toxicity_metrics: {
+          question: "Toxicity & Harmful Content Metrics",
+          type: "metric",
+          goal: "Detect and measure harmful language",
+          metrics: [
+            {
+              name: "Toxicity Score (Perspective API)",
+              priority: "Industry Standard",
+              description: "Google's classifier for toxic, severe toxic, insult, threat, etc.",
+              range: "0 to 1 per category",
+              when: "Standard toxicity measurement",
+              pros: ["Well-tested", "Multiple categories"],
+              tools: "Perspective API"
+            },
+            {
+              name: "RealToxicityPrompts",
+              priority: "Generation Benchmark",
+              description: "Benchmark for measuring toxicity in continuations of prompts.",
+              when: "Testing toxicity in free generation",
+              metrics: ["Expected maximum toxicity", "Toxicity probability"],
+              paper: "RealToxicityPrompts (2020)"
+            },
+            {
+              name: "ToxiGen",
+              priority: "Implicit Toxicity",
+              description: "Benchmark for implicit and machine-generated toxic language.",
+              when: "Detecting subtle/implicit hate speech",
+              paper: "ToxiGen: A Large-Scale Machine-Generated Dataset (2022)"
+            },
+            {
+              name: "HateBERT / Detoxify",
+              priority: "Specialized Classifiers",
+              description: "Fine-tuned BERT models for hate speech and toxicity.",
+              tools: "Detoxify library, HateBERT"
+            },
+            {
+              name: "Toxicity Rate",
+              priority: "Aggregate Metric",
+              description: "Percentage of outputs exceeding toxicity threshold.",
+              formula: "Rate = count(toxic > threshold) / total",
+              when: "Summary statistic for evaluation"
+            }
+          ]
+        },
+        bias_metrics: {
+          question: "Bias & Fairness Metrics",
+          type: "metric",
+          goal: "Measure and detect biases in model outputs",
+          metrics: [
+            {
+              name: "BBQ (Bias Benchmark for QA)",
+              priority: "QA Bias",
+              description: "Multiple-choice QA testing social biases across 9 categories.",
+              when: "Measuring social bias in question answering",
+              paper: "BBQ: A Hand-Built Bias Benchmark (2022)"
+            },
+            {
+              name: "WinoBias / WinoGender",
+              priority: "Gender Bias",
+              description: "Coreference resolution tests for gender bias.",
+              when: "Measuring gender stereotypes"
+            },
+            {
+              name: "StereoSet",
+              priority: "Stereotype Detection",
+              description: "Measures stereotypical associations in language models.",
+              metrics: ["Language Modeling Score", "Stereotype Score", "ICAT combined"],
+              paper: "StereoSet: Measuring Stereotypical Bias (2021)"
+            },
+            {
+              name: "CrowS-Pairs",
+              priority: "Pairwise Bias",
+              description: "Paired sentences measuring bias across demographics.",
+              when: "Comparative bias measurement"
+            },
+            {
+              name: "Demographic Parity",
+              priority: "Outcome Fairness",
+              description: "Are outcomes equal across demographic groups?",
+              when: "Classification tasks with demographic info"
+            },
+            {
+              name: "Embedding Bias (WEAT/SEAT)",
+              priority: "Representation Bias",
+              description: "Measures bias in embedding space using word/sentence associations.",
+              when: "Analyzing embedding-level bias"
+            }
+          ],
+          additionalInfo: {
+            title: "Bias evaluation considerations:",
+            points: [
+              "Bias is multi-dimensional - test multiple aspects",
+              "Benchmarks may not cover all relevant biases",
+              "Consider intersectionality",
+              "Combine with qualitative analysis"
+            ]
+          }
+        },
+        privacy_metrics: {
+          question: "Privacy & PII Metrics",
+          type: "metric",
+          goal: "Detect personal information leakage",
+          metrics: [
+            {
+              name: "PII Detection Rate",
+              priority: "Primary Metric",
+              description: "Rate of outputs containing PII (names, emails, SSNs, etc.).",
+              formula: "Rate = outputs_with_PII / total_outputs",
+              when: "Measuring memorization of private data",
+              tools: "Presidio, spaCy NER, regex patterns"
+            },
+            {
+              name: "Membership Inference",
+              priority: "Training Data Leakage",
+              description: "Can an adversary determine if data was in training set?",
+              when: "Testing memorization vulnerability",
+              metrics: ["Attack success rate", "AUC of attack"]
+            },
+            {
+              name: "Extraction Attack Success",
+              priority: "Targeted Leakage",
+              description: "Can adversary extract specific private information from prompts?",
+              when: "Testing prompt injection / extraction attacks"
+            },
+            {
+              name: "Canary Extraction",
+              priority: "Memorization Test",
+              description: "Insert canary strings in training, test if model memorizes them.",
+              paper: "Extracting Training Data from Large Language Models (2021)"
+            },
+            {
+              name: "k-Anonymity Preservation",
+              priority: "Anonymization",
+              description: "Does generated data maintain k-anonymity properties?",
+              when: "Generating synthetic data"
+            }
+          ]
+        },
+        policy_metrics: {
+          question: "Policy Compliance & Red-Teaming Metrics",
+          type: "metric",
+          goal: "Evaluate safety guardrails and attack resistance",
+          metrics: [
+            {
+              name: "Attack Success Rate (ASR)",
+              priority: "Jailbreak Resistance",
+              description: "Percentage of adversarial prompts that bypass safety.",
+              range: "0 to 1 (lower is safer)",
+              when: "Red-teaming, jailbreak testing",
+              note: "Test with diverse attack types"
+            },
+            {
+              name: "Refusal Rate",
+              priority: "Safety Behavior",
+              description: "Percentage of harmful requests properly refused.",
+              range: "0 to 1 (higher = safer, but watch for over-refusal)",
+              when: "Testing safety policy adherence"
+            },
+            {
+              name: "False Refusal Rate",
+              priority: "Over-Safety",
+              description: "Percentage of benign requests incorrectly refused.",
+              range: "0 to 1 (lower is better)",
+              when: "Checking for over-cautious behavior",
+              note: "Balance safety with helpfulness"
+            },
+            {
+              name: "HarmBench",
+              priority: "Standardized Red-Team",
+              description: "Benchmark for evaluating LLM safety against harmful requests.",
+              paper: "HarmBench: A Standardized Evaluation Framework (2024)",
+              categories: ["Chemical/bio", "Cybersecurity", "Harassment", "Misinformation"]
+            },
+            {
+              name: "JailbreakBench",
+              priority: "Jailbreak Testing",
+              description: "Standardized jailbreak attack evaluation.",
+              when: "Testing adversarial prompt resistance"
+            },
+            {
+              name: "StrongREJECT",
+              priority: "Refusal Quality",
+              description: "Evaluates quality and appropriateness of refusal responses.",
+              paper: "StrongREJECT (2024)"
+            }
+          ],
+          additionalInfo: {
+            title: "Safety evaluation principles:",
+            points: [
+              "Red-team with diverse attack types",
+              "Balance refusal rate with false refusal rate",
+              "Test against latest jailbreak techniques",
+              "Include human red-teaming, not just automated"
+            ]
+          }
+        },
+
+        // ========== FACTUALITY & HALLUCINATION ==========
+        factuality: {
+          question: "What type of factuality evaluation?",
+          type: "decision",
+          options: [
+            { label: "RAG / Grounded Generation", next: "rag_metrics", desc: "Faithfulness to retrieved context" },
+            { label: "Open-Domain Factuality", next: "factuality_metrics", desc: "Truthfulness without context" },
+            { label: "Hallucination Detection", next: "hallucination_metrics", desc: "Detecting fabricated content" }
+          ]
+        },
+        rag_metrics: {
+          question: "RAG Evaluation Metrics",
+          type: "metric",
+          goal: "Evaluate retrieval-augmented generation quality",
+          info: "RAGAS framework provides comprehensive RAG evaluation.",
+          metrics: [
+            {
+              name: "Faithfulness",
+              priority: "Core RAG Metric",
+              description: "Are all claims in the answer supported by the retrieved context?",
+              range: "0 to 1 (higher is better)",
+              when: "Checking for context-grounded answers",
+              method: "LLM extracts claims, checks each against context",
+              tools: "RAGAS, TruLens"
+            },
+            {
+              name: "Answer Relevance",
+              priority: "Core RAG Metric",
+              description: "Is the answer relevant to the question asked?",
+              range: "0 to 1 (higher is better)",
+              when: "Checking answer addresses the question",
+              method: "Generate questions from answer, compare to original"
+            },
+            {
+              name: "Context Precision",
+              priority: "Retrieval Quality",
+              description: "Are the retrieved contexts relevant to the question?",
+              range: "0 to 1 (higher is better)",
+              when: "Evaluating retriever performance",
+              note: "Ranks relevant contexts higher"
+            },
+            {
+              name: "Context Recall",
+              priority: "Retrieval Coverage",
+              description: "Does the context contain information needed to answer?",
+              range: "0 to 1 (higher is better)",
+              when: "Checking if retrieval found necessary info",
+              note: "Requires ground truth answer"
+            },
+            {
+              name: "Answer Correctness",
+              priority: "Final Quality",
+              description: "Overall correctness combining factuality and semantic similarity.",
+              range: "0 to 1 (higher is better)",
+              when: "End-to-end RAG evaluation"
+            },
+            {
+              name: "Groundedness (TruLens)",
+              priority: "Alternative",
+              description: "Similar to faithfulness. Measures answer support by context.",
+              tools: "TruLens, LangChain evaluation"
+            },
+            {
+              name: "ARES",
+              priority: "Automated RAG",
+              description: "Automated RAG Evaluation System. Trains custom evaluators.",
+              paper: "ARES: An Automated Evaluation Framework (2023)",
+              pros: ["Domain-adaptive", "Lightweight after training"]
+            }
+          ],
+          additionalInfo: {
+            title: "RAG evaluation best practices:",
+            points: [
+              "Evaluate retrieval and generation separately",
+              "Faithfulness is often more important than relevance",
+              "Use multiple metrics for complete picture",
+              "Validate LLM-judges against human labels"
+            ]
+          }
+        },
+        factuality_metrics: {
+          question: "Open-Domain Factuality Metrics",
+          type: "metric",
+          goal: "Evaluate factual accuracy without given context",
+          metrics: [
+            {
+              name: "FActScore",
+              priority: "Fine-Grained",
+              description: "Breaks text into atomic facts, verifies each against knowledge source.",
+              range: "0 to 1 (fraction of supported facts)",
+              method: "Extract atomic claims -> retrieve evidence -> verify each",
+              paper: "FActScore: Fine-grained Atomic Evaluation (2023)",
+              pros: ["Interpretable", "Fine-grained"],
+              cons: ["Computationally expensive"]
+            },
+            {
+              name: "TruthfulQA",
+              priority: "Benchmark",
+              description: "817 questions designed to elicit false answers based on misconceptions.",
+              range: "0 to 1 accuracy",
+              when: "Testing tendency to generate common falsehoods",
+              metrics: ["Truthful %", "Informative %", "Truthful + Informative %"],
+              paper: "TruthfulQA: Measuring How Models Mimic Human Falsehoods (2021)"
+            },
+            {
+              name: "FACTOR",
+              priority: "News Domain",
+              description: "Factuality benchmark for news generation.",
+              paper: "Measuring and Improving Factuality in News (2023)"
+            },
+            {
+              name: "Knowledge F1",
+              priority: "KB Verification",
+              description: "Verify claims against knowledge base. F1 over supported/unsupported.",
+              when: "Have structured knowledge base"
+            },
+            {
+              name: "Source Attribution",
+              priority: "Citation Quality",
+              description: "Does the model provide accurate citations/sources?",
+              metrics: ["Citation precision", "Citation recall", "URL validity"],
+              when: "Evaluating source-citing models"
+            }
+          ],
+          additionalInfo: {
+            title: "Factuality challenges:",
+            points: [
+              "Knowledge cutoff affects evaluation",
+              "Some facts are disputed or context-dependent",
+              "Consider confidence calibration",
+              "Long-tail facts are harder to verify"
+            ]
+          }
+        },
+        hallucination_metrics: {
+          question: "Hallucination Detection Metrics",
+          type: "metric",
+          goal: "Detect and measure fabricated content",
+          metrics: [
+            {
+              name: "SelfCheckGPT",
+              priority: "Reference-Free",
+              description: "Sample multiple responses, check consistency. Hallucinations are inconsistent.",
+              range: "Higher score = more hallucination",
+              method: "Multiple samples -> measure agreement",
+              paper: "SelfCheckGPT: Zero-Resource Black-Box Hallucination Detection (2023)",
+              pros: ["No external knowledge needed", "Works with any LLM"]
+            },
+            {
+              name: "Hallucination Rate",
+              priority: "Simple Metric",
+              description: "Percentage of outputs containing hallucinated content.",
+              formula: "Rate = hallucinated_outputs / total_outputs",
+              when: "Aggregate evaluation",
+              note: "Requires ground truth or human annotation"
+            },
+            {
+              name: "HaluEval",
+              priority: "Benchmark",
+              description: "Large-scale hallucination evaluation benchmark with 35K samples.",
+              categories: ["QA hallucination", "Dialogue hallucination", "Summarization hallucination"],
+              paper: "HaluEval: A Large-Scale Hallucination Evaluation Benchmark (2023)"
+            },
+            {
+              name: "FAVA",
+              priority: "Fine-Grained",
+              description: "Fine-grained hallucination detection with error type classification.",
+              types: ["Entity error", "Relation error", "Contradictory", "Invented", "Subjective"],
+              paper: "FAVA: Fine-grained Hallucination Evaluation (2024)"
+            },
+            {
+              name: "NLI-Based Detection",
+              priority: "Entailment Check",
+              description: "Use NLI model to check if claims are entailed by source.",
+              method: "Classify (source, claim) as entailed/contradicted/neutral",
+              tools: "TRUE benchmark, SummaC"
+            },
+            {
+              name: "Atomic Claim Verification",
+              priority: "Decomposition",
+              description: "Break into atomic claims, verify each independently.",
+              method: "Decompose -> Retrieve evidence -> Classify each claim",
+              pros: ["Interpretable", "Localized"],
+              cons: ["Decomposition errors propagate"]
+            }
+          ],
+          additionalInfo: {
+            title: "Hallucination types:",
+            points: [
+              "Intrinsic: contradicts source/context",
+              "Extrinsic: adds unsupported information",
+              "Entity errors: wrong names, dates, numbers",
+              "Fabrication: completely invented content"
+            ]
+          }
+        }
+      };
+
+      const quickReference = [
+        { goal: "Language modeling quality", metric: "Perplexity, Cross-Entropy", notes: "Lower is better, not sufficient alone" },
+        { goal: "Summarization", metric: "ROUGE-1/2/L, BERTScore", notes: "Add SummaC for faithfulness" },
+        { goal: "Translation", metric: "BLEU, COMET", notes: "COMET has best human correlation" },
+        { goal: "Semantic similarity", metric: "BERTScore, Sentence Transformers", notes: "Handles paraphrases" },
+        { goal: "Classification", metric: "Macro F1, Accuracy (if balanced)", notes: "Use F1 for imbalanced" },
+        { goal: "Question Answering", metric: "EM, F1 (token-level)", notes: "Add BERTScore for semantic" },
+        { goal: "Code generation", metric: "Pass@K, HumanEval", notes: "Execution-based is gold standard" },
+        { goal: "Reasoning/Math", metric: "Accuracy, Pass@K", notes: "GSM8K, MATH benchmarks" },
+        { goal: "Assistant quality", metric: "MT-Bench, AlpacaEval, Arena Elo", notes: "LLM-as-judge or human" },
+        { goal: "Toxicity", metric: "Perspective API, RealToxicityPrompts", notes: "Report toxicity rate" },
+        { goal: "Bias", metric: "BBQ, WinoBias, StereoSet", notes: "Test multiple dimensions" },
+        { goal: "RAG faithfulness", metric: "RAGAS (Faithfulness, Relevance)", notes: "Separate retrieval & generation" },
+        { goal: "Factuality", metric: "FActScore, TruthfulQA", notes: "Atomic fact verification" },
+        { goal: "Hallucination", metric: "SelfCheckGPT, HaluEval", notes: "Consistency-based or NLI" }
+      ];
+
+      const handleChoice = (nextNode, label) => {
+        setPath([...path, { node: currentNode, choice: label }]);
+        setCurrentNode(nextNode);
+      };
+
+      const goBack = () => {
+        if (path.length > 0) {
+          const newPath = [...path];
+          const lastStep = newPath.pop();
+          setPath(newPath);
+          setCurrentNode(lastStep.node);
+        }
+      };
+
+      const reset = () => {
+        setPath([]);
+        setCurrentNode('start');
+      };
+
+      const currentData = tree[currentNode];
+
+      const PathBreadcrumb = () => (
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 p-4 rounded-lg mb-6 border border-emerald-200">
+          <div className="flex items-center gap-2 flex-wrap text-sm">
+            <Home className="w-4 h-4 text-emerald-600" />
+            {path.map((step, idx) => (
+              <React.Fragment key={idx}>
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+                <span className="text-emerald-700 font-medium">{step.choice}</span>
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+      );
+
+      const MetricCard = ({ metric }) => (
+        <div className="bg-white border-2 border-gray-200 rounded-lg p-5 hover:border-emerald-400 hover:shadow-lg transition-all">
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <h4 className="text-lg font-bold text-gray-900">{metric.name}</h4>
+              <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded mt-1 inline-block">
+                {metric.priority}
+              </span>
+            </div>
+          </div>
+
+          <p className="text-gray-700 mb-3">{metric.description}</p>
+
+          {metric.range && (
+            <div className="bg-gray-50 p-2 rounded mb-2">
+              <span className="text-xs font-semibold text-gray-600">Range: </span>
+              <span className="text-xs text-gray-800">{metric.range}</span>
+            </div>
+          )}
+
+          {metric.when && (
+            <div className="mb-2">
+              <span className="text-xs font-semibold text-green-700">When to use: </span>
+              <span className="text-xs text-gray-700">{metric.when}</span>
+            </div>
+          )}
+
+          {metric.formula && (
+            <div className="bg-teal-50 p-2 rounded mb-2 font-mono text-xs text-teal-900 overflow-x-auto">
+              {metric.formula}
+            </div>
+          )}
+
+          {metric.method && (
+            <div className="bg-blue-50 p-2 rounded mb-2">
+              <span className="text-xs font-semibold text-blue-700">Method: </span>
+              <span className="text-xs text-blue-900">{metric.method}</span>
+            </div>
+          )}
+
+          {metric.pros && (
+            <div className="mb-2">
+              <span className="text-xs font-semibold text-green-700">Pros: </span>
+              <span className="text-xs text-gray-700">{metric.pros.join(", ")}</span>
+            </div>
+          )}
+
+          {metric.cons && (
+            <div className="mb-2">
+              <span className="text-xs font-semibold text-red-700">Cons: </span>
+              <span className="text-xs text-gray-700">{metric.cons.join(", ")}</span>
+            </div>
+          )}
+
+          {metric.variants && (
+            <div className="mb-2">
+              <span className="text-xs font-semibold text-purple-700">Variants: </span>
+              <span className="text-xs text-gray-700">{metric.variants.join(", ")}</span>
+            </div>
+          )}
+
+          {metric.metrics && (
+            <div className="mb-2">
+              <span className="text-xs font-semibold text-indigo-700">Sub-metrics: </span>
+              <span className="text-xs text-gray-700">{metric.metrics.join(", ")}</span>
+            </div>
+          )}
+
+          {metric.categories && (
+            <div className="mb-2">
+              <span className="text-xs font-semibold text-orange-700">Categories: </span>
+              <span className="text-xs text-gray-700">{metric.categories.join(", ")}</span>
+            </div>
+          )}
+
+          {metric.types && (
+            <div className="mb-2">
+              <span className="text-xs font-semibold text-pink-700">Types: </span>
+              <span className="text-xs text-gray-700">{metric.types.join(", ")}</span>
+            </div>
+          )}
+
+          {metric.components && (
+            <div className="mb-2">
+              <span className="text-xs font-semibold text-purple-700">Components: </span>
+              <span className="text-xs text-gray-700">{metric.components.join(", ")}</span>
+            </div>
+          )}
+
+          {metric.tasks && (
+            <div className="mb-2">
+              <span className="text-xs font-semibold text-blue-700">Tasks: </span>
+              <span className="text-xs text-gray-700">{metric.tasks.join(", ")}</span>
+            </div>
+          )}
+
+          {metric.tools && (
+            <div className="bg-indigo-50 p-2 rounded mb-2">
+              <span className="text-xs font-semibold text-indigo-700">Tools: </span>
+              <span className="text-xs text-indigo-900">{metric.tools}</span>
+            </div>
+          )}
+
+          {metric.paper && (
+            <div className="text-xs text-gray-500 italic mb-2">
+              Paper: {metric.paper}
+            </div>
+          )}
+
+          {metric.scale && (
+            <div className="mb-2">
+              <span className="text-xs font-semibold text-gray-600">Scale: </span>
+              <span className="text-xs text-gray-700">{metric.scale}</span>
+            </div>
+          )}
+
+          {metric.normalization && (
+            <div className="mb-2">
+              <span className="text-xs font-semibold text-gray-600">Normalization: </span>
+              <span className="text-xs text-gray-700">{metric.normalization}</span>
+            </div>
+          )}
+
+          {metric.setup && (
+            <div className="bg-amber-50 p-2 rounded mb-2">
+              <span className="text-xs font-semibold text-amber-700">Setup: </span>
+              <span className="text-xs text-amber-900">{metric.setup}</span>
+            </div>
+          )}
+
+          {metric.note && (
+            <div className="mt-2 text-xs bg-yellow-50 border-l-4 border-yellow-400 p-2 text-yellow-800">
+              {metric.note}
+            </div>
+          )}
+
+          {metric.warning && (
+            <div className="mt-2 text-xs bg-red-50 border-l-4 border-red-400 p-2 text-red-800">
+              {metric.warning}
+            </div>
+          )}
+        </div>
+      );
+
+      const QuickReferenceModal = () => (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900">FM Evaluation Quick Reference</h2>
+              <button
+                onClick={() => setShowQuickRef(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+              >
+                x
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white">
+                    <th className="p-3 text-left font-semibold">Evaluation Goal</th>
+                    <th className="p-3 text-left font-semibold">Primary Metrics</th>
+                    <th className="p-3 text-left font-semibold">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {quickReference.map((row, idx) => (
+                    <tr key={idx} className={idx % 2 === 0 ? "bg-gray-50" : "bg-white"}>
+                      <td className="p-3 font-semibold text-gray-900">{row.goal}</td>
+                      <td className="p-3 text-emerald-700 font-mono text-sm">{row.metric}</td>
+                      <td className="p-3 text-gray-600 text-sm">{row.notes}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-6 bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+              <h3 className="font-bold text-emerald-900 mb-2">Key Principles:</h3>
+              <ul className="text-sm text-emerald-800 space-y-1 list-disc list-inside">
+                <li>Use multiple metrics for comprehensive evaluation</li>
+                <li>Perplexity alone is NOT sufficient for user-facing quality</li>
+                <li>LLM-as-judge works well but validate against humans</li>
+                <li>For safety: test with diverse red-team attacks</li>
+                <li>For RAG: evaluate retrieval and generation separately</li>
+              </ul>
+            </div>
+
+            <div className="mt-4 bg-teal-50 border border-teal-200 rounded-lg p-4">
+              <h3 className="font-bold text-teal-900 mb-2">Popular Tools:</h3>
+              <ul className="text-sm text-teal-800 space-y-1 list-disc list-inside">
+                <li><strong>lm-evaluation-harness:</strong> Standard benchmark suite</li>
+                <li><strong>RAGAS:</strong> RAG evaluation framework</li>
+                <li><strong>TruLens:</strong> LLM app evaluation</li>
+                <li><strong>HuggingFace Evaluate:</strong> Metrics library</li>
+                <li><strong>Perspective API:</strong> Toxicity detection</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      );
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-4 md:p-8">
+          <div className="max-w-6xl mx-auto">
+            {/* Header */}
+            <div className="text-center mb-8">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <Brain className="w-8 h-8 text-emerald-600" />
+                <h1 className="text-3xl md:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-600">
+                  FM Evaluation Metrics
+                </h1>
+              </div>
+              <p className="text-gray-600">Interactive guide to evaluating Foundation Models & LLMs</p>
+
+              <div className="flex gap-3 justify-center mt-4 flex-wrap">
+                <button
+                  onClick={reset}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-gray-300 rounded-lg hover:border-emerald-400 hover:shadow-md transition-all text-gray-700"
+                >
+                  <Home className="w-4 h-4" />
+                  Start Over
+                </button>
+                <button
+                  onClick={() => setShowQuickRef(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:shadow-lg transition-all"
+                >
+                  <List className="w-4 h-4" />
+                  Quick Reference
+                </button>
+              </div>
+            </div>
+
+            {/* Path Breadcrumb */}
+            {path.length > 0 && <PathBreadcrumb />}
+
+            {/* Main Content */}
+            <div className="bg-white rounded-2xl shadow-xl p-6 md:p-8 border border-gray-200">
+              {currentData.info && (
+                <div className="mb-6 bg-emerald-50 border-l-4 border-emerald-500 p-4 rounded-r-lg">
+                  <div className="flex items-start gap-2">
+                    <Info className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-emerald-900 text-sm">{currentData.info}</p>
+                  </div>
+                </div>
+              )}
+
+              {currentData.warning && (
+                <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg">
+                  <p className="text-red-900 font-semibold">{currentData.warning}</p>
+                </div>
+              )}
+
+              {currentData.goal && (
+                <div className="mb-6 bg-green-50 border-l-4 border-green-500 p-4 rounded-r-lg">
+                  <p className="text-green-900 font-semibold text-lg">{currentData.goal}</p>
+                </div>
+              )}
+
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900 mb-6">{currentData.question}</h2>
+
+              {/* Decision Options */}
+              {currentData.type === "decision" && (
+                <div className="grid md:grid-cols-2 gap-4">
+                  {currentData.options.map((option, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleChoice(option.next, option.label)}
+                      className="group p-6 border-2 border-gray-300 rounded-xl hover:border-emerald-500 hover:shadow-lg transition-all text-left bg-gradient-to-br from-white to-gray-50 hover:from-emerald-50 hover:to-teal-50"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-lg md:text-xl font-bold text-gray-900 group-hover:text-emerald-600 transition-colors">
+                          {option.label}
+                        </h3>
+                        <ChevronRight className="w-6 h-6 text-gray-400 group-hover:text-emerald-600 group-hover:translate-x-1 transition-all" />
+                      </div>
+                      <p className="text-gray-600 text-sm">{option.desc}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Metric Display */}
+              {currentData.type === "metric" && (
+                <div>
+                  <div className="grid md:grid-cols-2 gap-4 mb-6">
+                    {currentData.metrics.map((metric, idx) => (
+                      <MetricCard key={idx} metric={metric} />
+                    ))}
+                  </div>
+
+                  {currentData.additionalInfo && (
+                    <div className="bg-teal-50 border-2 border-teal-200 rounded-lg p-5 mb-6">
+                      <h4 className="font-bold text-teal-900 mb-3">{currentData.additionalInfo.title}</h4>
+                      <ul className="space-y-2">
+                        {currentData.additionalInfo.points.map((point, idx) => (
+                          <li key={idx} className="text-teal-800 text-sm flex items-start gap-2">
+                            <span className="text-teal-600 font-bold">*</span>
+                            {point}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {currentData.continueOptions && (
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-700 mb-4">{currentData.nextQuestion || "Continue exploring:"}</h3>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        {currentData.continueOptions.map((option, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => handleChoice(option.next, option.label)}
+                            className="p-4 border-2 border-emerald-300 rounded-lg hover:border-emerald-500 hover:shadow-lg transition-all text-left bg-white hover:bg-emerald-50 flex items-center justify-between group"
+                          >
+                            <span className="font-semibold text-gray-900 group-hover:text-emerald-600">
+                              {option.label}
+                            </span>
+                            <ChevronRight className="w-5 h-5 text-emerald-500 group-hover:translate-x-1 transition-all" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Back Button */}
+              {path.length > 0 && (
+                <button
+                  onClick={goBack}
+                  className="mt-8 flex items-center gap-2 px-6 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg transition-all text-gray-700 font-semibold"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                  Go Back
+                </button>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="text-center mt-8 text-gray-500 text-sm">
+              <p>FM Evaluation Metrics v1.0 | Based on Latest Research (2024)</p>
+              <p className="mt-2 text-xs">
+                Created by Tarek Atwan @ <a href="index.html" className="text-emerald-600 hover:text-emerald-700 hover:underline font-semibold">ML_LAB</a>
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Reference Modal */}
+          {showQuickRef && <QuickReferenceModal />}
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<FMEvaluationMetrics />);
+  </script>
+</body>
+
+</html>
