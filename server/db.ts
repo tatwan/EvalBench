@@ -1,14 +1,12 @@
-import { drizzle } from "drizzle-orm/node-postgres";
-import pg from "pg";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import Database from "better-sqlite3";
 import * as schema from "@shared/schema";
+import path from "path";
 
-const { Pool } = pg;
+const dbPath = path.resolve(process.cwd(), "evalbench.db");
+const sqlite = new Database(dbPath);
 
-if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
-  );
-}
+// Enable WAL mode for better concurrent read performance
+sqlite.pragma("journal_mode = WAL");
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-export const db = drizzle(pool, { schema });
+export const db = drizzle(sqlite, { schema });
