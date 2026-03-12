@@ -5,6 +5,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc } from "drizzle-orm";
+import { listOllamaModels } from "./ollama";
 
 export interface IStorage {
   getModels(): Promise<Model[]>;
@@ -25,23 +26,43 @@ export class DatabaseStorage implements IStorage {
   }
 
   async discoverModels(): Promise<Model[]> {
-    // Mock discovery of models
-    const existingModels = await this.getModels();
-    if (existingModels.length === 0) {
-      const discovered = [
-        { name: "llama3-8b-instruct", family: "llama3", params: "8B", quantization: "Q4_K_M", sizeGb: "4.7" },
-        { name: "mistral-7b-instruct", family: "mistral", params: "7B", quantization: "Q4_0", sizeGb: "4.1" },
-        { name: "phi3-mini-4k", family: "phi3", params: "3.8B", quantization: "Q4_K_M", sizeGb: "2.4" }
-      ];
-      const inserted = await db.insert(models).values(discovered).returning();
-      
-      // Also initialize elo ratings for new models
-      for (const m of inserted) {
-        await db.insert(eloRatings).values({ modelId: m.id, rating: 1200, gamesPlayed: 0 });
-      }
-      return inserted;
+    const ollamaModels = await listOllamaModels();
+
+    if (ollamaModels.length === 0) {
+      // Ollama is offline or has no models — return what's in DB
+      return await this.getModels();
     }
-    return existingModels;
+
+    // Upsert each Ollama model by name
+    for (const om of ollamaModels) {
+      const sizeGb = (om.size / 1e9).toFixed(2);
+      const existing = await db.select().from(models).where(eq(models.name, om.name));
+
+      if (existing.length === 0) {
+        const [inserted] = await db.insert(models).values({
+          name: om.name,
+          family: om.details.family ?? null,
+          params: om.details.parameter_size ?? null,
+          quantization: om.details.quantization_level ?? null,
+          sizeGb,
+        }).returning();
+
+        await db.insert(eloRatings).values({
+          modelId: inserted.id,
+          rating: 1200,
+          gamesPlayed: 0,
+        }).onConflictDoNothing();
+      } else {
+        await db.update(models).set({
+          family: om.details.family ?? null,
+          params: om.details.parameter_size ?? null,
+          quantization: om.details.quantization_level ?? null,
+          sizeGb,
+        }).where(eq(models.name, om.name));
+      }
+    }
+
+    return await this.getModels();
   }
 
   async getEvalRuns(): Promise<EvalRun[]> {
