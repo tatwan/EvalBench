@@ -42,3 +42,16 @@ export function useDiscoverModels() {
     },
   });
 }
+
+export function useOllamaStatus() {
+  return useQuery({
+    queryKey: [api.ollama.status.path],
+    queryFn: async () => {
+      const res = await fetch(api.ollama.status.path, { credentials: "include" });
+      if (!res.ok) return { running: false, modelCount: 0 };
+      return res.json() as Promise<{ running: boolean; modelCount: number; error?: string }>;
+    },
+    refetchInterval: 10_000,
+    staleTime: 8_000,
+  });
+}
