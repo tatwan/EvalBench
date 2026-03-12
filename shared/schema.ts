@@ -5,7 +5,7 @@ import { z } from "zod";
 
 export const models = pgTable("models", {
   id: serial("id").primaryKey(),
-  name: text("name").notNull(),
+  name: text("name").notNull().unique(),
   family: text("family"),
   params: text("params"),
   quantization: text("quantization"),
