@@ -8,12 +8,6 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // Seed Database with mock initial data if empty
-  const existingModels = await storage.getModels();
-  if (existingModels.length === 0) {
-    await storage.discoverModels();
-  }
-
   // Models
   app.get(api.models.list.path, async (req, res) => {
     const models = await storage.getModels();
