@@ -4,7 +4,7 @@ import {
   type EvalResult, type GoldenDataset, type ArenaBattle, type InsertArenaBattle, type EloRating
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import { listOllamaModels } from "./ollama";
 
 export interface IStorage {
@@ -33,36 +33,34 @@ export class DatabaseStorage implements IStorage {
       return await this.getModels();
     }
 
-    // Upsert each Ollama model by name
-    for (const om of ollamaModels) {
-      const sizeGb = (om.size / 1e9).toFixed(2);
-      const existing = await db.select().from(models).where(eq(models.name, om.name));
+    // Bulk upsert all Ollama models in one atomic statement
+    await db.insert(models)
+      .values(ollamaModels.map(om => ({
+        name: om.name,
+        family: om.details.family ?? null,
+        params: om.details.parameter_size ?? null,
+        quantization: om.details.quantization_level ?? null,
+        sizeGb: (om.size / 1e9).toFixed(2),
+      })))
+      .onConflictDoUpdate({
+        target: models.name,
+        set: {
+          family: sql`excluded.family`,
+          params: sql`excluded.params`,
+          quantization: sql`excluded.quantization`,
+          sizeGb: sql`excluded.size_gb`,
+        },
+      });
 
-      if (existing.length === 0) {
-        const [inserted] = await db.insert(models).values({
-          name: om.name,
-          family: om.details.family ?? null,
-          params: om.details.parameter_size ?? null,
-          quantization: om.details.quantization_level ?? null,
-          sizeGb,
-        }).returning();
-
-        await db.insert(eloRatings).values({
-          modelId: inserted.id,
-          rating: 1200,
-          gamesPlayed: 0,
-        }).onConflictDoNothing();
-      } else {
-        await db.update(models).set({
-          family: om.details.family ?? null,
-          params: om.details.parameter_size ?? null,
-          quantization: om.details.quantization_level ?? null,
-          sizeGb,
-        }).where(eq(models.name, om.name));
-      }
+    // Init ELO for any newly inserted models (no-op for existing ones)
+    const syncedModels = await this.getModels();
+    for (const m of syncedModels) {
+      await db.insert(eloRatings)
+        .values({ modelId: m.id, rating: 1200, gamesPlayed: 0 })
+        .onConflictDoNothing();
     }
 
-    return await this.getModels();
+    return syncedModels;
   }
 
   async getEvalRuns(): Promise<EvalRun[]> {
