@@ -1,52 +1,62 @@
-import { ButtonHTMLAttributes, forwardRef } from "react";
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
-import { Loader2 } from "lucide-react";
+import * as React from "react"
+import { Slot } from "@radix-ui/react-slot"
+import { cva, type VariantProps } from "class-variance-authority"
 
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+import { cn } from "@/lib/utils"
+
+const buttonVariants = cva(
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0" +
+  " hover-elevate active-elevate-2",
+  {
+    variants: {
+      variant: {
+        default:
+          "bg-primary text-primary-foreground border border-primary-border",
+        destructive:
+          "bg-destructive text-destructive-foreground border border-destructive-border",
+        outline:
+          // Shows the background color of whatever card / sidebar / accent background it is inside of.
+          // Inherits the current text color.
+          " border [border-color:var(--button-outline)]  shadow-xs active:shadow-none ",
+        secondary: "border bg-secondary text-secondary-foreground border border-secondary-border ",
+        // Add a transparent border so that when someone toggles a border on later, it doesn't shift layout/size.
+        ghost: "border border-transparent",
+      },
+      // Heights are set as "min" heights, because sometimes Ai will place large amount of content
+      // inside buttons. With a min-height they will look appropriate with small amounts of content,
+      // but will expand to fit large amounts of content.
+      size: {
+        default: "min-h-9 px-4 py-2",
+        sm: "min-h-8 rounded-md px-3 text-xs",
+        lg: "min-h-10 rounded-md px-8",
+        icon: "h-9 w-9",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
+  },
+)
+
+export interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof buttonVariants> {
+  asChild?: boolean
 }
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "secondary" | "outline" | "ghost" | "danger" | "glass";
-  size?: "sm" | "md" | "lg" | "icon";
-  isLoading?: boolean;
-}
-
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = "primary", size = "md", isLoading, children, disabled, ...props }, ref) => {
-    const variants = {
-      primary: "bg-gradient-to-b from-sky-400 to-blue-600 text-white shadow-lg shadow-primary/20 hover:shadow-primary/40 hover:-translate-y-0.5 border border-sky-300/20",
-      secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-      outline: "border border-border bg-transparent hover:bg-accent text-foreground",
-      ghost: "bg-transparent hover:bg-white/5 text-foreground",
-      danger: "bg-destructive/90 text-destructive-foreground hover:bg-destructive shadow-lg shadow-destructive/20",
-      glass: "bg-white/5 backdrop-blur-md border border-white/10 hover:bg-white/10 text-foreground",
-    };
-
-    const sizes = {
-      sm: "h-9 px-3 text-xs",
-      md: "h-11 px-5 py-2 text-sm",
-      lg: "h-14 px-8 text-base",
-      icon: "h-11 w-11 flex items-center justify-center",
-    };
-
+const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant, size, asChild = false, ...props }, ref) => {
+    const Comp = asChild ? Slot : "button"
     return (
-      <button
+      <Comp
+        className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
-        disabled={disabled || isLoading}
-        className={cn(
-          "inline-flex items-center justify-center rounded-xl font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98]",
-          variants[variant],
-          sizes[size],
-          className
-        )}
         {...props}
-      >
-        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        {children}
-      </button>
-    );
-  }
-);
-Button.displayName = "Button";
+      />
+    )
+  },
+)
+Button.displayName = "Button"
+
+export { Button, buttonVariants }

@@ -3,8 +3,8 @@ import { useEvalRuns, useAllEvalResults } from "@/hooks/use-eval";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Activity, Cpu, Clock, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
-import { Badge } from "@/components/ui/Badge";
 import { Link } from "wouter";
+import { clsx } from "clsx";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 export default function Dashboard() {
@@ -12,19 +12,15 @@ export default function Dashboard() {
   const { data: runs = [], isLoading: runsLoading } = useEvalRuns();
   const { data: results = [], isLoading: resultsLoading } = useAllEvalResults();
 
-  // Calculate Leaderboard Data
-  const leaderboard = models.map(model => {
-    const modelResults = results.filter(r => r.modelId === model.id);
-    const avgScore = modelResults.length > 0 
-      ? modelResults.reduce((sum, r) => sum + Number(r.score), 0) / modelResults.length 
+  // Calculate Leaderboard Data from eval results
+  const anyResults = results as any[];
+  const leaderboard = (models as any[]).map(model => {
+    const modelResults = anyResults.filter((r: any) => r.modelId === model.id);
+    const avgScore = modelResults.length > 0
+      ? modelResults.reduce((sum: number, r: any) => sum + Number(r.score), 0) / modelResults.length
       : 0;
-    
-    return {
-      ...model,
-      avgScore: avgScore,
-      evalsCount: modelResults.length
-    };
-  }).sort((a, b) => b.avgScore - a.avgScore).slice(0, 5);
+    return { ...model, avgScore, evalsCount: modelResults.length };
+  }).sort((a: any, b: any) => b.avgScore - a.avgScore).slice(0, 5);
 
   const stats = [
     { label: "Local Models", value: models.length, icon: Cpu, color: "text-sky-400" },
@@ -108,13 +104,18 @@ export default function Dashboard() {
                     <Activity className="w-4 h-4 text-primary" />
                     <span className="font-mono text-sm">Run #{run.id}</span>
                   </div>
-                  <Badge variant={run.status === 'completed' ? 'success' : run.status === 'pending' ? 'warning' : 'default'}>
+                  <span className={clsx(
+                    "text-xs font-semibold px-2 py-0.5 rounded-full",
+                    run.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
+                    run.status === 'pending' ? 'bg-amber-500/20 text-amber-400' :
+                    'bg-white/10 text-muted-foreground'
+                  )}>
                     {run.status}
-                  </Badge>
+                  </span>
                 </div>
                 <div className="text-xs text-muted-foreground flex justify-between items-center">
                   <span>{run.timestamp ? format(new Date(run.timestamp), 'MMM d, h:mm a') : 'Unknown'}</span>
-                  <Link href={`/evaluate`} className="text-primary opacity-0 group-hover:opacity-100 transition-opacity hover:underline">
+                  <Link href={`/evaluate/${run.id}`} className="text-primary opacity-0 group-hover:opacity-100 transition-opacity hover:underline">
                     View Details
                   </Link>
                 </div>

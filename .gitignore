@@ -1,6 +1,39 @@
+# Node / Web
 node_modules
 dist
+dist-ssr
+*.local
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# macOS
 .DS_Store
+*.swp
+
+# Replit/Legacy
 server/public
 vite.config.ts.*
 *.tar.gz
+.replit
+
+# Python
+.venv
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Database (keep out user evals & battle data)
+evalbench.db
+evalbench.db-shm
+evalbench.db-wal
+
+# Editor / IDEs
+.vscode/
+.idea/
