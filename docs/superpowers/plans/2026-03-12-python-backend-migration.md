@@ -1670,16 +1670,1252 @@ Before deleting the Node backend, verify these manually with FastAPI running:
 
 ---
 
-## Post-Migration: What Python Unlocks
+## Chunk 7: Provider Abstraction Layer
 
-Once this migration is complete, the following become straightforward to add directly in the backend — no sidecar needed:
+> **Run after Chunk 6 cutover.** This refactors the arena and model discovery to use an abstract provider interface so adding OpenAI, Anthropic, or any other LLM backend is a one-file addition with zero changes to routers.
+
+### Task 14: Abstract provider base + Ollama provider
+
+**Files:**
+- Create: `backend/providers/__init__.py` (empty)
+- Create: `backend/providers/base.py`
+- Create: `backend/providers/ollama.py` (replaces `backend/services/ollama.py`)
+- Create: `backend/providers/openai_provider.py` (stub)
+- Create: `backend/providers/registry.py`
+- Modify: `backend/routers/arena.py` — use provider instead of raw `generate()`
+- Modify: `backend/routers/models.py` — use provider instead of raw `list_models()`
+- Create: `tests/test_providers.py`
+
+- [ ] **Step 1: Write failing tests**
 
 ```python
-# Future eval metrics — all native Python, drop into backend/services/
-from rouge_score import rouge_scorer          # ROUGE-1/2/L
-from bert_score import score as bert_score    # BERTScore
-import evaluate                               # HuggingFace Evaluate hub
-from huggingface_hub import InferenceClient  # HF model inference
-from datasets import load_dataset            # HF datasets
-from transformers import pipeline            # local HF models
+# tests/test_providers.py
+import pytest
+from unittest.mock import patch, AsyncMock
+import httpx
+from backend.providers.ollama import OllamaProvider
+from backend.providers.registry import get_provider, list_available_providers
+
+
+@pytest.mark.asyncio
+async def test_ollama_provider_generate_success():
+    mock_response = httpx.Response(
+        200,
+        json={"response": "42 is the answer."},
+        request=httpx.Request("POST", "http://localhost:11434/api/generate"),
+    )
+    provider = OllamaProvider()
+    with patch("httpx.AsyncClient.post", return_value=mock_response):
+        result = await provider.generate("llama3:8b", "What is 6 times 7?")
+    assert result["ok"] is True
+    assert "42" in result["response"]
+
+
+@pytest.mark.asyncio
+async def test_ollama_provider_generate_failure():
+    provider = OllamaProvider()
+    with patch("httpx.AsyncClient.post", side_effect=httpx.ConnectError("refused")):
+        result = await provider.generate("llama3:8b", "test")
+    assert result["ok"] is False
+
+
+def test_registry_returns_ollama_provider():
+    provider = get_provider("ollama")
+    assert isinstance(provider, OllamaProvider)
+
+
+def test_registry_raises_on_unknown_provider():
+    with pytest.raises(ValueError, match="Unknown provider"):
+        get_provider("fakemodel")
+
+
+def test_list_available_providers():
+    providers = list_available_providers()
+    assert "ollama" in providers
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+```bash
+pytest tests/test_providers.py -v
+```
+
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Create `backend/providers/base.py`**
+
+```python
+# backend/providers/base.py
+from abc import ABC, abstractmethod
+from typing import Any
+
+
+class LLMProvider(ABC):
+    """Abstract interface for any LLM backend — Ollama, OpenAI, Anthropic, etc."""
+
+    @abstractmethod
+    async def generate(self, model: str, prompt: str, system: str = "") -> dict[str, Any]:
+        """
+        Returns: { ok: bool, response?: str, error?: str,
+                   tokens_per_second?: float, total_tokens?: int }
+        Never raises — always returns ok=False with error on failure.
+        """
+
+    @abstractmethod
+    async def list_models(self) -> list[dict]:
+        """Returns list of available model dicts with 'name', 'size', 'details' keys."""
+
+    @abstractmethod
+    async def is_available(self) -> bool:
+        """Quick health check — returns True if provider is reachable."""
+
+    @property
+    @abstractmethod
+    def provider_id(self) -> str:
+        """Unique string ID, e.g. 'ollama', 'openai', 'anthropic'."""
+```
+
+- [ ] **Step 4: Create `backend/providers/ollama.py`**
+
+```python
+# backend/providers/ollama.py
+import os
+import httpx
+from typing import Any
+from backend.providers.base import LLMProvider
+
+OLLAMA_BASE = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+
+
+class OllamaProvider(LLMProvider):
+    """Ollama local inference provider."""
+
+    @property
+    def provider_id(self) -> str:
+        return "ollama"
+
+    async def is_available(self) -> bool:
+        try:
+            async with httpx.AsyncClient() as client:
+                res = await client.get(f"{OLLAMA_BASE}/api/tags", timeout=3.0)
+                return res.status_code == 200
+        except Exception:
+            return False
+
+    async def list_models(self) -> list[dict]:
+        try:
+            async with httpx.AsyncClient() as client:
+                res = await client.get(f"{OLLAMA_BASE}/api/tags", timeout=3.0)
+                res.raise_for_status()
+                return res.json().get("models", [])
+        except Exception:
+            return []
+
+    async def get_status(self) -> dict[str, Any]:
+        try:
+            async with httpx.AsyncClient() as client:
+                res = await client.get(f"{OLLAMA_BASE}/api/tags", timeout=3.0)
+                res.raise_for_status()
+                models = res.json().get("models", [])
+                return {"ok": True, "model_count": len(models), "models": models}
+        except Exception as e:
+            return {"ok": False, "model_count": 0, "models": [], "error": str(e)}
+
+    async def generate(self, model: str, prompt: str, system: str = "") -> dict[str, Any]:
+        try:
+            payload: dict[str, Any] = {"model": model, "prompt": prompt, "stream": False}
+            if system:
+                payload["system"] = system
+            async with httpx.AsyncClient() as client:
+                res = await client.post(
+                    f"{OLLAMA_BASE}/api/generate",
+                    json=payload,
+                    timeout=120.0,
+                )
+                res.raise_for_status()
+                data = res.json()
+                tps = None
+                if data.get("eval_duration") and data.get("eval_count"):
+                    tps = round(data["eval_count"] / (data["eval_duration"] / 1e9), 1)
+                return {
+                    "ok": True,
+                    "response": data["response"],
+                    "tokens_per_second": tps,
+                    "total_tokens": data.get("eval_count"),
+                }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+```
+
+- [ ] **Step 5: Create `backend/providers/openai_provider.py`** (stub — not wired yet)
+
+```python
+# backend/providers/openai_provider.py
+"""
+OpenAI provider — stub. Wire up when OPENAI_API_KEY is present.
+Install: pip install openai
+"""
+import os
+from typing import Any
+from backend.providers.base import LLMProvider
+
+
+class OpenAIProvider(LLMProvider):
+    """OpenAI API provider (GPT-4o, GPT-4, GPT-3.5-turbo, etc.)"""
+
+    @property
+    def provider_id(self) -> str:
+        return "openai"
+
+    async def is_available(self) -> bool:
+        return bool(os.getenv("OPENAI_API_KEY"))
+
+    async def list_models(self) -> list[dict]:
+        # Returns static list — OpenAI models don't need discovery
+        return [
+            {"name": "gpt-4o", "size": 0, "details": {"family": "gpt", "parameter_size": "unknown", "quantization_level": "none"}},
+            {"name": "gpt-4o-mini", "size": 0, "details": {"family": "gpt", "parameter_size": "unknown", "quantization_level": "none"}},
+        ]
+
+    async def generate(self, model: str, prompt: str, system: str = "") -> dict[str, Any]:
+        try:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
+            response = await client.chat.completions.create(model=model, messages=messages)
+            return {"ok": True, "response": response.choices[0].message.content}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+```
+
+- [ ] **Step 6: Create `backend/providers/registry.py`**
+
+```python
+# backend/providers/registry.py
+from backend.providers.base import LLMProvider
+from backend.providers.ollama import OllamaProvider
+from backend.providers.openai_provider import OpenAIProvider
+
+_REGISTRY: dict[str, type[LLMProvider]] = {
+    "ollama": OllamaProvider,
+    "openai": OpenAIProvider,
+}
+
+
+def get_provider(provider_id: str) -> LLMProvider:
+    if provider_id not in _REGISTRY:
+        raise ValueError(f"Unknown provider '{provider_id}'. Available: {list(_REGISTRY)}")
+    return _REGISTRY[provider_id]()
+
+
+def list_available_providers() -> list[str]:
+    return list(_REGISTRY.keys())
+```
+
+- [ ] **Step 7: Update `backend/routers/arena.py`** — use provider instead of raw service call
+
+Replace the import and generate call:
+
+```python
+# In backend/routers/arena.py — replace:
+from backend.services.ollama import generate
+# with:
+from backend.providers.registry import get_provider
+```
+
+Replace the generate calls in `get_matchup`:
+
+```python
+    provider = get_provider("ollama")
+    result_a, result_b = await asyncio.gather(
+        provider.generate(model_a.name, prompt),
+        provider.generate(model_b.name, prompt),
+    )
+```
+
+Add `import asyncio` at the top.
+
+- [ ] **Step 8: Update `backend/routers/models.py`** — use provider
+
+```python
+# Replace: from backend.services.ollama import list_models
+# With:
+from backend.providers.registry import get_provider
+
+# In discover_models():
+provider = get_provider("ollama")
+ollama_models = await provider.list_models()
+```
+
+- [ ] **Step 9: Update `backend/routers/ollama.py`** — use provider
+
+```python
+# Replace: from backend.services.ollama import check_status
+# With:
+from backend.providers.registry import get_provider
+
+# In ollama_status():
+provider = get_provider("ollama")  # type: ignore
+result = await provider.get_status()  # OllamaProvider-specific method
+```
+
+- [ ] **Step 10: Run tests**
+
+```bash
+pytest tests/ -v
+```
+
+Expected: All pass.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add backend/providers/ tests/test_providers.py backend/routers/
+git commit -m "feat: provider abstraction layer — Ollama + OpenAI stub, registry pattern"
+```
+
+---
+
+## Chunk 8: Arena Enhancements
+
+Two problems to fix + one feature to add:
+1. **Model names disappear** — `votedFor` resets before user reads the reveal
+2. **No model reveal state** — voting immediately triggers next matchup fetch
+3. **User-submitted prompts** — user should be able to type their own prompt instead of using the random one
+
+### Task 15: Backend — user-submitted prompt support
+
+**Files:**
+- Modify: `backend/routers/arena.py` — accept optional `prompt` query param
+
+- [ ] **Step 1: Write failing test**
+
+```python
+# In tests/test_arena_router.py — add:
+
+def test_matchup_uses_custom_prompt(client, db):
+    _seed_two_models(db)
+    custom = "What is the meaning of life?"
+    with patch("backend.routers.arena.generate", new_callable=AsyncMock,
+               return_value={"ok": True, "response": "42"}):
+        res = client.get(f"/api/arena/matchup?prompt={custom}")
+    assert res.status_code == 200
+    assert res.json()["prompt"] == custom
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+```bash
+pytest tests/test_arena_router.py::test_matchup_uses_custom_prompt -v
+```
+
+- [ ] **Step 3: Update `get_matchup` in `backend/routers/arena.py`**
+
+Add `prompt` as an optional query parameter:
+
+```python
+from typing import Optional
+
+@router.get("/matchup")
+async def get_matchup(
+    prompt: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    all_models = storage.get_models(db)
+    if len(all_models) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 models required")
+
+    shuffled = random.sample(all_models, 2)
+    model_a, model_b = shuffled[0], shuffled[1]
+    chosen_prompt = prompt if prompt else random.choice(PROMPTS)
+
+    provider = get_provider("ollama")
+    result_a, result_b = await asyncio.gather(
+        provider.generate(model_a.name, chosen_prompt),
+        provider.generate(model_b.name, chosen_prompt),
+    )
+
+    return {
+        "prompt": chosen_prompt,
+        "modelA": ModelOut.model_validate(model_a).model_dump(by_alias=True),
+        "modelB": ModelOut.model_validate(model_b).model_dump(by_alias=True),
+        "outputA": result_a["response"] if result_a["ok"] else f"[Error: {result_a.get('error')}]",
+        "outputB": result_b["response"] if result_b["ok"] else f"[Error: {result_b.get('error')}]",
+    }
+```
+
+- [ ] **Step 4: Run tests**
+
+```bash
+pytest tests/test_arena_router.py -v
+```
+
+Expected: All pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/routers/arena.py tests/test_arena_router.py
+git commit -m "feat: arena matchup accepts optional user-submitted prompt"
+```
+
+---
+
+### Task 16: Frontend — model reveal + custom prompt input
+
+**Files:**
+- Modify: `client/src/hooks/use-arena.ts` — `useArenaMatchup` accepts optional prompt
+- Modify: `client/src/pages/Arena.tsx` — reveal state, custom prompt input
+
+- [ ] **Step 1: Update `client/src/hooks/use-arena.ts`**
+
+Replace `useArenaMatchup` and `useArenaVote`:
+
+```typescript
+export function useArenaMatchup(customPrompt?: string) {
+  const url = customPrompt
+    ? `${api.arena.getMatchup.path}?prompt=${encodeURIComponent(customPrompt)}`
+    : api.arena.getMatchup.path;
+
+  return useQuery({
+    queryKey: [api.arena.getMatchup.path, customPrompt ?? ""],
+    queryFn: async () => {
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) {
+        if (res.status === 400) return null;
+        throw new Error("Failed to fetch matchup");
+      }
+      return api.arena.getMatchup.responses[200].parse(await res.json());
+    },
+    refetchOnWindowFocus: false,
+    enabled: true,
+  });
+}
+```
+
+Remove `onSettled: () => setVotedFor(null)` from `useArenaVote` and remove the auto-invalidate of matchup on vote success — the user now controls when to load the next battle:
+
+```typescript
+export function useArenaVote() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (data: z.infer<typeof api.arena.vote.input>) => {
+      const res = await fetch(api.arena.vote.path, {
+        method: api.arena.vote.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to submit vote");
+      return api.arena.vote.responses[201].parse(await res.json());
+    },
+    onSuccess: () => {
+      // Invalidate leaderboard but NOT matchup — user clicks "Next Battle" manually
+      queryClient.invalidateQueries({ queryKey: [api.arena.leaderboard.path] });
+      toast({ title: "Vote recorded", duration: 1500 });
+    },
+  });
+}
+```
+
+- [ ] **Step 2: Rewrite `client/src/pages/Arena.tsx`**
+
+```tsx
+import { useArenaMatchup, useArenaVote } from "@/hooks/use-arena";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Swords, RefreshCw, Trophy, Skull, Send } from "lucide-react";
+import { useState, useRef } from "react";
+
+export default function Arena() {
+  const [customPrompt, setCustomPrompt] = useState<string>("");
+  const [activePrompt, setActivePrompt] = useState<string | undefined>(undefined);
+  const [revealed, setRevealed] = useState(false);
+  const [votedFor, setVotedFor] = useState<'model_a' | 'model_b' | 'tie' | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const { data: matchup, isLoading, isRefetching, refetch } = useArenaMatchup(activePrompt);
+  const voteMutation = useArenaVote();
+
+  const handleVote = (winner: 'model_a' | 'model_b' | 'tie') => {
+    if (!matchup || revealed) return;
+    setVotedFor(winner);
+    setRevealed(true);
+    voteMutation.mutate({
+      modelAId: matchup.modelA.id,
+      modelBId: matchup.modelB.id,
+      prompt: matchup.prompt,
+      winner,
+    });
+  };
+
+  const handleNextBattle = () => {
+    setRevealed(false);
+    setVotedFor(null);
+    setCustomPrompt("");
+    setActivePrompt(undefined);
+    refetch();
+  };
+
+  const handleSubmitCustomPrompt = () => {
+    const trimmed = customPrompt.trim();
+    if (!trimmed) return;
+    setRevealed(false);
+    setVotedFor(null);
+    setActivePrompt(trimmed);
+  };
+
+  if (isLoading || isRefetching) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[80vh] space-y-4">
+        <Swords className="w-16 h-16 text-primary animate-bounce" />
+        <h2 className="text-xl font-bold animate-pulse text-gradient">Preparing battle...</h2>
+      </div>
+    );
+  }
+
+  if (!matchup) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] text-center max-w-md mx-auto space-y-6">
+        <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center ring-1 ring-white/10">
+          <Skull className="w-10 h-10 text-muted-foreground" />
+        </div>
+        <h2 className="text-2xl font-bold">Not Enough Contenders</h2>
+        <p className="text-muted-foreground">
+          The arena requires at least two discovered models to begin pairwise evaluation.
+        </p>
+        <Button onClick={() => window.location.href = '/models'}>Discover Models</Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 h-[calc(100vh-6rem)] flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-gradient-to-br from-orange-500 to-red-600 rounded-lg shadow-lg shadow-red-500/20">
+            <Swords className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Arena</h1>
+            <p className="text-sm text-muted-foreground">Blind side-by-side evaluation</p>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={() => window.location.href = '/leaderboard'} className="gap-2">
+            <Trophy className="w-4 h-4 text-yellow-500" /> Leaderboard
+          </Button>
+          {revealed && (
+            <Button onClick={handleNextBattle} className="gap-2">
+              <RefreshCw className="w-4 h-4" /> Next Battle
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Custom Prompt Input */}
+      <div className="flex gap-2 flex-shrink-0">
+        <input
+          ref={inputRef}
+          type="text"
+          value={customPrompt}
+          onChange={(e) => setCustomPrompt(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSubmitCustomPrompt()}
+          placeholder="Type your own prompt, or leave blank for a random one..."
+          className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-sm text-white placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+        />
+        <Button variant="outline" onClick={handleSubmitCustomPrompt} disabled={!customPrompt.trim()} className="gap-2">
+          <Send className="w-4 h-4" /> Submit
+        </Button>
+      </div>
+
+      {/* Prompt Display */}
+      <Card className="flex-shrink-0 bg-gradient-to-br from-indigo-950/40 to-slate-900/80 border-indigo-500/20">
+        <div className="p-6">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-3">Prompt</h3>
+          <p className="text-lg font-medium leading-relaxed">{matchup.prompt}</p>
+        </div>
+      </Card>
+
+      {/* Responses */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 min-h-0">
+        {/* Model A */}
+        <Card className="flex flex-col h-full bg-white/[0.02] border-white/10 overflow-hidden">
+          <div className="p-4 border-b border-white/5 bg-black/20 flex justify-between items-center">
+            {revealed ? (
+              <span className="font-mono font-bold text-primary">{matchup.modelA.name}</span>
+            ) : (
+              <span className="font-mono font-bold text-muted-foreground">Model A</span>
+            )}
+            {revealed && votedFor === 'model_a' && (
+              <span className="text-xs font-bold text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full ring-1 ring-green-500/20">Your pick</span>
+            )}
+          </div>
+          <div className="p-6 flex-1 overflow-y-auto font-mono text-sm leading-relaxed whitespace-pre-wrap text-slate-300">
+            {matchup.outputA}
+          </div>
+          <div className="p-4 bg-black/40 border-t border-white/5 mt-auto">
+            <Button
+              className="w-full text-lg h-14"
+              onClick={() => handleVote('model_a')}
+              disabled={revealed}
+              variant={votedFor === 'model_a' ? 'primary' : 'glass'}
+            >
+              {revealed && votedFor === 'model_a' ? '✓ Voted A' : '👈 Winner A'}
+            </Button>
+          </div>
+        </Card>
+
+        {/* Model B */}
+        <Card className="flex flex-col h-full bg-white/[0.02] border-white/10 overflow-hidden">
+          <div className="p-4 border-b border-white/5 bg-black/20 flex justify-between items-center">
+            {revealed ? (
+              <span className="font-mono font-bold text-primary">{matchup.modelB.name}</span>
+            ) : (
+              <span className="font-mono font-bold text-muted-foreground">Model B</span>
+            )}
+            {revealed && votedFor === 'model_b' && (
+              <span className="text-xs font-bold text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full ring-1 ring-green-500/20">Your pick</span>
+            )}
+          </div>
+          <div className="p-6 flex-1 overflow-y-auto font-mono text-sm leading-relaxed whitespace-pre-wrap text-slate-300">
+            {matchup.outputB}
+          </div>
+          <div className="p-4 bg-black/40 border-t border-white/5 mt-auto">
+            <Button
+              className="w-full text-lg h-14"
+              onClick={() => handleVote('model_b')}
+              disabled={revealed}
+              variant={votedFor === 'model_b' ? 'primary' : 'glass'}
+            >
+              {revealed && votedFor === 'model_b' ? '✓ Voted B' : 'Winner B 👉'}
+            </Button>
+          </div>
+        </Card>
+      </div>
+
+      {/* Tie / Next */}
+      <div className="flex justify-center flex-shrink-0 pt-2 gap-4">
+        {!revealed ? (
+          <Button
+            variant="outline"
+            size="lg"
+            className="w-48 border-dashed border-2 hover:bg-white/5"
+            onClick={() => handleVote('tie')}
+          >
+            🤝 It's a Tie
+          </Button>
+        ) : (
+          <Button size="lg" className="w-48 gap-2" onClick={handleNextBattle}>
+            <RefreshCw className="w-4 h-4" /> Next Battle
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 3: TypeScript check**
+
+```bash
+npx tsc --noEmit 2>&1 | grep -v "client/src/components/ui"
+```
+
+Expected: No new errors.
+
+- [ ] **Step 4: Smoke test**
+
+Start `npm run dev`. Go to Arena:
+- [ ] Model names show as "Model A" / "Model B" before voting
+- [ ] After voting, model names are revealed in the header with "Your pick" badge
+- [ ] "Next Battle" button appears after voting — model names stay visible until clicked
+- [ ] Custom prompt input: type a prompt, press Enter or Submit → new matchup uses that prompt
+- [ ] Tie button works, reveals both names
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add client/src/hooks/use-arena.ts client/src/pages/Arena.tsx
+git commit -m "feat: Arena model reveal after vote, user-submitted custom prompts"
+```
+
+---
+
+## Chunk 9: Scoring Layer — ROUGE + LLM-as-Judge
+
+### Task 17: ROUGE scoring
+
+**Files:**
+- Create: `backend/scoring/__init__.py` (empty)
+- Create: `backend/scoring/rouge.py`
+- Modify: `requirements.txt` — add `rouge-score`
+- Create: `tests/test_scoring.py`
+
+- [ ] **Step 1: Add `rouge-score` to `requirements.txt`**
+
+```
+rouge-score==0.1.2
+```
+
+Install: `pip install rouge-score`
+
+- [ ] **Step 2: Write failing tests**
+
+```python
+# tests/test_scoring.py
+import pytest
+from backend.scoring.rouge import score_rouge
+
+
+def test_rouge_perfect_match():
+    result = score_rouge("The cat sat on the mat.", "The cat sat on the mat.")
+    assert result["rouge1"] == pytest.approx(1.0)
+    assert result["rouge2"] == pytest.approx(1.0)
+    assert result["rougeL"] == pytest.approx(1.0)
+
+
+def test_rouge_no_overlap():
+    result = score_rouge("The cat sat on the mat.", "Dogs love playing fetch outside.")
+    assert result["rouge1"] == pytest.approx(0.0, abs=0.1)
+
+
+def test_rouge_partial_overlap():
+    result = score_rouge("The cat sat on the mat.", "The cat is on the floor.")
+    assert 0.0 < result["rouge1"] < 1.0
+
+
+def test_rouge_returns_all_keys():
+    result = score_rouge("hello world", "hello earth")
+    assert set(result.keys()) == {"rouge1", "rouge2", "rougeL"}
+```
+
+- [ ] **Step 3: Run to verify failure**
+
+```bash
+pytest tests/test_scoring.py -v
+```
+
+- [ ] **Step 4: Create `backend/scoring/rouge.py`**
+
+```python
+# backend/scoring/rouge.py
+from rouge_score import rouge_scorer as rs
+
+
+_SCORER = rs.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
+
+
+def score_rouge(prediction: str, reference: str) -> dict[str, float]:
+    """
+    Returns ROUGE-1, ROUGE-2, ROUGE-L F1 scores in [0, 1].
+    Both inputs are plain text strings.
+    """
+    scores = _SCORER.score(reference, prediction)
+    return {
+        "rouge1": round(scores["rouge1"].fmeasure, 4),
+        "rouge2": round(scores["rouge2"].fmeasure, 4),
+        "rougeL": round(scores["rougeL"].fmeasure, 4),
+    }
+```
+
+- [ ] **Step 5: Run tests**
+
+```bash
+pytest tests/test_scoring.py -v
+```
+
+Expected: All 4 PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/scoring/ tests/test_scoring.py requirements.txt
+git commit -m "feat: ROUGE-1/2/L scoring via rouge-score"
+```
+
+---
+
+### Task 18: LLM-as-Judge
+
+**Files:**
+- Create: `backend/scoring/llm_judge.py`
+- Modify: `tests/test_scoring.py` — add judge tests
+
+LLM-as-judge sends a structured grading prompt to any provider (Ollama by default, OpenAI when available). Returns a numeric score 1-5 plus a rationale string.
+
+- [ ] **Step 1: Write failing tests**
+
+```python
+# Append to tests/test_scoring.py
+from unittest.mock import patch, AsyncMock
+from backend.scoring.llm_judge import llm_judge_score, build_judge_prompt
+
+
+def test_build_judge_prompt_contains_key_parts():
+    prompt = build_judge_prompt(
+        question="What is 2+2?",
+        response="The answer is 4.",
+        reference="4",
+    )
+    assert "2+2" in prompt
+    assert "The answer is 4" in prompt
+    assert "4" in prompt
+    assert "1" in prompt and "5" in prompt  # scale mentioned
+
+
+@pytest.mark.asyncio
+async def test_llm_judge_parses_score():
+    mock_generate = AsyncMock(return_value={
+        "ok": True,
+        "response": "SCORE: 4\nRATIONALE: The response is correct and clear."
+    })
+    with patch("backend.scoring.llm_judge.get_provider") as mock_registry:
+        mock_provider = AsyncMock()
+        mock_provider.generate = mock_generate
+        mock_registry.return_value = mock_provider
+        result = await llm_judge_score(
+            question="What is 2+2?",
+            response="The answer is 4.",
+            reference="4",
+        )
+    assert result["score"] == 4
+    assert "correct" in result["rationale"].lower()
+
+
+@pytest.mark.asyncio
+async def test_llm_judge_returns_none_on_parse_failure():
+    mock_generate = AsyncMock(return_value={"ok": True, "response": "I cannot score this."})
+    with patch("backend.scoring.llm_judge.get_provider") as mock_registry:
+        mock_provider = AsyncMock()
+        mock_provider.generate = mock_generate
+        mock_registry.return_value = mock_provider
+        result = await llm_judge_score("q", "r", "ref")
+    assert result["score"] is None
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+```bash
+pytest tests/test_scoring.py -k "judge" -v
+```
+
+- [ ] **Step 3: Create `backend/scoring/llm_judge.py`**
+
+```python
+# backend/scoring/llm_judge.py
+"""
+LLM-as-a-Judge: uses any provider to grade a model's response
+on a 1-5 scale given a question and reference answer.
+
+Score meanings:
+  1 = Completely wrong / irrelevant
+  2 = Partially correct, major errors
+  3 = Mostly correct, minor errors or gaps
+  4 = Correct and clear
+  5 = Perfect — correct, concise, well-reasoned
+"""
+import re
+from typing import Optional
+from backend.providers.registry import get_provider
+
+JUDGE_MODEL = "llama3:8b"  # override via env or config later
+JUDGE_PROVIDER = "ollama"
+
+
+def build_judge_prompt(question: str, response: str, reference: str) -> str:
+    return f"""You are an impartial evaluator grading an AI response.
+
+Question: {question}
+
+Reference answer: {reference}
+
+Model response: {response}
+
+Grade the model response on a scale of 1 to 5:
+  1 = Completely wrong or irrelevant
+  2 = Partially correct, major errors
+  3 = Mostly correct, minor errors
+  4 = Correct and clear
+  5 = Perfect — correct, concise, well-reasoned
+
+Respond in this exact format:
+SCORE: <number>
+RATIONALE: <one sentence>"""
+
+
+async def llm_judge_score(
+    question: str,
+    response: str,
+    reference: str,
+    model: str = JUDGE_MODEL,
+    provider_id: str = JUDGE_PROVIDER,
+) -> dict:
+    """
+    Returns: { score: int|None, rationale: str, raw: str }
+    score is None if the judge response could not be parsed.
+    """
+    provider = get_provider(provider_id)
+    prompt = build_judge_prompt(question, response, reference)
+    result = await provider.generate(model, prompt)
+
+    if not result["ok"]:
+        return {"score": None, "rationale": "", "raw": result.get("error", "")}
+
+    raw = result["response"]
+    score_match = re.search(r"SCORE:\s*([1-5])", raw)
+    rationale_match = re.search(r"RATIONALE:\s*(.+)", raw)
+
+    score = int(score_match.group(1)) if score_match else None
+    rationale = rationale_match.group(1).strip() if rationale_match else ""
+
+    return {"score": score, "rationale": rationale, "raw": raw}
+```
+
+- [ ] **Step 4: Run full scoring tests**
+
+```bash
+pytest tests/test_scoring.py -v
+```
+
+Expected: All pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/scoring/llm_judge.py tests/test_scoring.py
+git commit -m "feat: LLM-as-judge scoring with structured 1-5 scale and rationale"
+```
+
+---
+
+## Chunk 10: Benchmark Scaffold
+
+### Task 19: Abstract Benchmark base + MMLU
+
+**Files:**
+- Create: `backend/benchmarks/__init__.py` (empty)
+- Create: `backend/benchmarks/base.py`
+- Create: `backend/benchmarks/mmlu.py`
+- Modify: `requirements.txt` — add `datasets`
+- Create: `tests/test_benchmarks.py`
+
+**Design:** Each benchmark knows how to load its data, format a prompt, and evaluate a response. The eval runner (built later) iterates over benchmark items, calls a provider, and scores with `evaluate_response()`.
+
+- [ ] **Step 1: Add `datasets` to `requirements.txt`**
+
+```
+datasets==3.1.0
+```
+
+Install: `pip install datasets`
+
+- [ ] **Step 2: Write failing tests**
+
+```python
+# tests/test_benchmarks.py
+import pytest
+from backend.benchmarks.base import BenchmarkItem
+from backend.benchmarks.mmlu import MMLUBenchmark
+
+
+def test_benchmark_item_is_dataclass():
+    item = BenchmarkItem(
+        id="test_1",
+        prompt="What is 2+2?",
+        reference_answer="4",
+        metadata={"subject": "math"},
+    )
+    assert item.id == "test_1"
+    assert item.reference_answer == "4"
+
+
+def test_mmlu_format_prompt():
+    bench = MMLUBenchmark()
+    raw = {
+        "question": "What is the powerhouse of the cell?",
+        "choices": ["Nucleus", "Mitochondria", "Ribosome", "Golgi"],
+        "answer": 1,
+        "subject": "biology",
+    }
+    item = bench.item_from_raw(raw, "bio_1")
+    assert "Mitochondria" in item.prompt
+    assert "B" in item.prompt  # letter choices
+
+
+def test_mmlu_evaluate_correct_letter():
+    bench = MMLUBenchmark()
+    raw = {"question": "Q?", "choices": ["A", "B", "C", "D"], "answer": 1, "subject": "test"}
+    item = bench.item_from_raw(raw, "q1")
+    # Answer index 1 = "B"
+    correct, meta = bench.evaluate_response("B", item)
+    assert correct is True
+
+
+def test_mmlu_evaluate_wrong_letter():
+    bench = MMLUBenchmark()
+    raw = {"question": "Q?", "choices": ["A", "B", "C", "D"], "answer": 1, "subject": "test"}
+    item = bench.item_from_raw(raw, "q1")
+    correct, meta = bench.evaluate_response("A", item)
+    assert correct is False
+
+
+def test_mmlu_evaluate_fallback_text_match():
+    bench = MMLUBenchmark()
+    raw = {"question": "Q?", "choices": ["Paris", "London", "Berlin", "Rome"], "answer": 0, "subject": "test"}
+    item = bench.item_from_raw(raw, "q1")
+    # Response doesn't contain a letter but contains the correct text
+    correct, meta = bench.evaluate_response("The answer is Paris, the capital of France.", item)
+    assert correct is True
+```
+
+- [ ] **Step 3: Run to verify failure**
+
+```bash
+pytest tests/test_benchmarks.py -v
+```
+
+- [ ] **Step 4: Create `backend/benchmarks/base.py`**
+
+```python
+# backend/benchmarks/base.py
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class BenchmarkItem:
+    id: str
+    prompt: str
+    reference_answer: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+class Benchmark(ABC):
+    """
+    Abstract base for all benchmarks.
+
+    Subclasses implement:
+      - item_from_raw(raw, id) → BenchmarkItem
+      - evaluate_response(response, item) → (correct: bool, metadata: dict)
+      - load_items(max_samples) → list[BenchmarkItem]  (optional override)
+    """
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Human-readable name, e.g. 'MMLU'"""
+
+    @abstractmethod
+    def item_from_raw(self, raw: dict, item_id: str) -> BenchmarkItem:
+        """Convert a raw dataset row into a BenchmarkItem."""
+
+    @abstractmethod
+    def evaluate_response(self, response: str, item: BenchmarkItem) -> tuple[bool, dict]:
+        """
+        Returns (correct, metadata).
+        correct: whether the response is considered right.
+        metadata: any extra info (extracted letter, matched text, etc.)
+        """
+
+    def load_items(self, max_samples: int = 100) -> list[BenchmarkItem]:
+        """
+        Load benchmark items. Override to pull from HuggingFace datasets.
+        Default returns empty list (for stubs/testing).
+        """
+        return []
+```
+
+- [ ] **Step 5: Create `backend/benchmarks/mmlu.py`**
+
+```python
+# backend/benchmarks/mmlu.py
+"""
+MMLU (Massive Multitask Language Understanding) benchmark.
+57 subjects, 14,042 test questions. Loaded from HuggingFace datasets.
+
+Two-stage answer evaluation (inspired by llm-evaluation repo):
+  1. Extract letter (A/B/C/D) from response
+  2. Fall back to substring match of the correct choice text
+"""
+import re
+from backend.benchmarks.base import Benchmark, BenchmarkItem
+
+LETTERS = ["A", "B", "C", "D"]
+
+
+class MMLUBenchmark(Benchmark):
+
+    @property
+    def name(self) -> str:
+        return "MMLU"
+
+    def item_from_raw(self, raw: dict, item_id: str) -> BenchmarkItem:
+        choices = raw["choices"]
+        choices_text = "\n".join(f"{LETTERS[i]}. {c}" for i, c in enumerate(choices))
+        prompt = f"{raw['question']}\n\n{choices_text}\n\nAnswer with a single letter (A, B, C, or D)."
+        correct_letter = LETTERS[raw["answer"]]
+        return BenchmarkItem(
+            id=item_id,
+            prompt=prompt,
+            reference_answer=correct_letter,
+            metadata={
+                "subject": raw.get("subject", ""),
+                "choices": choices,
+                "correct_index": raw["answer"],
+            },
+        )
+
+    def evaluate_response(self, response: str, item: BenchmarkItem) -> tuple[bool, dict]:
+        correct_letter = item.reference_answer
+        correct_index = item.metadata["correct_index"]
+        choices = item.metadata["choices"]
+
+        # Stage 1: extract letter
+        letter_match = re.search(r"\b([A-D])\b", response.upper())
+        if letter_match:
+            extracted = letter_match.group(1)
+            correct = extracted == correct_letter
+            return correct, {"method": "letter_extraction", "extracted": extracted}
+
+        # Stage 2: substring match
+        correct_text = choices[correct_index].lower()
+        response_lower = response.lower()
+
+        # Make sure no wrong answer text appears before checking the right one
+        wrong_texts = [choices[i].lower() for i in range(len(choices)) if i != correct_index]
+        has_wrong = any(w in response_lower for w in wrong_texts if len(w) > 3)
+        has_correct = correct_text.lower() in response_lower
+
+        if has_correct and not has_wrong:
+            return True, {"method": "text_match", "matched": correct_text}
+
+        return False, {"method": "no_match"}
+
+    def load_items(self, max_samples: int = 100) -> list[BenchmarkItem]:
+        """
+        Load MMLU test items from HuggingFace.
+        Requires: pip install datasets
+        Downloads ~100MB on first call, cached afterwards.
+        """
+        try:
+            from datasets import load_dataset
+            ds = load_dataset("cais/mmlu", "all", split="test", streaming=True)
+            items = []
+            for i, row in enumerate(ds):
+                if i >= max_samples:
+                    break
+                items.append(self.item_from_raw(row, f"mmlu_{i}"))
+            return items
+        except Exception as e:
+            raise RuntimeError(f"Failed to load MMLU dataset: {e}") from e
+```
+
+- [ ] **Step 6: Run benchmark tests**
+
+```bash
+pytest tests/test_benchmarks.py -v
+```
+
+Expected: All 5 pass (no network calls needed — `load_items` is not tested here).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add backend/benchmarks/ tests/test_benchmarks.py requirements.txt
+git commit -m "feat: benchmark scaffold — abstract base + MMLU with two-stage answer validation"
+```
+
+---
+
+## Complete File Map (all files after all chunks)
+
+```
+backend/
+  __init__.py
+  main.py                    # FastAPI app, CORS, lifespan, router registration
+  database.py                # SQLAlchemy engine, Base, get_db
+  models.py                  # ORM table definitions
+  schemas.py                 # Pydantic request/response schemas (camelCase)
+  providers/
+    __init__.py
+    base.py                  # Abstract LLMProvider
+    ollama.py                # Ollama implementation
+    openai_provider.py       # OpenAI stub
+    registry.py              # Provider factory
+  routers/
+    __init__.py
+    ollama.py                # GET /api/ollama/status
+    models.py                # GET /api/models, POST /api/models/discover
+    arena.py                 # GET /api/arena/matchup?prompt=, POST /api/arena/vote, GET /api/arena/leaderboard
+    eval_runs.py             # CRUD for eval runs
+    datasets.py              # GET /api/datasets
+  services/
+    __init__.py
+    storage.py               # All DB operations
+  scoring/
+    __init__.py
+    rouge.py                 # ROUGE-1/2/L
+    llm_judge.py             # LLM-as-judge (1-5 scale + rationale)
+  benchmarks/
+    __init__.py
+    base.py                  # Abstract Benchmark + BenchmarkItem
+    mmlu.py                  # MMLU (57 subjects, two-stage validation)
+
+tests/
+  __init__.py
+  conftest.py                # In-memory DB, TestClient fixtures
+  test_database.py
+  test_ollama_service.py
+  test_ollama_router.py
+  test_models_router.py
+  test_arena_router.py
+  test_providers.py
+  test_scoring.py
+  test_benchmarks.py
+
+shared/
+  routes.ts                  # Pure Zod schemas + API path constants (no Drizzle)
+
+client/
+  src/
+    hooks/
+      use-arena.ts           # useArenaMatchup(prompt?), useArenaVote, useArenaLeaderboard
+    pages/
+      Arena.tsx              # Reveal state, custom prompt input, model names after vote
+
+requirements.txt
+```
+
+---
+
+## What This Unlocks Going Forward
+
+With this foundation, the next phases are straightforward Python additions:
+
+```python
+# Phase 2: More scoring
+from bert_score import score as bert_score    # Semantic similarity
+import evaluate                               # HuggingFace Evaluate hub (BLEU, etc.)
+
+# Phase 2: More providers
+from backend.providers.anthropic_provider import AnthropicProvider  # Claude
+from backend.providers.gemini_provider import GeminiProvider        # Gemini
+
+# Phase 3: More benchmarks
+from backend.benchmarks.truthfulqa import TruthfulQABenchmark
+from backend.benchmarks.gsm8k import GSM8KBenchmark                 # Math
+from backend.benchmarks.custom import CustomDatasetBenchmark        # User uploads
+
+# Phase 4: Eval runner (wires benchmarks + providers + scoring)
+from backend.services.eval_runner import EvalRunner
+runner = EvalRunner(provider=OllamaProvider(), benchmark=MMLUBenchmark(), scorer=llm_judge_score)
+results = await runner.run(model="llama3:8b", max_samples=50)
 ```
