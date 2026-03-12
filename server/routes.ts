@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { checkOllamaStatus } from "./ollama";
 import { api } from "@shared/routes";
 import { z } from "zod";
 
@@ -8,6 +9,16 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Ollama status
+  app.get(api.ollama.status.path, async (_req, res) => {
+    const status = await checkOllamaStatus();
+    res.json({
+      running: status.ok,
+      modelCount: status.models.length,
+      error: status.error,
+    });
+  });
+
   // Models
   app.get(api.models.list.path, async (req, res) => {
     const models = await storage.getModels();

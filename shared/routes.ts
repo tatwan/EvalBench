@@ -85,6 +85,19 @@ export const api = {
       }
     }
   },
+  ollama: {
+    status: {
+      method: 'GET' as const,
+      path: '/api/ollama/status' as const,
+      responses: {
+        200: z.object({
+          running: z.boolean(),
+          modelCount: z.number(),
+          error: z.string().optional(),
+        })
+      }
+    }
+  },
   arena: {
     getMatchup: {
       method: 'GET' as const,

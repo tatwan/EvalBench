@@ -5,7 +5,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql } from "drizzle-orm";
-import { listOllamaModels } from "./ollama";
+import { listOllamaModels, generate } from "./ollama";
 
 export interface IStorage {
   getModels(): Promise<Model[]>;
@@ -40,7 +40,7 @@ export class DatabaseStorage implements IStorage {
         family: om.details.family ?? null,
         params: om.details.parameter_size ?? null,
         quantization: om.details.quantization_level ?? null,
-        sizeGb: (om.size / 1e9).toFixed(2),
+        sizeGb: parseFloat((om.size / 1e9).toFixed(2)),
       })))
       .onConflictDoUpdate({
         target: models.name,
@@ -80,13 +80,13 @@ export class DatabaseStorage implements IStorage {
         runId: inserted.id,
         modelId: model.id,
         metricName: "Speed (T/s)",
-        score: (Math.random() * 50 + 20).toFixed(2), // Random speed 20-70 T/s
+        score: parseFloat((Math.random() * 50 + 20).toFixed(2)), // Random speed 20-70 T/s
       });
       mockResults.push({
         runId: inserted.id,
         modelId: model.id,
         metricName: "MMLU",
-        score: (Math.random() * 40 + 40).toFixed(2), // Random MMLU 40-80
+        score: parseFloat((Math.random() * 40 + 40).toFixed(2)), // Random MMLU 40-80
       });
     }
     
@@ -115,27 +115,32 @@ export class DatabaseStorage implements IStorage {
     if (allModels.length < 2) {
       throw new Error("At least 2 models are required for an arena matchup.");
     }
-    
-    // Pick 2 random models
+
     const shuffled = [...allModels].sort(() => 0.5 - Math.random());
     const modelA = shuffled[0];
     const modelB = shuffled[1];
-    
-    // Mock outputs based on a simple prompt
+
     const prompts = [
       "Explain quantum computing in one sentence.",
       "Write a haiku about artificial intelligence.",
       "What is the capital of France?",
-      "Why is the sky blue?"
+      "Why is the sky blue?",
+      "What is the difference between supervised and unsupervised learning?",
+      "Explain the trolley problem briefly.",
     ];
     const prompt = prompts[Math.floor(Math.random() * prompts.length)];
-    
+
+    const [resultA, resultB] = await Promise.all([
+      generate(modelA.name, prompt),
+      generate(modelB.name, prompt),
+    ]);
+
     return {
       prompt,
       modelA,
       modelB,
-      outputA: `[Simulated Output A]\n${prompt} can be explained simply: it is a complex phenomenon.`,
-      outputB: `[Simulated Output B]\nRegarding "${prompt}": It involves advanced principles of physics.`
+      outputA: resultA.ok ? resultA.response! : `[Error: ${resultA.error}]`,
+      outputB: resultB.ok ? resultB.response! : `[Error: ${resultB.error}]`,
     };
   }
 

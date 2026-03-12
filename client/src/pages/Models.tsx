@@ -1,4 +1,4 @@
-import { useModels, useDiscoverModels } from "@/hooks/use-models";
+import { useModels, useDiscoverModels, useOllamaStatus } from "@/hooks/use-models";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -8,6 +8,7 @@ import { motion } from "framer-motion";
 export default function Models() {
   const { data: models = [], isLoading } = useModels();
   const discoverMutation = useDiscoverModels();
+  const { data: ollamaStatus } = useOllamaStatus();
 
   return (
     <div className="space-y-8">
@@ -15,6 +16,18 @@ export default function Models() {
         <div>
           <h1 className="text-3xl font-bold text-gradient">Local Models</h1>
           <p className="text-muted-foreground mt-2">Manage models available via Ollama.</p>
+          {ollamaStatus && (
+            <div className={`flex items-center gap-2 mt-3 text-sm px-3 py-1.5 rounded-full w-fit ${
+              ollamaStatus.running
+                ? 'bg-green-500/10 text-green-400 ring-1 ring-green-500/20'
+                : 'bg-red-500/10 text-red-400 ring-1 ring-red-500/20'
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${ollamaStatus.running ? 'bg-green-400' : 'bg-red-400'}`} />
+              {ollamaStatus.running
+                ? `Ollama connected · ${ollamaStatus.modelCount} model${ollamaStatus.modelCount !== 1 ? 's' : ''} available`
+                : 'Ollama offline — run `ollama serve` to connect'}
+            </div>
+          )}
         </div>
         <Button 
           onClick={() => discoverMutation.mutate()} 
