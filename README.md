@@ -36,7 +36,7 @@ If you want “LM Studio but for evaluation,” this is it.
 
 ## Design
 
-#### **Landing/Dashboard Page**
+#### __Landing/Dashboard Page__
 
 ![image-20260313104407802](images/image-20260313104407802.png)
 
