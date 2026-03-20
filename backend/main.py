@@ -10,16 +10,21 @@ from backend.routers import eval_results as eval_results_router
 from backend.routers import datasets as datasets_router
 from backend.routers import settings as settings_router
 from backend.services import dataset_seeder
+from backend.services.ollama import list_models
+from backend.services import storage
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create tables (no-op if they already exist)
     Base.metadata.create_all(bind=engine)
-    # Seed built-in golden datasets if empty
     db = SessionLocal()
     try:
         dataset_seeder.seed_if_empty(db)
+        # Auto-sync Ollama models on startup so the UI shows them immediately
+        ollama_models = await list_models()
+        if ollama_models:
+            storage.upsert_models_from_ollama(db, ollama_models)
     finally:
         db.close()
     yield
