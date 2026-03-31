@@ -195,7 +195,7 @@ async def run_eval(run_id: int) -> None:
                             )
                     else:
                         # Warn on first BERTScore usage (model download)
-                        if task_type in ("summarization", "chat") and not warned_bertscore:
+                        if task_type in ("summarization", "chat") and not warned_bertscore and bertscore.is_available():
                             await q.put({
                                 "type": "warning",
                                 "message": "BERTScore may download a large model on first use (~400MB).",
