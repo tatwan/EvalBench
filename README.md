@@ -78,13 +78,13 @@ If you want “LM Studio but for evaluation,” this is it.
 
 
 
-#### Build or Import you datasets
+### Build or Import you datasets
 
 This is a powerful dataset builder for creating your own benchmark datasets:
 
 ![image-20260401192956234](images/image-20260401192956234.png)
 
-#### LLM as a Judge Setup
+### LLM as a Judge Setup
 
 ![image-20260401193118631](images/image-20260401193118631.png)
 
