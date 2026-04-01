@@ -17,6 +17,7 @@ export default function Settings() {
   const [openAiKey, setOpenAiKey] = useState("");
   const [anthropicKey, setAnthropicKey] = useState("");
   const [geminiKey, setGeminiKey] = useState("");
+  const [groqKey, setGroqKey] = useState("");
   const [grokKey, setGrokKey] = useState("");
 
   // Sync state when DB loads
@@ -27,6 +28,7 @@ export default function Settings() {
       setOpenAiKey(settings.find(s => s.key === "openai_api_key")?.value || "");
       setAnthropicKey(settings.find(s => s.key === "anthropic_api_key")?.value || "");
       setGeminiKey(settings.find(s => s.key === "gemini_api_key")?.value || "");
+      setGroqKey(settings.find(s => s.key === "groq_api_key")?.value || "");
       setGrokKey(settings.find(s => s.key === "grok_api_key")?.value || "");
     }
   }, [settings]);
@@ -38,6 +40,7 @@ export default function Settings() {
       if (openAiKey !== undefined) await updateSetting.mutateAsync({ key: "openai_api_key", value: openAiKey });
       if (anthropicKey !== undefined) await updateSetting.mutateAsync({ key: "anthropic_api_key", value: anthropicKey });
       if (geminiKey !== undefined) await updateSetting.mutateAsync({ key: "gemini_api_key", value: geminiKey });
+      if (groqKey !== undefined) await updateSetting.mutateAsync({ key: "groq_api_key", value: groqKey });
       if (grokKey !== undefined) await updateSetting.mutateAsync({ key: "grok_api_key", value: grokKey });
 
       toast({ title: "Settings saved successfully", variant: "default" });
@@ -160,7 +163,17 @@ export default function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">xAI Grok API Key</label>
+              <label className="text-sm font-medium">Groq API Key <span className="text-[10px] text-muted-foreground font-normal">(fast inference — api.groq.com)</span></label>
+              <Input 
+                type="password"
+                value={groqKey} 
+                onChange={e => setGroqKey(e.target.value)} 
+                placeholder="gsk_..."
+                className="font-mono bg-muted"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">xAI Grok API Key <span className="text-[10px] text-muted-foreground font-normal">(api.x.ai)</span></label>
               <Input 
                 type="password"
                 value={grokKey} 
@@ -169,6 +182,9 @@ export default function Settings() {
                 className="font-mono bg-muted"
               />
             </div>
+            <p className="text-xs text-muted-foreground pt-1 flex items-center gap-1">
+              🔒 Keys are encrypted at rest in your local database.
+            </p>
           </CardContent>
         </Card>
 

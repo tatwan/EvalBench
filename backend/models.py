@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, Float, Text, ForeignKey, JSON
+    Column, Integer, String, Float, Text, ForeignKey, JSON, Boolean
 )
 from backend.database import Base, FlexibleDateTime
 
@@ -40,6 +40,7 @@ class EvalResult(Base):
     model_id = Column(Integer, ForeignKey("models.id"), nullable=False)
     metric_name = Column(String, nullable=False)
     score = Column(Float, nullable=False)
+    error = Column(Boolean, default=False, nullable=False)
     raw_output = Column(Text, nullable=True)
     item_id = Column(Integer, ForeignKey("golden_items.id"), nullable=True)
 
@@ -84,3 +85,13 @@ class EloRating(Base):
     rating = Column(Integer, nullable=False, default=1200)
     games_played = Column(Integer, nullable=False, default=0)
     last_updated = Column(FlexibleDateTime, default=datetime.utcnow)
+
+
+class ResponseCache(Base):
+    __tablename__ = "response_cache"
+
+    key = Column(String(64), primary_key=True)  # SHA256 of model_name + prompt
+    response = Column(Text, nullable=False)
+    eval_count = Column(Integer, nullable=True)
+    eval_duration = Column(Integer, nullable=True)
+    created_at = Column(FlexibleDateTime, default=datetime.utcnow)

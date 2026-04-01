@@ -30,6 +30,21 @@ def upsert_models_from_ollama(db: Session, ollama_models: list[dict]) -> list[db
             db.flush()  # get the new model id
             elo = db_models.EloRating(model_id=new_model.id, rating=1200, games_played=0)
             db.add(elo)
+    # ── Cleanup stale models ──
+    # If a model was deleted from Ollama, remove it from the DB if it has no foreign key references.
+    active_names = {m.get("name", "") for m in ollama_models}
+    all_models = db.query(db_models.Model).all()
+    for model in all_models:
+        if model.name not in active_names:
+            has_results = db.query(db_models.EvalResult).filter_by(model_id=model.id).first() is not None
+            has_battles = db.query(db_models.ArenaBattle).filter(
+                (db_models.ArenaBattle.model_a_id == model.id) | 
+                (db_models.ArenaBattle.model_b_id == model.id)
+            ).first() is not None
+            if not has_results and not has_battles:
+                db.query(db_models.EloRating).filter_by(model_id=model.id).delete()
+                db.delete(model)
+
     db.commit()
     return get_all_models(db)
 

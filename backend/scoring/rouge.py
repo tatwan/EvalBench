@@ -3,13 +3,15 @@ ROUGE scoring — wraps the rouge-score library.
 Computes ROUGE-1, ROUGE-2, and ROUGE-L F1 scores.
 Used for summarization tasks.
 """
-from rouge_score import rouge_scorer
+import evaluate
 
+_scorer = None
 
-_SCORER = rouge_scorer.RougeScorer(
-    ["rouge1", "rouge2", "rougeL"], use_stemmer=True
-)
-
+def _get_scorer():
+    global _scorer
+    if _scorer is None:
+        _scorer = evaluate.load("rouge")
+    return _scorer
 
 def compute(prediction: str, reference: str) -> dict[str, float]:
     """
@@ -23,9 +25,13 @@ def compute(prediction: str, reference: str) -> dict[str, float]:
     if not prediction.strip() or not reference.strip():
         return {"rouge1": 0.0, "rouge2": 0.0, "rougeL": 0.0}
 
-    scores = _SCORER.score(reference, prediction)
+    scorer = _get_scorer()
+    scores = scorer.compute(predictions=[prediction], references=[reference], use_stemmer=True)
+    if not scores:
+        return {"rouge1": 0.0, "rouge2": 0.0, "rougeL": 0.0}
+
     return {
-        "rouge1": round(scores["rouge1"].fmeasure, 4),
-        "rouge2": round(scores["rouge2"].fmeasure, 4),
-        "rougeL": round(scores["rougeL"].fmeasure, 4),
+        "rouge1": round(scores.get("rouge1", 0.0), 4),
+        "rouge2": round(scores.get("rouge2", 0.0), 4),
+        "rougeL": round(scores.get("rougeL", 0.0), 4),
     }

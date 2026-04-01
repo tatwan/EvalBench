@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
@@ -89,7 +89,7 @@ class ArenaVoteIn(CamelModel):
     model_a_id: int
     model_b_id: int
     prompt: str
-    winner: str  # 'model_a', 'model_b', 'tie'
+    winner: Literal["model_a", "model_b", "tie"]
 
 
 class EloRatingOut(CamelModel):

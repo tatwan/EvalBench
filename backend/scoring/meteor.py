@@ -1,25 +1,18 @@
 """
-METEOR scoring — via NLTK.
+METEOR scoring — via the evaluate library.
 Better than BLEU for capturing synonymy and paraphrasing.
 Used for summarization and translation tasks.
 """
-import nltk
-from nltk.translate.meteor_score import meteor_score
+import evaluate
+
+_scorer = None
 
 
-def _ensure_nltk_data():
-    resources = [
-        ("tokenizers/punkt_tab", "punkt_tab"),
-        ("tokenizers/punkt", "punkt"),
-        ("corpora/wordnet", "wordnet"),
-        ("corpora/omw-1.4", "omw-1.4")
-    ]
-    for path, name in resources:
-        try:
-            nltk.data.find(path)
-        except (LookupError, OSError):
-            nltk.download(name, quiet=True)
-
+def _get_scorer():
+    global _scorer
+    if _scorer is None:
+        _scorer = evaluate.load("meteor")
+    return _scorer
 
 
 def compute(prediction: str, reference: str) -> dict[str, float]:
@@ -34,8 +27,7 @@ def compute(prediction: str, reference: str) -> dict[str, float]:
     if not prediction.strip() or not reference.strip():
         return {"meteor": 0.0}
 
-    _ensure_nltk_data()
-    ref_tokens = nltk.word_tokenize(reference.lower())
-    pred_tokens = nltk.word_tokenize(prediction.lower())
-    score = meteor_score([ref_tokens], pred_tokens)
-    return {"meteor": round(score, 4)}
+    scorer = _get_scorer()
+    result = scorer.compute(predictions=[prediction], references=[[reference]])
+
+    return {"meteor": round(result.get("meteor", 0.0), 4)}

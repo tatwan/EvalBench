@@ -4,6 +4,7 @@ from typing import Tuple, Optional
 from sqlalchemy.orm import Session
 import anthropic
 from backend.models import Setting
+from backend.security import decrypt_value, is_sensitive
 
 # Standard Prompt Templates for G-Eval
 PROMPTS = {
@@ -49,17 +50,21 @@ Score: <int>"""
 
 def get_judge_client(db: Session) -> Tuple[Optional[OpenAI], Optional[str], Optional[anthropic.Anthropic]]:
     """Returns the OpenAI client (or Anthropic client) and the selected judge model name based on DB settings."""
-    settings = {s.key: s.value for s in db.query(Setting).all()}
-    
+    raw_settings = {s.key: s.value for s in db.query(Setting).all()}
+
+    # Decrypt any encrypted API key values before use
+    settings: dict[str, str] = {}
+    for k, v in raw_settings.items():
+        settings[k] = decrypt_value(v or "") if is_sensitive(k) else (v or "")
+
     judge_model = settings.get("judge_model")
     if not judge_model:
         return None, None, None
-        
+
     # Default to Local Ollama OpenAI-compatible endpoint
     base_url = settings.get("ollama_host", "http://localhost:11434") + "/v1"
     api_key = settings.get("openai_api_key", "ollama")
-    client_type = "openai"
-    
+
     if judge_model.startswith("gpt-"):
         base_url = "https://api.openai.com/v1"
         api_key = settings.get("openai_api_key", "")
@@ -67,13 +72,18 @@ def get_judge_client(db: Session) -> Tuple[Optional[OpenAI], Optional[str], Opti
         base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         api_key = settings.get("gemini_api_key", "")
     elif judge_model.startswith("grok-"):
+        # xAI Grok
         base_url = "https://api.x.ai/v1"
         api_key = settings.get("grok_api_key", "")
+    elif judge_model.startswith("groq-") or settings.get("groq_api_key"):
+        # Groq fast inference
+        base_url = "https://api.groq.com/openai/v1"
+        api_key = settings.get("groq_api_key", "")
     elif judge_model.startswith("claude-"):
         api_key = settings.get("anthropic_api_key", "")
         anthropic_client = anthropic.Anthropic(api_key=api_key)
         return None, judge_model, anthropic_client
-        
+
     client = OpenAI(base_url=base_url, api_key=api_key)
     return client, judge_model, None
 

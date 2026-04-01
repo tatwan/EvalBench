@@ -22,7 +22,24 @@ SAFE_BUILTINS = {
     "sum": sum,
     "tuple": tuple,
     "zip": zip,
+    "print": print,
+    "map": map,
+    "filter": filter,
+    "type": type,
+    "isinstance": isinstance,
+    "repr": repr,
+    "hash": hash,
+    "round": round,
 }
+
+ALLOWED_MODULES = {"math", "collections", "itertools", "string", "re", "datetime", "typing", "functools"}
+
+def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+    if name in ALLOWED_MODULES:
+        return __import__(name, globals, locals, fromlist, level)
+    raise ImportError(f"Import of module '{name}' is not allowed in this sandbox.")
+
+SAFE_BUILTINS["__import__"] = _safe_import
 
 
 def _run_code(code: str, tests: str, queue: mp.Queue) -> None:

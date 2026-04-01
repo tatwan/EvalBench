@@ -1,4 +1,4 @@
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { useEffect, useRef, useState } from "react";
 import { useEvalRun, useEvalResults, useEvalStats } from "@/hooks/use-eval";
 import { useModels } from "@/hooks/use-models";
@@ -96,6 +96,7 @@ function getExamplesPerModel(results: any[]) {
 export default function RunDetails() {
   const params = useParams<{ id: string }>();
   const runId = parseInt(params.id ?? "0", 10);
+  const [, navigate] = useLocation();
 
   const { data: run, isLoading: runLoading, refetch: refetchRun } = useEvalRun(runId);
   const { data: results = [], refetch: refetchResults } = useEvalResults(runId);
@@ -230,7 +231,7 @@ export default function RunDetails() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => window.location.href = "/"}>
+          <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div>
@@ -360,6 +361,20 @@ export default function RunDetails() {
                           !lowerIsBetter && stat.mean >= 0.3 ? "text-amber-900" : "text-foreground/90"
                         );
                         const isBest = Number.isFinite(bestByMetric[metric]) && Math.abs(stat.mean - bestByMetric[metric]) < 1e-8;
+
+                        const hasError = (results as any[]).some(
+                          (r) => r.modelId === mid && r.metricName === metric && r.error
+                        );
+
+                        if (hasError) {
+                          return (
+                            <td key={metric} className="px-5 py-4 text-right font-mono text-xs">
+                              <span className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded-md font-semibold font-sans">
+                                [Failed]
+                              </span>
+                            </td>
+                          );
+                        }
 
                         return (
                           <td key={metric} className="px-5 py-4 text-right font-mono">

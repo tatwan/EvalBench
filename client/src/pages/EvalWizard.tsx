@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Check, ChevronRight, Activity, Cpu, Layers, BookOpen, AlignLeft, MessageCircleQuestion, MessageSquare, Code2, BrainCircuit, Sparkles, Network } from "lucide-react";
 import { clsx } from "clsx";
+import { useLocation } from "wouter";
 
 const TASK_TYPES = [
   {
@@ -101,6 +102,9 @@ export default function EvalWizard() {
   const [selectedTaskType, setSelectedTaskType] = useState<string | null>(null);
   const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
   const [lastRunId, setLastRunId] = useState<number | null>(null);
+  const [progress, setProgress] = useState<{ completed: number; total: number; percent: number; model?: string; status?: string } | null>(null);
+  const [sseError, setSseError] = useState<string | null>(null);
+  const [, navigate] = useLocation();
 
   const { data: models = [], isLoading: modelsLoading } = useModels();
   const { data: datasets = [] } = useDatasets();
@@ -147,6 +151,28 @@ export default function EvalWizard() {
       setSelectedDatasetId(datasetOptions[0].id);
     }
   }, [selectedTaskType, selectedDatasetId, datasetOptions]);
+
+  useEffect(() => {
+    if (step !== 4 || !lastRunId) return;
+    
+    const es = new EventSource(`/api/eval-runs/${lastRunId}/progress`);
+    es.onmessage = (e) => {
+      const event = JSON.parse(e.data);
+      if (event.type === "progress") {
+        setProgress({ completed: event.completed, total: event.total, percent: event.percent, model: event.model });
+      } else if (event.type === "error" || event.type === "warning") {
+        setSseError(event.message || event.error);
+      } else if (event.type === "done") {
+        setProgress(prev => prev ? { ...prev, percent: 100, status: event.status } : { completed: 1, total: 1, percent: 100, status: event.status });
+        es.close();
+      }
+    };
+    es.onerror = () => {
+      es.close();
+    };
+
+    return () => es.close();
+  }, [step, lastRunId]);
 
   const handleRun = () => {
     if (!selectedTaskType) return;
@@ -289,12 +315,12 @@ export default function EvalWizard() {
                   </div>
                 )}
               </div>
-              <Button variant="ghost" size="sm" className="text-violet-700" onClick={() => window.location.href = "/learn"}>Why this metric? -&gt;</Button>
+              <Button variant="ghost" size="sm" className="text-violet-700" onClick={() => navigate("/learn")}>Why this metric? -&gt;</Button>
             </div>
           )}
 
           <div className="flex justify-between">
-            <Button variant="outline" onClick={() => window.location.href = "/"}>&lt;- Back</Button>
+            <Button variant="outline" onClick={() => navigate("/")}>&#8592; Back</Button>
             <Button onClick={() => setStep(2)} disabled={!selectedTaskType} className="gap-2">
               Continue: Select Models <ChevronRight className="w-4 h-4" />
             </Button>
@@ -316,7 +342,7 @@ export default function EvalWizard() {
           ) : models.length === 0 ? (
             <div className="text-center p-12 border border-dashed border-border rounded-xl bg-muted">
               <p className="text-muted-foreground mb-4">No models available.</p>
-              <Button variant="outline" onClick={() => window.location.href = "/models"}>Go to Models Page</Button>
+              <Button variant="outline" onClick={() => navigate("/models")}>Go to Models Page</Button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -412,20 +438,53 @@ export default function EvalWizard() {
       )}
 
       {step === 4 && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-10 text-center">
-          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-4 mx-auto">
-            <Check className="w-8 h-8 text-emerald-600" />
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-10 text-center max-w-2xl mx-auto">
+          {progress?.percent === 100 ? (
+            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-4 mx-auto animate-in zoom-in">
+              <Check className="w-8 h-8 text-emerald-600" />
+            </div>
+          ) : (
+            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-4 mx-auto">
+              <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+          
+          <h2 className="text-xl font-bold mb-2">
+            {progress?.percent === 100 ? "Evaluation Complete" : "Evaluation Running"}
+          </h2>
+          
+          <div className="mb-6 max-w-md mx-auto space-y-4">
+            <p className="text-muted-foreground text-sm">
+              {progress?.percent === 100 
+                ? "Models have been scored and results are ready."
+                : `Currently scoring ${progress?.model ? `model: ${progress.model}` : "models"} in the background.`}
+            </p>
+            
+            {progress && progress.percent < 100 && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs font-semibold text-emerald-800">
+                  <span>{progress.completed} / {progress.total} items</span>
+                  <span>{progress.percent}%</span>
+                </div>
+                <div className="h-3 w-full bg-emerald-200/50 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-emerald-500 transition-all duration-300 ease-out rounded-full"
+                    style={{ width: `${progress.percent}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            {sseError && (
+              <p className="text-xs text-rose-600 bg-rose-100 p-2 rounded">{sseError}</p>
+            )}
           </div>
-          <h2 className="text-xl font-bold mb-2">Evaluation Started!</h2>
-          <p className="text-muted-foreground max-w-md mx-auto mb-6">
-            Your models are being scored in the background. Check Run History or run details for live progress.
-          </p>
-          <div className="flex justify-center gap-3">
-            <Button variant="outline" onClick={() => { setStep(1); setSelectedModels([]); setSelectedTaskType(null); }}>
+
+          <div className="flex justify-center gap-3 mt-8">
+            <Button variant="outline" onClick={() => { setStep(1); setSelectedModels([]); setSelectedTaskType(null); setProgress(null); setLastRunId(null); }}>
               Run Another
             </Button>
-            <Button onClick={() => window.location.href = lastRunId ? `/evaluate/${lastRunId}` : "/history"}>
-              {lastRunId ? "View Latest Run" : "Go to Run History"}
+            <Button onClick={() => navigate(lastRunId ? `/evaluate/${lastRunId}` : "/history")}>
+              {progress?.percent === 100 ? "View Results" : lastRunId ? "Go to Live Details" : "Go to History"}
             </Button>
           </div>
         </div>

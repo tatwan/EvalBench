@@ -1,14 +1,25 @@
 import { useArenaMatchup, useArenaVote } from "@/hooks/use-arena";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/Button";
-import { Swords, RefreshCw, Trophy, Skull, ThumbsUp, Scale } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Swords, RefreshCw, Trophy, Skull, ThumbsUp, Scale, Pencil } from "lucide-react";
 import { clsx } from "clsx";
 import { useState } from "react";
+import { useLocation } from "wouter";
 
 export default function Arena() {
-  const { data: matchup, isLoading, refetch, isRefetching } = useArenaMatchup();
+  const [customPrompt, setCustomPrompt] = useState("");
+  const [submittedPrompt, setSubmittedPrompt] = useState<string | undefined>(undefined);
+  const { data: matchup, isLoading, refetch, isRefetching } = useArenaMatchup(submittedPrompt);
   const voteMutation = useArenaVote();
   const [votedFor, setVotedFor] = useState<"model_a" | "model_b" | "tie" | null>(null);
+  const [, navigate] = useLocation();
+
+  const handleNewBattle = () => {
+    setSubmittedPrompt(customPrompt.trim() || undefined);
+    setVotedFor(null);
+    refetch();
+  };
 
   const handleVote = (winner: "model_a" | "model_b" | "tie") => {
     if (!matchup) return;
@@ -43,7 +54,7 @@ export default function Arena() {
         <p className="text-muted-foreground">
           The arena requires at least two discovered models to begin pairwise evaluation.
         </p>
-        <Button onClick={() => window.location.href = "/models"}>Discover Models</Button>
+        <Button onClick={() => navigate("/models")}>Discover Models</Button>
       </div>
     );
   }
@@ -59,10 +70,10 @@ export default function Arena() {
           <p className="text-sm text-muted-foreground">Blind pairwise evaluation - Vote on responses - Builds ELO ratings</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => window.location.href = "/leaderboard"} className="gap-2">
+          <Button variant="outline" onClick={() => navigate("/leaderboard")} className="gap-2">
             <Trophy className="w-4 h-4 text-amber-500" /> Leaderboard
           </Button>
-          <Button variant="outline" size="icon" onClick={() => refetch()}>
+          <Button variant="outline" size="icon" onClick={handleNewBattle}>
             <RefreshCw className="w-4 h-4" />
           </Button>
         </div>
@@ -79,6 +90,21 @@ export default function Arena() {
             Vote to reveal models
           </span>
         </div>
+      </div>
+
+      {/* Custom prompt input */}
+      <div className="flex gap-2 items-center">
+        <Pencil className="w-4 h-4 text-muted-foreground shrink-0" />
+        <Input
+          value={customPrompt}
+          onChange={e => setCustomPrompt(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && handleNewBattle()}
+          placeholder="Type a custom prompt, or leave blank for a random one…"
+          className="bg-muted text-sm"
+        />
+        <Button size="sm" variant="outline" onClick={handleNewBattle} className="shrink-0">
+          New Battle
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_48px_1fr] gap-4">

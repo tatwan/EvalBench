@@ -5,19 +5,35 @@ from typing import Any
 from backend.database import SessionLocal
 from backend.models import Setting
 
+# Module-level host cache — avoids a DB round-trip on every Ollama call.
+# Invalidated by calling invalidate_host_cache() when settings are saved.
+_cached_host: str | None = None
+
+
+def invalidate_host_cache() -> None:
+    """Call this whenever ollama_host is updated in Settings."""
+    global _cached_host
+    _cached_host = None
+
 
 def get_ollama_base() -> str:
+    global _cached_host
+    if _cached_host is not None:
+        return _cached_host
+
     db = SessionLocal()
     try:
         setting = db.query(Setting).filter_by(key="ollama_host").first()
         if setting and setting.value:
-            return setting.value.rstrip("/")
+            _cached_host = setting.value.rstrip("/")
+            return _cached_host
     except Exception:
         pass
     finally:
         db.close()
 
-    return os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+    _cached_host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+    return _cached_host
 
 
 async def check_status() -> dict[str, Any]:

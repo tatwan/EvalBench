@@ -3,11 +3,15 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 
-export function useArenaMatchup() {
+export function useArenaMatchup(prompt?: string) {
+  const url = prompt
+    ? `${api.arena.getMatchup.path}?prompt=${encodeURIComponent(prompt)}`
+    : api.arena.getMatchup.path;
+
   return useQuery({
-    queryKey: [api.arena.getMatchup.path],
+    queryKey: [api.arena.getMatchup.path, prompt ?? ""],
     queryFn: async () => {
-      const res = await fetch(api.arena.getMatchup.path, { credentials: "include" });
+      const res = await fetch(url, { credentials: "include" });
       if (!res.ok) {
         if (res.status === 404) return null; // Not enough models
         throw new Error("Failed to fetch matchup");

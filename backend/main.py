@@ -12,6 +12,7 @@ from backend.routers import settings as settings_router
 from backend.services import dataset_seeder
 from backend.services.ollama import list_models
 from backend.services import storage
+from sqlalchemy import text
 
 
 @asynccontextmanager
@@ -20,6 +21,37 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
+        # DB Migration: Add error column if missing
+        try:
+            db.execute(text("ALTER TABLE eval_results ADD COLUMN error BOOLEAN DEFAULT 0"))
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        # DB Migration: Add response_cache table if missing
+        try:
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS response_cache (
+                    key TEXT PRIMARY KEY,
+                    response TEXT NOT NULL,
+                    eval_count INTEGER,
+                    eval_duration INTEGER,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        # Cleanup interrupted background runs
+        try:
+            db.execute(
+                text("UPDATE eval_runs SET status = 'error' WHERE status IN ('running', 'pending')")
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+
         dataset_seeder.seed_if_empty(db)
         # Auto-sync Ollama models on startup so the UI shows them immediately
         ollama_models = await list_models()

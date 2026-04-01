@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Cpu, ArrowLeft, Activity, Clock, CheckCircle2, BarChart3 } from "lucide-react";
+import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from "recharts";
 
 const SPEED_METRICS = new Set([
   "tokens_per_second",
@@ -100,6 +101,40 @@ export default function ModelDetails() {
     const entry = (leaderboard as any[]).find((l) => l.model?.id === modelId);
     return entry?.rating?.rating ?? null;
   }, [leaderboard, modelId]);
+
+  const radarData = useMemo(() => {
+    const scores = {
+      Knowledge: [] as number[],
+      Reasoning: [] as number[],
+      Code: [] as number[],
+      Summary: [] as number[],
+      Translate: [] as number[],
+    };
+
+    modelResults.forEach((r) => {
+      const run = (runs as any[]).find((run) => run.id === r.runId);
+      if (!run) return;
+      const tt = run.configJson?.taskType;
+      const val = Number(r.score);
+      if (Number.isNaN(val)) return;
+
+      if (tt === "knowledge" && r.metricName === "exact_match") scores.Knowledge.push(val);
+      if (tt === "reasoning" && r.metricName === "exact_match") scores.Reasoning.push(val);
+      if (tt === "code" && r.metricName === "pass_at_1") scores.Code.push(val);
+      if (tt === "summarization" && r.metricName === "rougeL") scores.Summary.push(val);
+      if (tt === "translation" && r.metricName === "chrf") scores.Translate.push(val);
+    });
+
+    const getAvg = (arr: number[]) => (arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
+
+    return [
+      { subject: "Knowledge", score: getAvg(scores.Knowledge) * 100 },
+      { subject: "Reasoning", score: getAvg(scores.Reasoning) * 100 },
+      { subject: "Code", score: getAvg(scores.Code) * 100 },
+      { subject: "Summary", score: getAvg(scores.Summary) * 100 },
+      { subject: "Translate", score: getAvg(scores.Translate) * 100 },
+    ];
+  }, [modelResults, runs]);
 
   if (!model) {
     return (
@@ -193,7 +228,7 @@ export default function ModelDetails() {
                     <tr
                       key={run.id}
                       className="hover:bg-muted/50 cursor-pointer"
-                      onClick={() => (window.location.href = `/evaluate/${run.id}`)}
+                      onClick={() => window.location.assign(`/evaluate/${run.id}`)}
                     >
                       <td className="px-5 py-3 font-mono text-primary">#{run.id}</td>
                       <td className="px-5 py-3 capitalize">{run.configJson?.taskType ?? "-"}</td>
@@ -232,21 +267,29 @@ export default function ModelDetails() {
         <div className="space-y-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">Capability Snapshot</CardTitle>
+              <CardTitle className="text-base">Capability Signature</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
+              <div className="h-48 w-full -ml-3">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
+                    <PolarGrid stroke="#e2e8f0" />
+                    <PolarAngleAxis dataKey="subject" tick={{ fill: "#64748b", fontSize: 10, fontWeight: 600 }} />
+                    <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} stroke="#e2e8f0" />
+                    <Radar
+                      name={model.name}
+                      dataKey="score"
+                      stroke="#8b5cf6"
+                      fill="#8b5cf6"
+                      fillOpacity={0.4}
+                    />
+                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: "#e2e8f0" }} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex items-center justify-between text-sm pt-2 border-t border-border">
                 <span className="text-muted-foreground">Tasks Evaluated</span>
                 <span className="font-semibold">{taskSet.length || 0}</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {taskSet.length ? taskSet.map((task) => (
-                  <span key={task} className="text-[10px] font-semibold px-2 py-1 rounded-full bg-muted text-muted-foreground capitalize">
-                    {task}
-                  </span>
-                )) : (
-                  <span className="text-xs text-muted-foreground">No tasks yet</span>
-                )}
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Avg Latency</span>

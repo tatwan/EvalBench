@@ -11,7 +11,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Cpu, Search, RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { clsx } from "clsx";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
+import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from "recharts";
 
 const SPEED_METRICS = new Set(["tokens_per_second", "total_latency_s", "load_latency_s", "prompt_tokens", "output_tokens"]);
 
@@ -59,6 +60,7 @@ export default function Models() {
   const [paramFilter, setParamFilter] = useState("all");
   const [sizeFilter, setSizeFilter] = useState("all");
   const [specialtyFilter, setSpecialtyFilter] = useState("all");
+  const [, navigate] = useLocation();
 
   const eloMap = useMemo(() => {
     return Object.fromEntries((leaderboard as any[]).map((entry) => [entry.model.id, entry.rating.rating]));
@@ -85,12 +87,38 @@ export default function Models() {
           if (!tps.length) return null;
           return tps.reduce((sum, r) => sum + Number(r.score), 0) / tps.length;
         })();
+
+        const scores = { Knowledge: [] as number[], Reasoning: [] as number[], Code: [] as number[], Summary: [] as number[], Translate: [] as number[] };
+        modelResults.forEach(r => {
+          const run = runMap[r.runId];
+          if (!run) return;
+          const tt = run.configJson?.taskType;
+          const val = Number(r.score);
+          if (Number.isNaN(val)) return;
+          if (tt === "knowledge" && r.metricName === "exact_match") scores.Knowledge.push(val);
+          if (tt === "reasoning" && r.metricName === "exact_match") scores.Reasoning.push(val);
+          if (tt === "code" && r.metricName === "pass_at_1") scores.Code.push(val);
+          if (tt === "summarization" && r.metricName === "rougeL") scores.Summary.push(val);
+          if (tt === "translation" && r.metricName === "chrf") scores.Translate.push(val);
+        });
+        const getAvg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+        const radarData = [
+          { subject: "KNO", score: getAvg(scores.Knowledge) * 100 },
+          { subject: "RSN", score: getAvg(scores.Reasoning) * 100 },
+          { subject: "COD", score: getAvg(scores.Code) * 100 },
+          { subject: "SUM", score: getAvg(scores.Summary) * 100 },
+          { subject: "TRN", score: getAvg(scores.Translate) * 100 },
+        ];
+        const hasRadarData = radarData.some(d => d.score > 0);
+
         return [
           model.id,
           {
             bestScore,
             avgTps,
             tasks: Array.from(tasksByModel.get(model.id) ?? []),
+            radarData,
+            hasRadarData
           },
         ];
       })
@@ -172,7 +200,7 @@ export default function Models() {
       } as any,
       {
         onSuccess: () => {
-          window.location.href = "/history";
+          navigate("/history");
         },
       }
     );
@@ -371,20 +399,33 @@ export default function Models() {
                     <span>Best Score</span>
                     {hasResults ? <ScoreBadge value={meta.bestScore} metric="rougeL" /> : <span>-</span>}
                   </div>
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Tasks</span>
-                    <div className="flex gap-1.5 flex-wrap justify-end">
-                      {(meta.tasks ?? []).length ? (
-                        (meta.tasks ?? []).slice(0, 2).map((task: string) => (
-                          <span key={task} className="text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground">
-                            {task}
-                          </span>
-                        ))
-                      ) : (
-                        <span>-</span>
-                      )}
+                  {meta.hasRadarData ? (
+                    <div className="h-28 w-full -ml-3 mt-1">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RadarChart cx="50%" cy="50%" outerRadius="65%" data={meta.radarData}>
+                          <PolarGrid stroke="#e2e8f0" />
+                          <PolarAngleAxis dataKey="subject" tick={{ fill: "#64748b", fontSize: 9, fontWeight: 700 }} />
+                          <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} stroke="none" />
+                          <Radar name={model.name} dataKey="score" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.4} />
+                        </RadarChart>
+                      </ResponsiveContainer>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Tasks</span>
+                      <div className="flex gap-1.5 flex-wrap justify-end">
+                        {(meta.tasks ?? []).length ? (
+                          (meta.tasks ?? []).slice(0, 2).map((task: string) => (
+                            <span key={task} className="text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                              {task}
+                            </span>
+                          ))
+                        ) : (
+                          <span>-</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-auto">

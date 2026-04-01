@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Optional
 from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.schemas import (
@@ -23,7 +24,10 @@ ARENA_PROMPTS = [
 
 
 @router.get("/matchup", response_model=ArenaMatchupOut)
-async def get_matchup(db: Session = Depends(get_db)):
+async def get_matchup(
+    db: Session = Depends(get_db),
+    prompt: Optional[str] = Query(None, description="Custom prompt to use. If omitted, a random built-in prompt is selected."),
+):
     import random
     import asyncio
     pair = storage.get_random_model_pair(db)
@@ -33,7 +37,7 @@ async def get_matchup(db: Session = Depends(get_db)):
             detail="Need at least 2 models. Run model discovery first.",
         )
     model_a, model_b = pair
-    prompt = random.choice(ARENA_PROMPTS)
+    prompt = (prompt or "").strip() or random.choice(ARENA_PROMPTS)
 
     # Run both generations concurrently for speed
     result_a, result_b = await asyncio.gather(

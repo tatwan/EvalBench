@@ -346,16 +346,59 @@ QA_ITEMS = [
 
 # ─── MMLU Dataset (Subset) ──────────────────────────────
 MMLU_ITEMS = [
-    {"input": "Q: The term 'battery' in tort law refers to:\nA. The storage of electrical energy\nB. Harmful or offensive contact to a person\nC. An assault without physical contact\nD. Verbal abuse\nAnswer:", "expected_output": "B", "tags": ["law"], "difficulty": "hard"},
-    {"input": "Q: Which of the following is not a symptom of hypothyroidism?\nA. Weight gain\nB. Tachycardia\nC. Fatigue\nD. Cold intolerance\nAnswer:", "expected_output": "B", "tags": ["medical"], "difficulty": "hard"},
-    {"input": "Q: What is the formal charge of the central oxygen atom in ozone (O3)?\nA. -1\nB. 0\nC. +1\nD. +2\nAnswer:", "expected_output": "C", "tags": ["chemistry"], "difficulty": "hard"},
-    {"input": "Q: In computer science, what is the worst-case time complexity of QuickSort?\nA. O(n log n)\nB. O(n^2)\nC. O(log n)\nD. O(n)\nAnswer:", "expected_output": "B", "tags": ["cs"], "difficulty": "medium"},
-    {"input": "Q: Who wrote 'The Wealth of Nations'?\nA. Karl Marx\nB. John Maynard Keynes\nC. Adam Smith\nD. Friedrich Hayek\nAnswer:", "expected_output": "C", "tags": ["economics"], "difficulty": "easy"},
-    {"input": "Q: Which algorithm is used in Bitcoin's proof-of-work?\nA. SHA-256\nB. Scrypt\nC. Ethash\nD. Equihash\nAnswer:", "expected_output": "A", "tags": ["crypto"], "difficulty": "medium"},
-    {"input": "Q: What is the main component of Earth's atmosphere?\nA. Oxygen\nB. Carbon dioxide\nC. Nitrogen\nD. Argon\nAnswer:", "expected_output": "C", "tags": ["earth-science"], "difficulty": "easy"},
-    {"input": "Q: The 'Veil of Ignorance' is a thought experiment associated with which philosopher?\nA. Immanuel Kant\nB. John Stuart Mill\nC. John Rawls\nD. Thomas Hobbes\nAnswer:", "expected_output": "C", "tags": ["philosophy"], "difficulty": "hard"},
-    {"input": "Q: What does the 'acrosome reaction' refer to in biology?\nA. A cellular stress response\nB. The release of enzymes by sperm to penetrate an egg\nC. Photosynthesis in deep water algae\nD. The immune response to a pathogen\nAnswer:", "expected_output": "B", "tags": ["biology"], "difficulty": "hard"},
-    {"input": "Q: In music theory, the relative minor of G major is:\nA. A minor\nB. E minor\nC. D minor\nD. C minor\nAnswer:", "expected_output": "B", "tags": ["music"], "difficulty": "medium"},
+    # Physics
+    {"input": "What is the primary mechanism of heat transfer in a vacuum?\nA) Conduction\nB) Convection\nC) Radiation\nD) Advection", "expected_output": "C", "tags": ["mmlu", "physics"], "difficulty": "hard"},
+    {"input": "Which particle is the force carrier for the electromagnetic force?\nA) Gluon\nB) W boson\nC) Photon\nD) Graviton", "expected_output": "C", "tags": ["mmlu", "physics"], "difficulty": "hard"},
+    {"input": "In special relativity, the Lorentz factor y approaches what value as velocity approaches the speed of light?\nA) 0\nB) 1\nC) Infinity\nD) -1", "expected_output": "C", "tags": ["mmlu", "physics"], "difficulty": "hard"},
+    {"input": "What principle states that it is impossible to simultaneously know both the exact position and exact momentum of a particle?\nA) Pauli Exclusion Principle\nB) Heisenberg Uncertainty Principle\nC) Schrodinger's Cat\nD) Bohr Model", "expected_output": "B", "tags": ["mmlu", "physics"], "difficulty": "medium"},
+    
+    # Law / Legal
+    {"input": "What is the standard of proof required in a criminal trial in the United States?\nA) Preponderance of the evidence\nB) Clear and convincing evidence\nC) Beyond a reasonable doubt\nD) Probable cause", "expected_output": "C", "tags": ["mmlu", "law"], "difficulty": "medium"},
+    {"input": "A tort is:\nA) A breach of contract\nB) A criminal act against the state\nC) A civil wrong that causes a claimant to suffer loss or harm\nD) A legal injunction", "expected_output": "C", "tags": ["mmlu", "law"], "difficulty": "easy"},
+    {"input": "Habeas corpus is a writ that:\nA) Allows the government to seize property\nB) Requires a person under arrest to be brought before a judge\nC) Declares a law unconstitutional\nD) Forbids cruel and unusual punishment", "expected_output": "B", "tags": ["mmlu", "law"], "difficulty": "medium"},
+    {"input": "What doctrine protects government officials from lawsuits alleging that they violated a plaintiff's rights, only allowing suits where officials violated a 'clearly established' statutory or constitutional right?\nA) Qualified immunity\nB) Sovereign immunity\nC) Executive privilege\nD) Official mandate", "expected_output": "A", "tags": ["mmlu", "law"], "difficulty": "hard"},
+    
+    # Biology / Medical
+    {"input": "Which organelle is considered the powerhouse of the eukaryotic cell?\nA) Nucleus\nB) Mitochondrion\nC) Ribosome\nD) Endoplasmic reticulum", "expected_output": "B", "tags": ["mmlu", "biology"], "difficulty": "easy"},
+    {"input": "During which phase of mitosis do sister chromatids pull apart and move to opposite poles of the cell?\nA) Prophase\nB) Metaphase\nC) Anaphase\nD) Telophase", "expected_output": "C", "tags": ["mmlu", "biology"], "difficulty": "medium"},
+    {"input": "What is the most abundant protein in the human body?\nA) Keratin\nB) Elastin\nC) Collagen\nD) Actosin", "expected_output": "C", "tags": ["mmlu", "medicine"], "difficulty": "medium"},
+    {"input": "Which blood type is considered the universal donor for red blood cells?\nA) A positive\nB) AB positive\nC) O negative\nD) O positive", "expected_output": "C", "tags": ["mmlu", "medicine"], "difficulty": "easy"},
+    
+    # Economics / Finance
+    {"input": "A sustained increase in the general price level of goods and services in an economy over a period of time is called:\nA) Deflation\nB) Stagnation\nC) Inflation\nD) Hypertrophy", "expected_output": "C", "tags": ["mmlu", "economics"], "difficulty": "easy"},
+    {"input": "In accounting, what is the formula for the fundamental accounting equation?\nA) Assets = Liabilities + Equity\nB) Assets = Liabilities - Equity\nC) Equity = Assets + Liabilities\nD) Revenue = Expenses + Equity", "expected_output": "A", "tags": ["mmlu", "finance"], "difficulty": "medium"},
+    {"input": "What term describes a market structure characterized by a single seller, selling a unique product in the market?\nA) Oligopoly\nB) Monopolistic competition\nC) Perfect competition\nD) Monopoly", "expected_output": "D", "tags": ["mmlu", "economics"], "difficulty": "easy"},
+    {"input": "Which economic principle suggests that as the price of a good increases, the quantity supplied increases?\nA) Law of Demand\nB) Law of Supply\nC) Law of Diminishing Returns\nD) Opportunity Cost", "expected_output": "B", "tags": ["mmlu", "economics"], "difficulty": "medium"},
+    
+    # History
+    {"input": "Who was the first emperor of Rome?\nA) Julius Caesar\nB) Augustus\nC) Nero\nD) Caligula", "expected_output": "B", "tags": ["mmlu", "history"], "difficulty": "medium"},
+    {"input": "The Treaty of Versailles, which ended World War I, was signed in what year?\nA) 1914\nB) 1918\nC) 1919\nD) 1923", "expected_output": "C", "tags": ["mmlu", "history"], "difficulty": "medium"},
+    {"input": "Which dynasty was the last imperial dynasty of China, ruling from 1644 to 1912?\nA) Ming Dynasty\nB) Song Dynasty\nC) Qing Dynasty\nD) Tang Dynasty", "expected_output": "C", "tags": ["mmlu", "history"], "difficulty": "hard"},
+    {"input": "The Magna Carta was signed in 1215 by which English king?\nA) King Henry VIII\nB) King Richard the Lionheart\nC) King John\nD) King Edward I", "expected_output": "C", "tags": ["mmlu", "history"], "difficulty": "medium"},
+
+    # Computer Science
+    {"input": "Which of the following sorting algorithms has an average time complexity of O(n log n)?\nA) Bubble sort\nB) Insertion sort\nC) Selection sort\nD) Merge sort", "expected_output": "D", "tags": ["mmlu", "computer_science"], "difficulty": "easy"},
+    {"input": "In the OSI model, which layer is responsible for routing and forwarding packets?\nA) Data Link Layer\nB) Network Layer\nC) Transport Layer\nD) Application Layer", "expected_output": "B", "tags": ["mmlu", "computer_science"], "difficulty": "medium"},
+    {"input": "What does ACID stand for in the context of database transactions?\nA) Automatic, Consistent, Isolated, Durable\nB) Atomicity, Consistency, Isolation, Durability\nC) Asynchronous, Concurrent, Iterative, Distributed\nD) Array, Character, Integer, Double", "expected_output": "B", "tags": ["mmlu", "computer_science"], "difficulty": "medium"},
+    {"input": "Which computational complexity class contains problems for which a solution can be verified in polynomial time?\nA) P\nB) NP\nC) NP-Hard\nD) EXPTIME", "expected_output": "B", "tags": ["mmlu", "computer_science"], "difficulty": "hard"},
+
+    # Philosophy / Logic
+    {"input": "The 'categorical imperative', a central philosophical concept in deontological moral philosophy, was introduced by:\nA) John Stuart Mill\nB) Aristotle\nC) Immanuel Kant\nD) Friedrich Nietzsche", "expected_output": "C", "tags": ["mmlu", "philosophy"], "difficulty": "hard"},
+    {"input": "Cogito, ergo sum ('I think, therefore I am') is a philosophical statement made by:\nA) Plato\nB) Rene Descartes\nC) Socrates\nD) David Hume", "expected_output": "B", "tags": ["mmlu", "philosophy"], "difficulty": "easy"},
+    {"input": "Which logical fallacy involves attacking the character, motive, or other attribute of the person making the argument, rather than attacking the substance of the argument itself?\nA) Straw man\nB) Ad hominem\nC) False dilemma\nD) Slippery slope", "expected_output": "B", "tags": ["mmlu", "logic"], "difficulty": "easy"},
+    {"input": "Utilitarianism is an ethical theory that posits that the best action is the one that:\nA) Adheres to strict moral rules\nB) Maximizes utility or overall well-being\nC) Respects individual rights above all else\nD) Reflects what a virtuous person would do", "expected_output": "B", "tags": ["mmlu", "philosophy"], "difficulty": "medium"},
+
+    # Mathematics
+    {"input": "What is the derivative of e^x with respect to x?\nA) e^x\nB) x*e^(x-1)\nC) ln(x)\nD) e", "expected_output": "A", "tags": ["mmlu", "math"], "difficulty": "easy"},
+    {"input": "A matrix is said to be singular if and only if its determinant is:\nA) 1\nB) -1\nC) 0\nD) Infinity", "expected_output": "C", "tags": ["mmlu", "math"], "difficulty": "medium"},
+    {"input": "In Euclidean geometry, what is the sum of the interior angles of a pentagon?\nA) 360 degrees\nB) 540 degrees\nC) 720 degrees\nD) 180 degrees", "expected_output": "B", "tags": ["mmlu", "math"], "difficulty": "medium"},
+    {"input": "Which geometric shape is defined as the locus of all points in a plane equidistant from a given fixed point and a given fixed line?\nA) Circle\nB) Ellipse\nC) Parabola\nD) Hyperbola", "expected_output": "C", "tags": ["mmlu", "math"], "difficulty": "hard"},
+    
+    # Chemistry
+    {"input": "Which element has the chemical symbol 'Au'?\nA) Silver\nB) Argon\nC) Aluminum\nD) Gold", "expected_output": "D", "tags": ["mmlu", "chemistry"], "difficulty": "easy"},
+    {"input": "A pH of 3 indicates that a substance is:\nA) Strongly basic\nB) Weakly basic\nC) Neutral\nD) Acidic", "expected_output": "D", "tags": ["mmlu", "chemistry"], "difficulty": "easy"},
+    {"input": "What type of chemical bond involves the sharing of electron pairs between atoms?\nA) Ionic bond\nB) Covalent bond\nC) Metallic bond\nD) Hydrogen bond", "expected_output": "B", "tags": ["mmlu", "chemistry"], "difficulty": "medium"},
+    {"input": "Avogadro's number represents the number of particles in exactly one mole of a substance. What is its approximate value?\nA) 3.14 x 10^23\nB) 6.022 x 10^23\nC) 1.602 x 10^-19\nD) 6.626 x 10^-34", "expected_output": "B", "tags": ["mmlu", "chemistry"], "difficulty": "medium"},
 ]
 
 # ─── HellaSwag Dataset (Subset) ──────────────────────────
@@ -551,6 +594,30 @@ EMBEDDING_ITEMS = [
         "tags": ["embedding", "retrieval"],
         "difficulty": "medium",
     },
+]
+
+# ─── Translation Dataset (English to French) ────────────────────
+TRANSLATION_ITEMS = [
+    {"input": "Translate to French: Hello, how are you?", "expected_output": "Bonjour, comment allez-vous ?", "tags": ["translation", "french"], "difficulty": "easy"},
+    {"input": "Translate to French: The weather is beautiful today.", "expected_output": "Il fait beau aujourd'hui.", "tags": ["translation", "french"], "difficulty": "easy"},
+    {"input": "Translate to French: I would like a coffee, please.", "expected_output": "Je voudrais un café, s'il vous plaît.", "tags": ["translation", "french"], "difficulty": "easy"},
+    {"input": "Translate to French: Where is the nearest train station?", "expected_output": "Où est la gare la plus proche ?", "tags": ["translation", "french"], "difficulty": "easy"},
+    {"input": "Translate to French: He works as a software engineer.", "expected_output": "Il travaille comme ingénieur en informatique.", "tags": ["translation", "french"], "difficulty": "easy"},
+    {"input": "Translate to French: We arrived late because of the traffic.", "expected_output": "Nous sommes arrivés en retard à cause des embouteillages.", "tags": ["translation", "french"], "difficulty": "medium"},
+    {"input": "Translate to French: Can you help me find my keys?", "expected_output": "Pouvez-vous m'aider à trouver mes clés ?", "tags": ["translation", "french"], "difficulty": "medium"},
+    {"input": "Translate to French: The project deadline has been extended to next Friday.", "expected_output": "La date limite du projet a été repoussée à vendredi prochain.", "tags": ["translation", "french"], "difficulty": "medium"},
+    {"input": "Translate to French: They enjoyed the movie despite the long duration.", "expected_output": "Ils ont apprécié le film malgré sa longue durée.", "tags": ["translation", "french"], "difficulty": "medium"},
+    {"input": "Translate to French: Please don't forget to lock the door when you leave.", "expected_output": "N'oubliez pas de fermer la porte à clé en partant.", "tags": ["translation", "french"], "difficulty": "medium"},
+    {"input": "Translate to French: The new restaurant downtown serves excellent seafood.", "expected_output": "Le nouveau restaurant du centre-ville sert d'excellents fruits de mer.", "tags": ["translation", "french"], "difficulty": "medium"},
+    {"input": "Translate to French: I prefer reading books over watching television.", "expected_output": "Je préfère lire des livres plutôt que de regarder la télévision.", "tags": ["translation", "french"], "difficulty": "medium"},
+    {"input": "Translate to French: She has been learning Spanish for three years.", "expected_output": "Elle apprend l'espagnol depuis trois ans.", "tags": ["translation", "french"], "difficulty": "medium"},
+    {"input": "Translate to French: It's important to drink enough water every day.", "expected_output": "Il est important de boire assez d'eau tous les jours.", "tags": ["translation", "french"], "difficulty": "medium"},
+    {"input": "Translate to French: I am looking forward to our meeting next week.", "expected_output": "J'ai hâte d'être à notre réunion de la semaine prochaine.", "tags": ["translation", "french"], "difficulty": "medium"},
+    {"input": "Translate to French: A journey of a thousand miles begins with a single step.", "expected_output": "Un voyage de mille lieues commence toujours par un premier pas.", "tags": ["translation", "french"], "difficulty": "hard"},
+    {"input": "Translate to French: The company's revenue increased by twenty percent this quarter.", "expected_output": "Le chiffre d'affaires de l'entreprise a augmenté de vingt pour cent ce trimestre.", "tags": ["translation", "french"], "difficulty": "medium"},
+    {"input": "Translate to French: Artificial intelligence is transforming many industries.", "expected_output": "L'intelligence artificielle transforme de nombreuses industries.", "tags": ["translation", "french"], "difficulty": "medium"},
+    {"input": "Translate to French: I'll call you back as soon as I finish my dinner.", "expected_output": "Je vous rappelle dès que j'aurai fini mon dîner.", "tags": ["translation", "french"], "difficulty": "medium"},
+    {"input": "Translate to French: Reading is to the mind what exercise is to the body.", "expected_output": "La lecture est à l'esprit ce que l'exercice est au corps.", "tags": ["translation", "french"], "difficulty": "hard"},
 ]
 
 # ─── HumanEval Dataset (Subset - Code) ────────────────────
@@ -774,6 +841,25 @@ def seed_if_empty(db: Session) -> None:
         for item in HUMANEVAL_ITEMS:
             db.add(db_models.GoldenItem(
                 dataset_id=code_ds.id,
+                input=item["input"],
+                expected_output=item["expected_output"],
+                context=item.get("context"),
+                tags=item["tags"],
+                difficulty=item["difficulty"],
+            ))
+
+    # ── Translation dataset ──
+    if "EvalBench Translation v1" not in existing_names:
+        trans_ds = db_models.GoldenDataset(
+            name="EvalBench Translation v1",
+            source="curated-inline",
+            schema_version=1,
+        )
+        db.add(trans_ds)
+        db.flush()
+        for item in TRANSLATION_ITEMS:
+            db.add(db_models.GoldenItem(
+                dataset_id=trans_ds.id,
                 input=item["input"],
                 expected_output=item["expected_output"],
                 context=item.get("context"),

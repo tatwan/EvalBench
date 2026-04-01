@@ -62,6 +62,7 @@ def get_eval_results(run_id: int, db: Session = Depends(get_db)):
             "modelId": r.model_id,
             "metricName": r.metric_name,
             "score": r.score,
+            "error": r.error,
             "rawOutput": r.raw_output,
             "itemId": r.item_id,
             "input": i.input if i else None,
