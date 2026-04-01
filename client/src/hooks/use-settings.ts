@@ -6,6 +6,33 @@ export type Setting = {
   value: string | null;
 };
 
+export type SettingConnectionTarget =
+  | "ollama"
+  | "judge"
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "groq"
+  | "grok";
+
+export type SettingConnectionTestPayload = {
+  target: SettingConnectionTarget;
+  ollamaHost?: string;
+  judgeModel?: string;
+  openaiApiKey?: string;
+  anthropicApiKey?: string;
+  geminiApiKey?: string;
+  groqApiKey?: string;
+  grokApiKey?: string;
+};
+
+export type SettingConnectionTestResult = {
+  target: string;
+  ok: boolean;
+  message: string;
+  details?: string | null;
+};
+
 // Fetch all settings as an array
 export function useSettings() {
   return useQuery<Setting[]>({
@@ -34,3 +61,30 @@ export function useUpdateSetting() {
     },
   });
 }
+
+export function useTestSettingConnection() {
+  return useMutation({
+    mutationFn: async (payload: SettingConnectionTestPayload) => {
+      const res = await apiRequest("POST", "/api/settings/test-connection", payload);
+      return (await res.json()) as SettingConnectionTestResult;
+    },
+  });
+}
+
+export function useWipeData() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/settings/wipe-data", {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/eval-runs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/eval-results"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/arena"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/models"] });
+    },
+  });
+}
+

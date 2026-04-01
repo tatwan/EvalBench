@@ -18,6 +18,7 @@ import Learn from "@/pages/Learn";
 import Settings from "@/pages/Settings";
 import Arena from "@/pages/Arena";
 import ArenaLeaderboard from "@/pages/ArenaLeaderboard";
+import Datasets from "@/pages/Datasets";
 
 function Router() {
   return (
@@ -34,13 +35,7 @@ function Router() {
         <Route path="/settings" component={Settings} />
         <Route path="/arena" component={Arena}/>
         <Route path="/leaderboard" component={ArenaLeaderboard}/>
-        {/* Placeholder for datasets page */}
-        <Route path="/datasets">
-          <div className="flex flex-col items-center justify-center h-64 text-muted-foreground border-2 border-dashed border-border rounded-2xl bg-muted/40">
-            <h2 className="text-xl font-bold mb-2 text-foreground">Datasets coming soon</h2>
-            <p>Golden dataset management is planned for v0.2</p>
-          </div>
-        </Route>
+        <Route path="/datasets" component={Datasets}/>
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

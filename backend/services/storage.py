@@ -1,6 +1,7 @@
 import random
 from datetime import datetime
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from backend import models as db_models
 
 
@@ -180,9 +181,74 @@ def update_eval_run_status(db: Session, run_id: int, status: str):
     if run:
         run.status = status
         db.commit()
+        db.refresh(run)
+    return run
 
 
 # ─── Datasets ─────────────────────────────────────────────
 
 def get_all_datasets(db: Session) -> list[db_models.GoldenDataset]:
-    return db.query(db_models.GoldenDataset).all()
+    return (
+        db.query(db_models.GoldenDataset)
+        .order_by(db_models.GoldenDataset.created_at.desc(), db_models.GoldenDataset.id.desc())
+        .all()
+    )
+
+
+def get_dataset(db: Session, dataset_id: int) -> db_models.GoldenDataset | None:
+    return db.query(db_models.GoldenDataset).filter_by(id=dataset_id).first()
+
+
+def get_dataset_items(db: Session, dataset_id: int) -> list[db_models.GoldenItem]:
+    return db.query(db_models.GoldenItem).filter_by(dataset_id=dataset_id).order_by(db_models.GoldenItem.id.asc()).all()
+
+
+def get_dataset_item_counts(db: Session) -> dict[int, int]:
+    rows = (
+        db.query(
+            db_models.GoldenItem.dataset_id,
+            func.count(db_models.GoldenItem.id),
+        )
+        .group_by(db_models.GoldenItem.dataset_id)
+        .all()
+    )
+    return {dataset_id: count for dataset_id, count in rows}
+
+
+def create_dataset(
+    db: Session,
+    *,
+    name: str,
+    source: str | None,
+    items: list[dict],
+) -> db_models.GoldenDataset:
+    existing_version = (
+        db.query(func.max(db_models.GoldenDataset.schema_version))
+        .filter(db_models.GoldenDataset.name == name)
+        .scalar()
+    )
+    next_version = int(existing_version or 0) + 1
+
+    dataset = db_models.GoldenDataset(
+        name=name,
+        source=source,
+        schema_version=next_version,
+    )
+    db.add(dataset)
+    db.flush()
+
+    for item in items:
+        db.add(
+            db_models.GoldenItem(
+                dataset_id=dataset.id,
+                input=item["input"],
+                expected_output=item["expected_output"],
+                context=item.get("context"),
+                tags=item.get("tags"),
+                difficulty=item.get("difficulty"),
+            )
+        )
+
+    db.commit()
+    db.refresh(dataset)
+    return dataset

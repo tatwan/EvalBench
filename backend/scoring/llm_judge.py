@@ -1,8 +1,5 @@
-import os
-from openai import OpenAI
-from typing import Tuple, Optional
+from typing import Any, Tuple, Optional
 from sqlalchemy.orm import Session
-import anthropic
 from backend.models import Setting
 from backend.security import decrypt_value, is_sensitive
 
@@ -45,11 +42,38 @@ Text to evaluate:
 Provide a short 1-2 sentence justification, followed by a newline, followed by the integer score (1-5).
 Format:
 Justification: <rationale>
+Score: <int>""",
+
+    "correctness": """You are an expert evaluator.
+Score the factual correctness of the model's output compared to the expected correct answer from 1 to 5.
+A score of 1 means completely incorrect or contradicting the expected answer.
+A score of 5 means perfectly correct and factually aligned with the expected answer.
+
+Prompt: {input}
+Expected Answer: {context}
+Model Output: {output}
+
+Provide a short 1-2 sentence justification, followed by a newline, followed by the integer score (1-5).
+Format:
+Justification: <rationale>
+Score: <int>""",
+
+    "faithfulness": """You are an expert evaluator.
+Score the faithfulness of the model's output to the provided source context from 1 to 5.
+A score of 1 means the output is entirely hallucinated or contradicts the source context.
+A score of 5 means the output is strictly grounded in the provided source context without any hallucination.
+
+Context: {context}
+Model Output: {output}
+
+Provide a short 1-2 sentence justification, followed by a newline, followed by the integer score (1-5).
+Format:
+Justification: <rationale>
 Score: <int>"""
 }
 
-def get_judge_client(db: Session) -> Tuple[Optional[OpenAI], Optional[str], Optional[anthropic.Anthropic]]:
-    """Returns the OpenAI client (or Anthropic client) and the selected judge model name based on DB settings."""
+def get_judge_client(db: Session) -> Tuple[Optional[Any], Optional[str], Optional[Any], Optional[str]]:
+    """Return the judge client, selected model, optional Anthropic client, and any setup error."""
     raw_settings = {s.key: s.value for s in db.query(Setting).all()}
 
     # Decrypt any encrypted API key values before use
@@ -59,7 +83,7 @@ def get_judge_client(db: Session) -> Tuple[Optional[OpenAI], Optional[str], Opti
 
     judge_model = settings.get("judge_model")
     if not judge_model:
-        return None, None, None
+        return None, None, None, None
 
     # Default to Local Ollama OpenAI-compatible endpoint
     base_url = settings.get("ollama_host", "http://localhost:11434") + "/v1"
@@ -81,23 +105,35 @@ def get_judge_client(db: Session) -> Tuple[Optional[OpenAI], Optional[str], Opti
         api_key = settings.get("groq_api_key", "")
     elif judge_model.startswith("claude-"):
         api_key = settings.get("anthropic_api_key", "")
+        try:
+            import anthropic
+        except ImportError:
+            return None, judge_model, None, "Anthropic SDK is not installed. Install dependencies before using Claude as the judge."
         anthropic_client = anthropic.Anthropic(api_key=api_key)
-        return None, judge_model, anthropic_client
+        return None, judge_model, anthropic_client, None
+
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return None, judge_model, None, "OpenAI-compatible SDK is not installed. Install dependencies before using judge models."
 
     client = OpenAI(base_url=base_url, api_key=api_key)
-    return client, judge_model, None
+    return client, judge_model, None, None
 
-def evaluate_with_llm(db: Session, metric_name: str, input_text: str, output_text: str) -> Tuple[float, str]:
+def evaluate_with_llm(db: Session, metric_name: str, input_text: str, output_text: str, context_text: str = "") -> Tuple[float, str]:
     """
     Evaluates an output using an LLM-as-Judge.
     Returns (score_scaled_0_to_1, rationale).
     """
-    client, model, anthropic_client = get_judge_client(db)
+    client, model, anthropic_client, setup_error = get_judge_client(db)
+    if setup_error:
+        return 0.0, setup_error
     if (not client and not anthropic_client) or not model:
         return 0.0, "Judge model not configured in Settings."
         
     prompt_template = PROMPTS.get(metric_name.replace("llm_", ""), PROMPTS["coherence"])
-    prompt = prompt_template.format(input=input_text, output=output_text)
+    # Some prompts require {context}, passing an empty string if omitted safely avoids key errors.
+    prompt = prompt_template.format(input=input_text, output=output_text, context=context_text)
 
     try:
         reply = ""

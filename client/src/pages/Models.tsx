@@ -5,7 +5,7 @@ import { useArenaLeaderboard } from "@/hooks/use-arena";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card } from "@/components/ui/card";
+import { Card } from "@/components/ui/Card";
 import { ScoreBadge } from "@/components/ui/ScoreBadge";
 import { useToast } from "@/hooks/use-toast";
 import { Cpu, Search, RefreshCw } from "lucide-react";
@@ -69,9 +69,10 @@ export default function Models() {
   const runMap = useMemo(() => Object.fromEntries((runs as any[]).map((r) => [r.id, r])), [runs]);
 
   const modelMeta = useMemo(() => {
-    const qualityResults = (results as any[]).filter((r) => !SPEED_METRICS.has(r.metricName));
+    const successfulResults = (results as any[]).filter((r) => !r.error);
+    const qualityResults = successfulResults.filter((r) => !SPEED_METRICS.has(r.metricName));
     const tasksByModel = new Map<number, Set<string>>();
-    (results as any[]).forEach((r) => {
+    successfulResults.forEach((r) => {
       const task = runMap[r.runId]?.configJson?.taskType;
       if (!task) return;
       if (!tasksByModel.has(r.modelId)) tasksByModel.set(r.modelId, new Set());
@@ -83,7 +84,7 @@ export default function Models() {
         const modelResults = qualityResults.filter((r) => r.modelId === model.id);
         const bestScore = modelResults.length ? Math.max(...modelResults.map((r) => Number(r.score))) : null;
         const avgTps = (() => {
-          const tps = (results as any[]).filter((r) => r.modelId === model.id && r.metricName === "tokens_per_second");
+          const tps = successfulResults.filter((r) => r.modelId === model.id && r.metricName === "tokens_per_second");
           if (!tps.length) return null;
           return tps.reduce((sum, r) => sum + Number(r.score), 0) / tps.length;
         })();
@@ -197,7 +198,7 @@ export default function Models() {
         modelIds: embeddingModelIds,
         taskType: "embedding",
         datasetId: embeddingDataset.id,
-      } as any,
+      },
       {
         onSuccess: () => {
           navigate("/history");

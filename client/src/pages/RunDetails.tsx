@@ -1,10 +1,10 @@
 import { useParams, useLocation } from "wouter";
 import { useEffect, useRef, useState } from "react";
-import { useEvalRun, useEvalResults, useEvalStats } from "@/hooks/use-eval";
+import { useCancelEvalRun, useEvalRun, useEvalResults, useEvalStats } from "@/hooks/use-eval";
 import { useModels } from "@/hooks/use-models";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { Activity, Cpu, ArrowLeft, CheckCircle2, Loader2 } from "lucide-react";
+import { Activity, Cpu, ArrowLeft, CheckCircle2, Loader2, ShieldAlert, RotateCcw, Database } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { format } from "date-fns";
 import { clsx } from "clsx";
@@ -54,6 +54,7 @@ function metricLabel(name: string): string {
 function getExamplesPerModel(results: any[]) {
   // filter out speed metrics for scoring
   const qualityResults = results.filter(r => 
+    !r.error &&
     !["tokens_per_second", "total_latency_s", "load_latency_s", "prompt_tokens", "output_tokens"].includes(r.metricName)
   );
 
@@ -102,6 +103,7 @@ export default function RunDetails() {
   const { data: results = [], refetch: refetchResults } = useEvalResults(runId);
   const { data: stats = [], refetch: refetchStats } = useEvalStats(runId);
   const { data: models = [] } = useModels();
+  const cancelRun = useCancelEvalRun();
 
   // SSE progress
   const [progress, setProgress] = useState<{ completed: number; total: number; percent: number } | null>(null);
@@ -109,7 +111,7 @@ export default function RunDetails() {
   const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    if (!run || run.status !== "running") return;
+    if (!run || !["running", "cancel_requested"].includes(run.status)) return;
     const es = new EventSource(`/api/eval-runs/${runId}/progress`);
     esRef.current = es;
     es.onmessage = (e) => {
@@ -160,7 +162,16 @@ export default function RunDetails() {
   const modelMap = Object.fromEntries((models as any[]).map((m: any) => [m.id, m]));
   const config = run.configJson as any ?? {};
   const taskType = config.taskType ?? "-";
-  const allMetrics = Array.from(new Set((stats as any[]).map((s: any) => s.metricName)));
+  const totalPairs = typeof config.totalPairs === "number" ? config.totalPairs : null;
+  const completedPairs = typeof config.completedPairs === "number" ? config.completedPairs : null;
+  const errorCount = typeof config.errorCount === "number" ? config.errorCount : 0;
+  const retryCount = typeof config.retryCount === "number" ? config.retryCount : 0;
+  const cacheHits = typeof config.cacheHits === "number" ? config.cacheHits : 0;
+  const successRate = totalPairs && totalPairs > 0 ? Math.max(0, (totalPairs - errorCount) / totalPairs) : null;
+  const allMetrics = Array.from(new Set([
+    ...(stats as any[]).map((s: any) => s.metricName),
+    ...(results as any[]).filter((r) => r.error).map((r) => r.metricName),
+  ]));
   const modelIds = Object.keys(grouped).map(Number);
   const examples = getExamplesPerModel(results as any[]);
 
@@ -243,25 +254,33 @@ export default function RunDetails() {
           <span className={clsx(
             "text-sm px-3 py-1 rounded-full font-semibold",
             run.status === "completed" ? "bg-emerald-500/20 text-emerald-400" :
-            run.status === "running" ? "bg-amber-100 text-amber-700" :
+            run.status === "running" || run.status === "cancel_requested" ? "bg-amber-100 text-amber-700" :
+            run.status === "cancelled" ? "bg-slate-200 text-slate-700" :
             "bg-muted text-muted-foreground"
           )}>
-            {run.status === "running" ? <Loader2 className="w-3 h-3 mr-1 animate-spin inline" /> : null}
+            {run.status === "running" || run.status === "cancel_requested" ? <Loader2 className="w-3 h-3 mr-1 animate-spin inline" /> : null}
             {run.status}
           </span>
         </div>
         <div className="flex gap-2">
+          {run.status === "running" && (
+            <Button variant="outline" size="sm" onClick={() => cancelRun.mutate(run.id)} disabled={cancelRun.isPending}>
+              Cancel Run
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={exportCsv}>Export CSV</Button>
           <Button variant="outline" size="sm" onClick={exportMarkdown}>Export Markdown</Button>
         </div>
       </div>
 
       {/* Live progress bar */}
-      {run.status === "running" && (
+      {(run.status === "running" || run.status === "cancel_requested") && (
         <Card className="border-amber-200 bg-amber-50">
           <CardContent className="p-5">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-amber-700">Evaluation in progress...</span>
+              <span className="text-sm font-medium text-amber-700">
+                {run.status === "cancel_requested" ? "Cancellation requested..." : "Evaluation in progress..."}
+              </span>
               {progress && (
                 <span className="text-sm font-mono text-muted-foreground">
                   {progress.completed}/{progress.total} items - {progress.percent}%
@@ -280,7 +299,7 @@ export default function RunDetails() {
       )}
 
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-5 flex items-center gap-3">
             <Cpu className="w-5 h-5 text-primary" />
@@ -308,13 +327,64 @@ export default function RunDetails() {
             </div>
           </CardContent>
         </Card>
+        <Card>
+          <CardContent className="p-5 flex items-center gap-3">
+            <ShieldAlert className="w-5 h-5 text-rose-500" />
+            <div>
+              <p className="text-xs text-foreground/80">Failed Pairs</p>
+              <p className="text-2xl font-bold text-foreground">{errorCount}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-5 flex items-center gap-3">
+            <RotateCcw className="w-5 h-5 text-amber-500" />
+            <div>
+              <p className="text-xs text-foreground/80">Retries</p>
+              <p className="text-2xl font-bold text-foreground">{retryCount}</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Reliability</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <p className="text-xs text-muted-foreground">Completed Pairs</p>
+            <p className="text-lg font-semibold">
+              {completedPairs ?? 0}{totalPairs ? ` / ${totalPairs}` : ""}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Success Rate</p>
+            <p className="text-lg font-semibold">{successRate === null ? "—" : `${(successRate * 100).toFixed(1)}%`}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Cache Hits</p>
+            <p className="text-lg font-semibold flex items-center gap-2">
+              <Database className="w-4 h-4 text-emerald-500" />
+              {cacheHits}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Status Notes</p>
+            <p className="text-sm text-muted-foreground">
+              {errorCount > 0
+                ? "Failed pairs are excluded from aggregated score stats."
+                : "No failed pairs were recorded for this run."}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Results table */}
       {allMetrics.length === 0 ? (
         <Card>
           <CardContent className="py-16 text-center text-foreground/70">
-            {run.status === "running"
+            {run.status === "running" || run.status === "cancel_requested"
               ? "Results will appear as the evaluation completes..."
               : "No results recorded yet. Run the evaluation to see scores here."}
           </CardContent>

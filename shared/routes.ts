@@ -2,6 +2,19 @@ import { z } from 'zod';
 
 // ─── Shared Zod types matching FastAPI Pydantic responses ───────────────────
 
+export const TaskTypeSchema = z.enum([
+  'summarization',
+  'qa',
+  'chat',
+  'translation',
+  'code',
+  'reasoning',
+  'knowledge',
+  'embedding',
+  'classification',
+  'safety',
+]);
+
 export const ModelSchema = z.object({
   id: z.number(),
   name: z.string(),
@@ -11,10 +24,26 @@ export const ModelSchema = z.object({
   sizeGb: z.number().nullable().optional(),
 });
 
+export const EvalRunConfigSchema = z.object({
+  modelIds: z.array(z.number()).default([]),
+  taskType: TaskTypeSchema.default('qa'),
+  benchmarkKeys: z.array(z.string()).optional().default([]),
+  datasetId: z.number().nullable().optional(),
+  datasetItemCount: z.number().nullable().optional(),
+  totalPairs: z.number().nullable().optional(),
+  completedPairs: z.number().nullable().optional(),
+  errorCount: z.number().nullable().optional(),
+  retryCount: z.number().nullable().optional(),
+  cacheHits: z.number().nullable().optional(),
+  durationSeconds: z.number().nullable().optional(),
+  cancelRequested: z.boolean().nullable().optional(),
+  errors: z.array(z.string()).nullable().optional(),
+}).passthrough();
+
 export const EvalRunSchema = z.object({
   id: z.number(),
   timestamp: z.string().nullable().optional(),
-  configJson: z.any(),
+  configJson: EvalRunConfigSchema,
   status: z.string(),
 });
 
@@ -24,6 +53,7 @@ export const EvalResultSchema = z.object({
   modelId: z.number(),
   metricName: z.string(),
   score: z.number(),
+  error: z.boolean().optional().default(false),
   rawOutput: z.string().nullable().optional(),
   itemId: z.number().nullable().optional(),
   input: z.string().nullable().optional(),
@@ -44,6 +74,34 @@ export const GoldenDatasetSchema = z.object({
   source: z.string().nullable().optional(),
   createdAt: z.string().nullable().optional(),
   schemaVersion: z.number().nullable().optional(),
+  itemCount: z.number().optional().default(0),
+});
+
+export const GoldenItemSchema = z.object({
+  id: z.number(),
+  datasetId: z.number(),
+  input: z.string(),
+  expectedOutput: z.string(),
+  context: z.string().nullable().optional(),
+  tags: z.any().optional(),
+  difficulty: z.string().nullable().optional(),
+});
+
+export const GoldenItemInputSchema = z.object({
+  input: z.string().min(1),
+  expectedOutput: z.string().min(1),
+  context: z.string().nullable().optional(),
+  tags: z.any().optional(),
+  difficulty: z.string().nullable().optional(),
+});
+
+export const GoldenDatasetDetailSchema = GoldenDatasetSchema.extend({
+  items: z.array(GoldenItemSchema),
+});
+
+export const GoldenDatasetImportPreviewSchema = z.object({
+  count: z.number(),
+  items: z.array(GoldenItemInputSchema),
 });
 
 export const ArenaBattleSchema = z.object({
@@ -84,10 +142,14 @@ export const LeaderboardEntrySchema = z.object({
 // ─── Shared types ────────────────────────────────────────────────────────────
 
 export type Model = z.infer<typeof ModelSchema>;
+export type TaskType = z.infer<typeof TaskTypeSchema>;
+export type EvalRunConfig = z.infer<typeof EvalRunConfigSchema>;
 export type EvalRun = z.infer<typeof EvalRunSchema>;
 export type EvalResult = z.infer<typeof EvalResultSchema>;
 export type EvalStat = z.infer<typeof EvalStatSchema>;
 export type GoldenDataset = z.infer<typeof GoldenDatasetSchema>;
+export type GoldenItem = z.infer<typeof GoldenItemSchema>;
+export type GoldenDatasetDetail = z.infer<typeof GoldenDatasetDetailSchema>;
 export type ArenaBattle = z.infer<typeof ArenaBattleSchema>;
 export type EloRating = z.infer<typeof EloRatingSchema>;
 export type ArenaMatchup = z.infer<typeof ArenaMatchupSchema>;
@@ -124,8 +186,9 @@ export const api = {
       method: 'POST' as const,
       path: '/api/eval-runs' as const,
       input: z.object({
-        modelIds: z.array(z.number()),
-        benchmarkKeys: z.array(z.string()),
+        modelIds: z.array(z.number()).min(1),
+        taskType: TaskTypeSchema,
+        benchmarkKeys: z.array(z.string()).optional(),
         datasetId: z.number().optional()
       }),
       responses: {
@@ -136,6 +199,14 @@ export const api = {
     get: {
       method: 'GET' as const,
       path: '/api/eval-runs/:id' as const,
+      responses: {
+        200: EvalRunSchema,
+        404: errorSchemas.notFound,
+      },
+    },
+    cancel: {
+      method: 'POST' as const,
+      path: '/api/eval-runs/:id/cancel' as const,
       responses: {
         200: EvalRunSchema,
         404: errorSchemas.notFound,
@@ -170,6 +241,55 @@ export const api = {
       method: 'GET' as const,
       path: '/api/datasets' as const,
       responses: { 200: z.array(GoldenDatasetSchema) }
+    },
+    get: {
+      method: 'GET' as const,
+      path: '/api/datasets/:id' as const,
+      responses: {
+        200: GoldenDatasetDetailSchema,
+        404: errorSchemas.notFound,
+      }
+    },
+    create: {
+      method: 'POST' as const,
+      path: '/api/datasets' as const,
+      input: z.object({
+        name: z.string().min(1),
+        source: z.string().optional(),
+        items: z.array(GoldenItemInputSchema).min(1),
+      }),
+      responses: {
+        201: GoldenDatasetDetailSchema,
+        400: errorSchemas.validation,
+      }
+    },
+    importPreview: {
+      method: 'POST' as const,
+      path: '/api/datasets/import-preview' as const,
+      input: z.object({
+        name: z.string().min(1),
+        source: z.string().optional(),
+        format: z.enum(['json', 'csv']),
+        content: z.string().min(1),
+      }),
+      responses: {
+        200: GoldenDatasetImportPreviewSchema,
+        400: errorSchemas.validation,
+      }
+    },
+    import: {
+      method: 'POST' as const,
+      path: '/api/datasets/import' as const,
+      input: z.object({
+        name: z.string().min(1),
+        source: z.string().optional(),
+        format: z.enum(['json', 'csv']),
+        content: z.string().min(1),
+      }),
+      responses: {
+        201: GoldenDatasetDetailSchema,
+        400: errorSchemas.validation,
+      }
     }
   },
   ollama: {
@@ -195,7 +315,7 @@ export const api = {
         winner: z.enum(['model_a', 'model_b', 'tie'])
       }),
       responses: {
-        201: ArenaBattleSchema,
+        200: ArenaBattleSchema,
         400: errorSchemas.validation
       }
     },

@@ -50,7 +50,7 @@ export function computeCI(scores: number[]) {
   if (scores.length < 2) return { mean, moe: 0 };
 
   if (isBinary(scores)) {
-    const successes = scores.reduce((sum, s) => sum + s, 0);
+    const successes = scores.reduce<number>((sum, s) => sum + s, 0);
     return wilsonCI(successes, scores.length);
   }
 
@@ -58,4 +58,40 @@ export function computeCI(scores: number[]) {
   const sem = Math.sqrt(variance / scores.length);
   const t = tCritical95(scores.length - 1);
   return { mean, moe: t * sem };
+}
+
+export function pairedTTest(scoresA: number[], scoresB: number[]) {
+  if (scoresA.length !== scoresB.length || scoresA.length < 2) return null;
+  const n = scoresA.length;
+  
+  let diffSum = 0;
+  const diffs = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const d = scoresA[i] - scoresB[i];
+    diffs[i] = d;
+    diffSum += d;
+  }
+  
+  const diffMean = diffSum / n;
+  
+  let diffSqSum = 0;
+  for (let i = 0; i < n; i++) {
+    diffSqSum += Math.pow(diffs[i] - diffMean, 2);
+  }
+  
+  const diffVar = diffSqSum / (n - 1);
+  if (diffVar === 0) {
+    return { significant: diffMean !== 0, meanDiff: diffMean, pValueFast: diffMean === 0 ? 1 : 0 };
+  }
+  
+  const sem = Math.sqrt(diffVar / n);
+  const tStat = Math.abs(diffMean / sem);
+  const df = n - 1;
+  const tCrit = tCritical95(df);
+  
+  return { 
+    significant: tStat > tCrit,
+    meanDiff: diffMean,
+    tStat
+  };
 }

@@ -7,7 +7,7 @@
 [![Runs](https://img.shields.io/badge/Run-History%20%2B%20Details-purple)](./README.md)
 [![License](https://img.shields.io/badge/License-MIT-black)](./README.md)
 
-**Status**: v0.5 - Evaluation Engine + UI Refresh (Reference Metrics, Run History/Details, Metric Guide)
+**Status**: v0.9 - Trusted Eval Runs + Smarter Wizard UX (typed run config, grounded ETA, fair compare, cancellation, reliability analytics, dataset UX)
 
 ---
 
@@ -38,37 +38,37 @@ If you want “LM Studio but for evaluation,” this is it.
 
 #### __Landing/Dashboard Page__
 
-![image-20260313104407802](images/image-20260313104407802.png)
+![image-20260401192653430](images/image-20260401192653430.png)
 
 #### Eval Wizard
 
-![image-20260313105422690](images/image-20260313105422690.png)
+![image-20260401192033058](images/image-20260401192033058.png)
 
 #### Model Cards
 
-![image-20260313105034660](images/image-20260313105034660.png)
+![image-20260401192050785](images/image-20260401192050785.png)
 
 #### **Eval History**
 
-![image-20260313104434010](images/image-20260313104434010.png)
+![image-20260401192114070](images/image-20260401192114070.png)
 
 
 
 #### Eval/Run Detail
 
-![image-20260313104618090](images/image-20260313104618090.png)
+![image-20260401192149803](images/image-20260401192149803.png)
 
-![image-20260313104638118](images/image-20260313104638118.png)
+<img src="images/image-20260401192202974.png" alt="image-20260401192202974" style="zoom:25%;" />
 
 #### Head-to-Head Compare 
 
-![image-20260313104718919](images/image-20260313104718919.png)
+![image-20260401192243905](images/image-20260401192243905.png)
 
-
+![image-20260401192255003](images/image-20260401192255003.png)
 
 #### Metrics Guide
 
-![image-20260313104738281](images/image-20260313104738281.png)
+![image-20260401192308752](images/image-20260401192308752.png)
 
 #### Battle Arena and Leaderboard
 
@@ -77,6 +77,16 @@ If you want “LM Studio but for evaluation,” this is it.
 ![image-20260313104808494](images/image-20260313104808494.png)
 
 
+
+#### Build or Import you datasets
+
+This is a powerful dataset builder for creating your own benchmark datasets:
+
+![image-20260401192956234](images/image-20260401192956234.png)
+
+#### LLM as a Judge Setup
+
+![image-20260401193118631](images/image-20260401193118631.png)
 
 ## Architecture
 
@@ -106,11 +116,11 @@ EvalBench uses a **local-first** architecture optimized for privacy and speed. I
 ### 1. Traditional Reference Metrics
 We use established Python libraries (`rouge-score`, `sacrebleu`, `nltk`) to compute metrics like ROUGE, BLEU, Exact Match, Token F1, and Distinct-1/2 locally against Ground-Truth Golden Datasets. Datasets are seeded from inline subsets at startup (no external downloads).
 
-### 2. LLM-as-A-Judge (Planned)
-For subjective generation (like Chat or Summarization), EvalBench will optionally prompt a strong "Judge Model" (e.g. OpenAI, Anthropic, or a local Llama 3) to grade outputs on Coherence, Fluency, and Relevance, outputting a 1-5 score and a written rationale.
+### 2. LLM-as-Judge (Optional)
+For subjective generation tasks, EvalBench can optionally use a configured judge model to score outputs on criteria such as coherence, fluency, and relevance, returning both a score and rationale. Judge providers are loaded lazily so optional SDKs do not block the core app.
 
-### 3. Statistical Rigor (Basic)
-EvalBench computes mean scores and margin of error where supported. Expanded confidence intervals and significance testing are planned.
+### 3. Statistical Rigor And Reliability
+EvalBench computes mean scores and margin of error where supported, and now separates quality from reliability by tracking failed pairs, retries, cache hits, cancellation state, and success rate for each run.
 
 ---
 
@@ -118,12 +128,17 @@ EvalBench computes mean scores and margin of error where supported. Expanded con
 
 - **Model Discovery**: Auto-detects local Ollama models.
 - **Task-Aware Wizard**: Select a Task Type (Knowledge, Chat, Code) and EvalBench automatically suggests the correct metrics (Exact Match vs ROUGE vs LLM Judge) and standard benchmark dataset (MMLU vs TruthfulQA).
+- **Typed Eval Run Config**: Run metadata now follows a shared typed contract across backend and frontend, reducing config drift and making run state safer to reason about.
+- **Grounded Wizard ETA**: The wizard estimates runtime from dataset size, selected models, and historical per-pair duration when available, instead of static copy.
+- **Dataset Builder & Registry**: Create golden datasets manually, import CSV/JSON, version datasets by name, use task-aware templates, and inspect dataset usage history.
+- **Trusted Run Lifecycle**: Runs support cancellation, honest failed/cancelled states, retry-aware Ollama calls, and reliability counters such as retries, failed pairs, cache hits, and success rate.
 - **Capability Signatures**: Multi-dimensional Radar charts to visualize model strengths and weaknesses.
-- **Head-to-Head Compare**: Pit two models side-by-side on specific tasks to see sample outputs and metric averages.
-- **Arena Mode**: Pairwise blind testing where you vote on the best response, calculating a chess-style ELO rating.
+- **Fair Head-to-Head Compare**: Compare two models only on shared completed run contexts, with task/dataset scoping to avoid misleading apples-to-oranges comparisons.
+- **Arena Mode**: Pairwise blind testing where you explicitly start a battle, vote, then reveal which model was which before moving to the next matchup.
 - **Educational Layer**: The `Learn` tab links to the interactive Metric Decision Tree used in the app.
-- **Run History & Details**: Track runs over time, compare per-model metrics, and inspect example outputs side-by-side.
-- **Model Profiles**: Dedicated model details page with run history, best scores, and recent outputs.
+- **Run History & Details**: Track runs over time, compare per-model metrics, inspect example outputs side-by-side, review run reliability alongside quality, and scan quick score previews without leaving the history table.
+- **Settings Verification**: Test Ollama connectivity, judge readiness, and cloud API-key setup directly from the Settings form before saving.
+- **Danger Zone / Wipe Data**: Quickly flush all captured evaluation stats, battle ratings, and cached responses from the SQL database—without losing configured datasets or local models—directly from Settings.
 
 ---
 
@@ -199,12 +214,27 @@ This will gracefully terminate both the Frontend Vite server and the Backend Fas
 
 ---
 
+## Validation
+
+Use these commands before shipping changes:
+
+```bash
+npm run check
+pytest -q
+```
+
+Both are kept green as part of the active audit/remediation work.
+
+---
+
 ## Roadmap
 
 - LLM‑as‑Judge (G‑Eval) + Settings for API keys
 - HumanEval / code benchmarks + execution harness
 - Statistical rigor: confidence intervals and significance tests
-- Dataset builder (CSV/JSON) + export formats
+- Dataset editing, richer schema-aware validation, and export formats
+- Provider expansion beyond Ollama for evaluated models
+- Dataset provenance reporting and stronger shareable benchmark outputs
 
 See [BACKLOG.md](./docs/superpowers/plans/BACKLOG.md) for full details.
 

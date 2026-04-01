@@ -1,5 +1,5 @@
 import { useArenaLeaderboard } from "@/hooks/use-arena";
-import { Card } from "@/components/ui/card";
+import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Trophy, Medal, Swords, Target } from "lucide-react";
 

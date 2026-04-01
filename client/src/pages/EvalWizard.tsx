@@ -1,15 +1,27 @@
 import { useMemo, useState, useEffect } from "react";
 import { useModels } from "@/hooks/use-models";
-import { useCreateEvalRun } from "@/hooks/use-eval";
+import { useCreateEvalRun, useEvalRuns } from "@/hooks/use-eval";
 import { useDatasets } from "@/hooks/use-datasets";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Check, ChevronRight, Activity, Cpu, Layers, BookOpen, AlignLeft, MessageCircleQuestion, MessageSquare, Code2, BrainCircuit, Sparkles, Network } from "lucide-react";
+import { Check, ChevronRight, Activity, Cpu, Layers, BookOpen, AlignLeft, MessageCircleQuestion, MessageSquare, Code2, BrainCircuit, Sparkles, Network, Languages, Clock3, Shield, Tags } from "lucide-react";
 import { clsx } from "clsx";
 import { useLocation } from "wouter";
+import type { TaskType } from "@shared/routes";
 
-const TASK_TYPES = [
+const TASK_TYPES: Array<{
+  id: TaskType;
+  label: string;
+  icon: typeof AlignLeft;
+  desc: string;
+  tests: string;
+  goal: string;
+  metrics: string[];
+  datasetHint: string;
+  datasetLabel: string;
+  usesJudge: boolean;
+}> = [
   {
     id: "summarization",
     label: "Summarization",
@@ -29,7 +41,7 @@ const TASK_TYPES = [
     desc: "Factual accuracy and extraction from provided context.",
     tests: "Answer accuracy, span extraction, and grounding.",
     goal: "Return the exact correct answer with minimal noise.",
-    metrics: ["Exact Match", "Token F1", "ROUGE-1", "ROUGE-2", "ROUGE-L", "LLM Relevance"],
+    metrics: ["Exact Match", "Token F1", "Tokens/sec", "LLM Relevance"],
     datasetHint: "EvalBench QA v1",
     datasetLabel: "EvalBench QA v1",
     usesJudge: true,
@@ -41,10 +53,22 @@ const TASK_TYPES = [
     desc: "Diversity, fluency, and quality of open-ended responses.",
     tests: "Conversational quality, coherence, and safety.",
     goal: "Respond naturally and helpfully in open-ended tasks.",
-    metrics: ["ROUGE-1", "ROUGE-2", "ROUGE-L", "BERTScore", "METEOR", "Distinct-1", "Distinct-2", "LLM Fluency", "LLM Coherence"],
-    datasetHint: "EvalBench TruthfulQA (Subset)",
-    datasetLabel: "EvalBench TruthfulQA (Subset)",
+    metrics: ["Distinct-1", "Distinct-2", "Tokens/sec", "LLM Fluency", "LLM Coherence"],
+    datasetHint: "",
+    datasetLabel: "",
     usesJudge: true,
+  },
+  {
+    id: "translation",
+    label: "Translation",
+    icon: Languages,
+    desc: "Faithful translation quality for parallel source-target text.",
+    tests: "N-gram overlap, character overlap, and fluency.",
+    goal: "Produce accurate translations that preserve meaning and wording.",
+    metrics: ["BLEU", "chrF", "METEOR", "Tokens/sec"],
+    datasetHint: "EvalBench Translation v1",
+    datasetLabel: "EvalBench Translation v1",
+    usesJudge: false,
   },
   {
     id: "knowledge",
@@ -53,7 +77,7 @@ const TASK_TYPES = [
     desc: "Academic knowledge across professional domains.",
     tests: "Breadth of factual knowledge and reasoning.",
     goal: "Score well across standardized subject benchmarks.",
-    metrics: ["Exact Match", "Token F1", "ROUGE-1", "ROUGE-2", "ROUGE-L", "LLM Relevance"],
+    metrics: ["Exact Match", "Token F1", "Tokens/sec", "LLM Relevance"],
     datasetHint: "EvalBench MMLU (Subset)",
     datasetLabel: "EvalBench MMLU (Subset)",
     usesJudge: true,
@@ -77,7 +101,7 @@ const TASK_TYPES = [
     desc: "Functional correctness via code execution sandbox.",
     tests: "Correctness, edge cases, and code reliability.",
     goal: "Generate code that passes tests on first try.",
-    metrics: ["Pass@1", "ROUGE-1", "ROUGE-2", "ROUGE-L", "Distinct-1", "Distinct-2"],
+    metrics: ["ROUGE-1", "Distinct-1", "Pass@1", "Tokens/sec"],
     datasetHint: "EvalBench HumanEval (Subset)",
     datasetLabel: "EvalBench HumanEval (Subset)",
     usesJudge: false,
@@ -89,17 +113,65 @@ const TASK_TYPES = [
     desc: "Problem-solving and chain-of-thought evaluation.",
     tests: "Multi-step reasoning and mathematical accuracy.",
     goal: "Arrive at correct final answers consistently.",
-    metrics: ["Exact Match", "Token F1", "ROUGE-1", "ROUGE-2", "ROUGE-L"],
+    metrics: ["Exact Match", "Token F1", "Tokens/sec"],
     datasetHint: "EvalBench GSM8K (Subset)",
     datasetLabel: "EvalBench GSM8K (Subset)",
     usesJudge: false,
   },
+  {
+    id: "classification",
+    label: "Classification",
+    icon: Tags,
+    desc: "Sorting text into predefined categories.",
+    tests: "Label accuracy on domain-specific examples.",
+    goal: "Predict the exact correct category label.",
+    metrics: ["Exact Match", "Tokens/sec"],
+    datasetHint: "EvalBench Classification v1",
+    datasetLabel: "EvalBench Classification v1",
+    usesJudge: false,
+  },
+  {
+    id: "safety",
+    label: "Safety / Hallucination",
+    icon: Shield,
+    desc: "Refusal of harmful prompts and truthful answering.",
+    tests: "Hallucination rates and safety boundaries.",
+    goal: "Identify unsafe queries and answer truthfulness without hallucinating.",
+    metrics: ["Exact Match", "Tokens/sec", "LLM Relevance"],
+    datasetHint: "EvalBench TruthfulQA (Subset)",
+    datasetLabel: "EvalBench TruthfulQA (Subset)",
+    usesJudge: true,
+  },
 ];
+
+const FALLBACK_SECONDS_PER_PAIR: Record<TaskType, number> = {
+  summarization: 12,
+  qa: 8,
+  chat: 10,
+  translation: 8,
+  code: 16,
+  reasoning: 12,
+  knowledge: 9,
+  embedding: 3,
+  classification: 5,
+  safety: 10,
+};
+
+function formatDurationEstimate(seconds?: number | null): string {
+  if (seconds === undefined || seconds === null || Number.isNaN(seconds)) return "—";
+  const total = Math.max(1, Math.round(seconds));
+  const hrs = Math.floor(total / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hrs > 0) return `${hrs}h ${mins}m`;
+  if (mins > 0) return `${mins}m ${secs}s`;
+  return `${secs}s`;
+}
 
 export default function EvalWizard() {
   const [step, setStep] = useState(1);
   const [selectedModels, setSelectedModels] = useState<number[]>([]);
-  const [selectedTaskType, setSelectedTaskType] = useState<string | null>(null);
+  const [selectedTaskType, setSelectedTaskType] = useState<TaskType | null>(null);
   const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
   const [lastRunId, setLastRunId] = useState<number | null>(null);
   const [progress, setProgress] = useState<{ completed: number; total: number; percent: number; model?: string; status?: string } | null>(null);
@@ -108,19 +180,23 @@ export default function EvalWizard() {
 
   const { data: models = [], isLoading: modelsLoading } = useModels();
   const { data: datasets = [] } = useDatasets();
+  const { data: runs = [] } = useEvalRuns();
   const createRun = useCreateEvalRun();
 
   const selectedTask = TASK_TYPES.find((t) => t.id === selectedTaskType);
   const selectedDataset = (datasets as any[]).find((d) => d.id === selectedDatasetId);
 
-  const datasetKeywords: Record<string, string[]> = {
+  const datasetKeywords: Record<TaskType, string[]> = {
     summarization: ["summarization"],
     qa: ["qa"],
-    chat: ["truthfulqa"],
+    chat: ["chat", "assistant"],
+    translation: ["translation"],
     knowledge: ["mmlu", "hellaswag", "arc", "boolq", "commonsenseqa"],
     embedding: ["embeddings"],
     code: ["humaneval"],
     reasoning: ["gsm8k"],
+    classification: ["classification"],
+    safety: ["truthfulqa", "safety"],
   };
 
   const datasetOptions = useMemo(() => {
@@ -131,7 +207,51 @@ export default function EvalWizard() {
     );
   }, [datasets, selectedTaskType]);
 
-  const handleSelectTask = (taskId: string) => {
+  const datasetItemCount = selectedDataset?.itemCount ?? null;
+
+  const historicalEta = useMemo(() => {
+    if (!selectedTaskType) return null;
+    const relevantRuns = (runs as any[]).filter((run) => {
+      const config = run.configJson;
+      const taskMatches = config?.taskType === selectedTaskType;
+      const pairs = config?.completedPairs ?? config?.totalPairs ?? 0;
+      return taskMatches && run.status !== "pending" && typeof config?.durationSeconds === "number" && pairs > 0;
+    });
+    if (!relevantRuns.length) return null;
+
+    const totalSeconds = relevantRuns.reduce((sum, run) => sum + Number(run.configJson.durationSeconds ?? 0), 0);
+    const totalPairs = relevantRuns.reduce(
+      (sum, run) => sum + Number(run.configJson.completedPairs ?? run.configJson.totalPairs ?? 0),
+      0,
+    );
+    if (totalPairs <= 0) return null;
+
+    return {
+      secondsPerPair: Math.max(1, totalSeconds / totalPairs),
+      samples: relevantRuns.length,
+    };
+  }, [runs, selectedTaskType]);
+
+  const selectedSecondsPerPair = selectedTaskType
+    ? historicalEta?.secondsPerPair ?? FALLBACK_SECONDS_PER_PAIR[selectedTaskType]
+    : null;
+
+  const estimatedPairs = selectedTaskType && datasetItemCount && selectedModels.length > 0
+    ? datasetItemCount * selectedModels.length
+    : null;
+  const estimatedDurationSeconds = selectedSecondsPerPair && estimatedPairs
+    ? selectedSecondsPerPair * estimatedPairs
+    : null;
+  const estimatedPerModelSeconds = selectedSecondsPerPair && datasetItemCount
+    ? selectedSecondsPerPair * datasetItemCount
+    : null;
+  const etaLabel = historicalEta
+    ? `based on ${historicalEta.samples} similar run${historicalEta.samples === 1 ? "" : "s"}`
+    : selectedTaskType
+      ? "based on task baseline"
+      : null;
+
+  const handleSelectTask = (taskId: TaskType) => {
     setSelectedTaskType(taskId);
     const task = TASK_TYPES.find((t) => t.id === taskId);
     if (task?.datasetHint) {
@@ -181,9 +301,11 @@ export default function EvalWizard() {
         modelIds: selectedModels,
         taskType: selectedTaskType,
         datasetId: selectedDatasetId ?? undefined,
-      } as any,
+      },
       { onSuccess: (run: any) => {
           setLastRunId(run?.id ?? null);
+          setProgress(null);
+          setSseError(null);
           setStep(4);
         }
       }
@@ -296,7 +418,16 @@ export default function EvalWizard() {
                   <div className="flex gap-2 flex-wrap mt-2">
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white text-violet-700 border border-violet-200">Dataset</span>
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white text-violet-700 border border-violet-200">{selectedTask.metrics.length} metrics</span>
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white text-violet-700 border border-violet-200">~3 min/model</span>
+                    {datasetItemCount ? (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white text-violet-700 border border-violet-200">
+                        {datasetItemCount} items
+                      </span>
+                    ) : null}
+                    {estimatedPerModelSeconds ? (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-white text-violet-700 border border-violet-200">
+                        ~{formatDurationEstimate(estimatedPerModelSeconds)}/model
+                      </span>
+                    ) : null}
                   </div>
                 )}
                 {datasetOptions.length > 1 && (
@@ -420,12 +551,44 @@ export default function EvalWizard() {
             </div>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-violet-700">Dataset Size</div>
+              <div className="mt-2 text-2xl font-bold text-violet-950">{datasetItemCount ?? "—"}</div>
+              <div className="text-xs text-violet-900/70 mt-1">
+                {datasetItemCount ? "examples will be scored per model" : "Select a dataset to estimate workload"}
+              </div>
+            </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Workload</div>
+              <div className="mt-2 text-2xl font-bold text-emerald-950">{estimatedPairs ?? "—"}</div>
+              <div className="text-xs text-emerald-900/70 mt-1">
+                {estimatedPairs ? "model × item pairs across the run" : "Pick models and a dataset to size the run"}
+              </div>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Estimated Runtime</div>
+              <div className="mt-2 text-2xl font-bold text-amber-950">{formatDurationEstimate(estimatedDurationSeconds)}</div>
+              <div className="text-xs text-amber-900/70 mt-1">
+                {etaLabel ?? "Estimate appears once task context is complete"}
+              </div>
+            </div>
+          </div>
+
           <div className="rounded-xl border border-violet-200 bg-gradient-to-r from-violet-50 to-emerald-50 p-4 flex items-start gap-3">
             <Activity className="w-5 h-5 text-violet-600 mt-0.5" />
-            <p className="text-sm text-violet-900/70">
+            <div className="text-sm text-violet-900/70 space-y-1">
+              <p>
               This run will evaluate <span className="font-semibold">{selectedModels.length}</span> model{selectedModels.length !== 1 ? "s" : ""} on{" "}
               <span className="font-semibold">{selectedTask.label}</span>. Scores will be computed automatically and saved to your history.
-            </p>
+              </p>
+              {estimatedDurationSeconds ? (
+                <p className="flex items-center gap-2 text-violet-900/80">
+                  <Clock3 className="w-4 h-4 text-violet-600" />
+                  Plan for roughly <span className="font-semibold">{formatDurationEstimate(estimatedDurationSeconds)}</span> total runtime, {etaLabel}.
+                </p>
+              ) : null}
+            </div>
           </div>
 
           <div className="flex justify-between">
@@ -440,8 +603,11 @@ export default function EvalWizard() {
       {step === 4 && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-10 text-center max-w-2xl mx-auto">
           {progress?.percent === 100 ? (
-            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-4 mx-auto animate-in zoom-in">
-              <Check className="w-8 h-8 text-emerald-600" />
+            <div className={clsx(
+              "w-16 h-16 rounded-full flex items-center justify-center mb-4 mx-auto animate-in zoom-in",
+              progress?.status === "failed" ? "bg-rose-100" : "bg-emerald-100"
+            )}>
+              <Check className={clsx("w-8 h-8", progress?.status === "failed" ? "text-rose-600" : "text-emerald-600")} />
             </div>
           ) : (
             <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-4 mx-auto">
@@ -450,13 +616,19 @@ export default function EvalWizard() {
           )}
           
           <h2 className="text-xl font-bold mb-2">
-            {progress?.percent === 100 ? "Evaluation Complete" : "Evaluation Running"}
+            {progress?.status === "failed"
+              ? "Evaluation Finished With Errors"
+              : progress?.percent === 100
+                ? "Evaluation Complete"
+                : "Evaluation Running"}
           </h2>
           
           <div className="mb-6 max-w-md mx-auto space-y-4">
             <p className="text-muted-foreground text-sm">
               {progress?.percent === 100 
-                ? "Models have been scored and results are ready."
+                ? progress?.status === "failed"
+                  ? "Some items failed during scoring. Open the run details to inspect the failed metrics and partial results."
+                  : "Models have been scored and results are ready."
                 : `Currently scoring ${progress?.model ? `model: ${progress.model}` : "models"} in the background.`}
             </p>
             
@@ -484,7 +656,13 @@ export default function EvalWizard() {
               Run Another
             </Button>
             <Button onClick={() => navigate(lastRunId ? `/evaluate/${lastRunId}` : "/history")}>
-              {progress?.percent === 100 ? "View Results" : lastRunId ? "Go to Live Details" : "Go to History"}
+              {progress?.percent === 100
+                ? progress?.status === "failed"
+                  ? "Inspect Run"
+                  : "View Results"
+                : lastRunId
+                  ? "Go to Live Details"
+                  : "Go to History"}
             </Button>
           </div>
         </div>

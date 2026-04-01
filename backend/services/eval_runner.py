@@ -25,9 +25,10 @@ from sqlalchemy.orm import Session
 
 from backend import models as db_models
 from backend.services import storage, ollama as ollama_svc
-from backend.scoring import rouge, bleu, meteor, exact_match, distinct, speed, embeddings, code_exec, bertscore
+from backend.scoring import rouge, bleu, meteor, exact_match, distinct, speed, embeddings, code_exec, bertscore, classification, semantic_sim, toxicity
 from backend.scoring.llm_judge import evaluate_with_llm
 from backend.database import SessionLocal
+import math
 
 # In-memory SSE queues keyed by run_id
 _progress_queues: dict[int, asyncio.Queue] = {}
@@ -40,15 +41,38 @@ CONCURRENCY = 4
 # This is the single source of truth for which metrics run per task type.
 # _score() below MUST stay in sync with this dict.
 
+COMMON_SPEED_METRICS = [
+    "tokens_per_second",
+    "total_latency_s",
+    "load_latency_s",
+    "prompt_tokens",
+    "output_tokens",
+]
+
 TASK_METRICS: dict[str, list[str]] = {
-    "summarization": ["rouge1", "rouge2", "rougeL", "bertscore_f1", "meteor", "tps", "llm_coherence", "llm_relevance"],
-    "qa":            ["exact_match", "f1", "tps", "llm_relevance"],
-    "chat":          ["distinct1", "distinct2", "tps", "llm_fluency", "llm_coherence"],
-    "translation":   ["bleu", "chrf", "meteor", "tps"],
-    "code":          ["rouge1", "distinct1", "pass_at_1", "tps"],
-    "reasoning":     ["exact_match", "f1", "tps"],
-    "knowledge":     ["exact_match", "f1", "tps", "llm_relevance"],
+    "summarization": ["rouge1", "rouge2", "rougeL", "bertscore_f1", "meteor", "semantic_sim", *COMMON_SPEED_METRICS, "llm_coherence", "llm_relevance", "llm_faithfulness", "perplexity"],
+    "qa":            ["exact_match", "f1", "semantic_sim", *COMMON_SPEED_METRICS, "llm_relevance", "llm_correctness", "llm_faithfulness", "perplexity"],
+    "chat":          ["distinct1", "distinct2", "semantic_sim", *COMMON_SPEED_METRICS, "llm_fluency", "llm_coherence", "perplexity"],
+    "translation":   ["bleu", "chrf", "meteor", "semantic_sim", *COMMON_SPEED_METRICS],
+    "code":          ["rouge1", "distinct1", "pass_at_1", *COMMON_SPEED_METRICS],
+    "reasoning":     ["exact_match", "f1", *COMMON_SPEED_METRICS, "llm_correctness"],
+    "knowledge":     ["exact_match", "f1", *COMMON_SPEED_METRICS, "llm_relevance", "llm_correctness", "perplexity"],
     "embedding":     ["cosine_sim", "recall_at_1", "recall_at_3", "mrr"],
+    "classification":["exact_match", *COMMON_SPEED_METRICS],
+    "safety":        ["exact_match", "toxicity", *COMMON_SPEED_METRICS, "llm_relevance"],
+}
+
+DEFAULT_DATASET_BY_TASK: dict[str, str] = {
+    "summarization": "EvalBench Summarization v1",
+    "qa": "EvalBench QA v1",
+    "chat": "EvalBench TruthfulQA (Subset)",
+    "translation": "EvalBench Translation v1",
+    "code": "EvalBench HumanEval (Subset)",
+    "reasoning": "EvalBench GSM8K (Subset)",
+    "knowledge": "EvalBench MMLU (Subset)",
+    "embedding": "EvalBench Embeddings v1",
+    "classification": "EvalBench Classification v1",
+    "safety": "EvalBench TruthfulQA (Subset)",
 }
 
 
@@ -67,9 +91,13 @@ def _score(task_type: str, prediction: str, reference: str, ollama_resp: dict) -
         scores.update(meteor.compute(prediction, reference))     # meteor
         scores.update(bertscore.compute_single(prediction, reference))  # bertscore_f1
 
-    # — QA / Reasoning / Knowledge — exact string metrics only
-    elif tt in ("qa", "reasoning", "knowledge"):
+    # — QA / Reasoning / Knowledge / Safety — exact string metrics only
+    elif tt in ("qa", "reasoning", "knowledge", "safety"):
         scores.update(exact_match.compute(prediction, reference))  # exact_match, f1
+
+    # — Classification —
+    elif tt == "classification":
+        scores.update(classification.compute(prediction, reference)) # exact_match (accuracy)
 
     # — Chat — diversity metrics only (no reference comparison)
     elif tt == "chat":
@@ -84,6 +112,28 @@ def _score(task_type: str, prediction: str, reference: str, ollama_resp: dict) -
     elif tt == "code":
         scores.update(rouge.compute(prediction, reference))      # rouge1 (structural)
         scores.update(distinct.compute(prediction))              # distinct1
+
+    # --- New Metrics (E2, E11, E12) ---
+    if "semantic_sim" in TASK_METRICS.get(tt, []) and semantic_sim.is_available() and reference:
+        scores["semantic_sim"] = semantic_sim.compute_similarity(prediction, reference)
+        
+    if "toxicity" in TASK_METRICS.get(tt, []) and toxicity.is_available():
+        scores["toxicity"] = toxicity.compute_toxicity(prediction)
+
+    if "perplexity" in TASK_METRICS.get(tt, []):
+        lp_data = ollama_resp.get("logprobs")
+        if isinstance(lp_data, list) and len(lp_data) > 0:
+            total_lp = 0.0
+            valid_tokens = 0
+            for token_obj in lp_data:
+                if isinstance(token_obj, dict) and isinstance(token_obj.get("logprob"), (float, int)):
+                    total_lp += float(token_obj["logprob"])
+                    valid_tokens += 1
+            if valid_tokens > 0:
+                try:
+                    scores["perplexity"] = math.exp(-total_lp / valid_tokens)
+                except Exception:
+                    scores["perplexity"] = float("inf")
 
     # — Embedding — handled entirely in run_eval (requires vector calls)
 
@@ -104,20 +154,41 @@ def get_or_create_queue(run_id: int) -> asyncio.Queue:
     return _progress_queues[run_id]
 
 
+def is_terminal_status(status: str | None) -> bool:
+    return status in {"completed", "failed", "cancelled"}
+
+
 async def stream_progress(run_id: int) -> AsyncIterator[dict]:
     """SSE generator — yields progress events for a run."""
     q = get_or_create_queue(run_id)
+    idle_time = 0
     while True:
         try:
-            event = await asyncio.wait_for(q.get(), timeout=300)
+            event = await asyncio.wait_for(q.get(), timeout=15)
+            idle_time = 0
+            yield event
+            if event.get("done"):
+                _progress_queues.pop(run_id, None)
+                break
         except asyncio.TimeoutError:
-            # Send keepalive to prevent client timeout; check if run is gone
+            idle_time += 15
+            db = SessionLocal()
+            try:
+                run = db.query(db_models.EvalRun).filter_by(id=run_id).first()
+                if run and is_terminal_status(run.status):
+                    yield {"type": "done", "status": run.status, "done": True}
+                    _progress_queues.pop(run_id, None)
+                    break
+            finally:
+                db.close()
+            
+            if idle_time >= 300:
+                yield {"type": "done", "status": "failed", "error": "Progress stream timed out", "done": True}
+                _progress_queues.pop(run_id, None)
+                break
+                
+            # Send keepalive to prevent client timeout
             yield {"type": "keepalive", "done": False}
-            continue
-        yield event
-        if event.get("done"):
-            _progress_queues.pop(run_id, None)
-            break
 
 
 async def run_eval(run_id: int) -> None:
@@ -129,9 +200,20 @@ async def run_eval(run_id: int) -> None:
     q = get_or_create_queue(run_id)
 
     start_time: datetime | None = None
+    run: db_models.EvalRun | None = None
+    pair_failures = 0
+    failure_messages: list[str] = []
+    retry_count = 0
+    cache_hits = 0
     try:
         run = db.query(db_models.EvalRun).filter_by(id=run_id).first()
         if not run:
+            return
+
+        if run.status == "cancel_requested":
+            run.status = "cancelled"
+            db.commit()
+            await q.put({"type": "done", "status": "cancelled", "done": True})
             return
 
         config = run.config_json or {}
@@ -143,30 +225,46 @@ async def run_eval(run_id: int) -> None:
         start_time = datetime.utcnow()
         run.timestamp = start_time
         run.status = "running"
+        run.config_json = {**config}
         db.commit()
 
         await q.put({"type": "status", "status": "running", "done": False})
 
         # ── load models ──
         models = db.query(db_models.Model).filter(db_models.Model.id.in_(model_ids)).all()
+        if not models:
+            raise ValueError("No valid models were found for this evaluation run.")
 
         # ── load dataset items ──
         if dataset_id:
             items = db.query(db_models.GoldenItem).filter_by(dataset_id=dataset_id).all()
+            if not items:
+                raise ValueError("The selected dataset is missing or contains no items.")
         else:
-            # Default: first dataset that roughly matches task type by name
-            ds = (
-                db.query(db_models.GoldenDataset)
-                .filter(db_models.GoldenDataset.name.ilike(f"%{task_type}%"))
-                .first()
-            )
+            # Default: use an explicit task-to-dataset mapping rather than a fuzzy match.
+            dataset_name = DEFAULT_DATASET_BY_TASK.get(task_type.lower())
+            ds = None
+            if dataset_name:
+                ds = db.query(db_models.GoldenDataset).filter_by(name=dataset_name).first()
             if not ds:
                 ds = db.query(db_models.GoldenDataset).first()
             items = db.query(db_models.GoldenItem).filter_by(dataset_id=ds.id).all() if ds else []
 
+        if not items:
+            raise ValueError(f"No dataset items are available for task type '{task_type}'.")
+
         total = len(models) * len(items)
         completed = 0
         semaphore = asyncio.Semaphore(CONCURRENCY)
+        run.config_json = {
+            **(run.config_json or {}),
+            "totalPairs": total,
+            "completedPairs": 0,
+            "errorCount": 0,
+            "retryCount": 0,
+            "cacheHits": 0,
+        }
+        db.commit()
 
         await q.put({"type": "start", "total": total, "done": False})
 
@@ -180,10 +278,14 @@ async def run_eval(run_id: int) -> None:
 
         # ── concurrent evaluation ──
         async def eval_pair(model: db_models.Model, item: db_models.GoldenItem) -> None:
-            nonlocal completed
+            nonlocal completed, pair_failures, retry_count, cache_hits
             async with semaphore:
                 db_local: Session = SessionLocal()
                 try:
+                    current_run = db_local.query(db_models.EvalRun).filter_by(id=run_id).first()
+                    if not current_run or current_run.status == "cancel_requested":
+                        return
+
                     results_to_save: list[dict] = []  # accumulate, then bulk-commit
 
                     if task_type == "embedding":
@@ -192,12 +294,14 @@ async def run_eval(run_id: int) -> None:
                         answer_index = context.get("answer_index", 0)
 
                         query_res = await ollama_svc.embed(model.name, item.input)
+                        retry_count += int(query_res.get("retries", 0))
                         if not query_res["ok"]:
                             raise RuntimeError(query_res.get("error", "Embedding failed"))
 
                         candidate_vecs = []
                         for cand in candidates:
                             cand_res = await ollama_svc.embed(model.name, cand)
+                            retry_count += int(cand_res.get("retries", 0))
                             if not cand_res["ok"]:
                                 raise RuntimeError(cand_res.get("error", "Embedding failed"))
                             candidate_vecs.append(cand_res.get("embedding", []))
@@ -226,14 +330,18 @@ async def run_eval(run_id: int) -> None:
                         cached = db_local.query(db_models.ResponseCache).filter_by(key=cache_key).first()
                         
                         if cached:
+                            cache_hits += 1
                             result = {
                                 "ok": True,
                                 "response": cached.response,
                                 "eval_count": cached.eval_count,
-                                "eval_duration": cached.eval_duration
+                                "eval_duration": cached.eval_duration,
+                                "retries": 0,
+                                "cache_hit": True,
                             }
                         else:
                             result = await ollama_svc.generate(model.name, item.input)
+                            retry_count += int(result.get("retries", 0))
                             if result.get("ok"):
                                 new_cache = db_models.ResponseCache(
                                     key=cache_key,
@@ -246,6 +354,7 @@ async def run_eval(run_id: int) -> None:
                         if not result.get("ok"):
                             # Inference failed — record an error for every expected metric
                             err_msg = result.get("error", "Inference failed")
+                            pair_failures += 1
                             all_metrics = TASK_METRICS.get(task_type.lower(), [])
                             for metric_name in all_metrics:
                                 results_to_save.append(dict(
@@ -257,7 +366,9 @@ async def run_eval(run_id: int) -> None:
                             prediction = result.get("response", "")
 
                             # Traditional metrics (TASK_METRICS-aligned, no cross-task leakage)
-                            item_scores = _score(task_type, prediction, item.expected_output, result)
+                            item_scores = await asyncio.to_thread(
+                                _score, task_type, prediction, item.expected_output, result
+                            )
 
                             # Code execution scoring (Pass@1)
                             if task_type == "code" and item.context:
@@ -282,7 +393,9 @@ async def run_eval(run_id: int) -> None:
                             # LLM-as-Judge metrics
                             llm_metrics = _get_llm_metrics_for_task(task_type)
                             for metric_name in llm_metrics:
-                                llm_score, rationale = evaluate_with_llm(db_local, metric_name, item.input, prediction)
+                                llm_score, rationale = await asyncio.to_thread(
+                                    evaluate_with_llm, db_local, metric_name, item.input, prediction, item.context or ""
+                                )
                                 formatted_output = f"{prediction[:1500]}\n\n--- Judge Rationale ---\n{rationale}"
                                 results_to_save.append(dict(
                                     run_id=run_id, model_id=model.id,
@@ -296,11 +409,26 @@ async def run_eval(run_id: int) -> None:
                     db_local.commit()
 
                 except Exception as e:
+                    pair_failures += 1
+                    failure_messages.append(f"{model.name} / item {item.id}: {str(e)}")
                     await q.put({"type": "error", "message": str(e), "done": False})
                 finally:
                     db_local.close()
 
                 completed += 1
+                progress_db: Session = SessionLocal()
+                try:
+                    progress_run = progress_db.query(db_models.EvalRun).filter_by(id=run_id).first()
+                    if progress_run and not is_terminal_status(progress_run.status):
+                        progress_config = dict(progress_run.config_json or {})
+                        progress_config["completedPairs"] = completed
+                        progress_config["errorCount"] = pair_failures
+                        progress_config["retryCount"] = retry_count
+                        progress_config["cacheHits"] = cache_hits
+                        progress_run.config_json = progress_config
+                        progress_db.commit()
+                finally:
+                    progress_db.close()
                 pct = round(completed / total * 100) if total else 100
                 await q.put({
                     "type": "progress",
@@ -315,13 +443,29 @@ async def run_eval(run_id: int) -> None:
         tasks = [eval_pair(model, item) for model in models for item in items]
         await asyncio.gather(*tasks)
 
+        db.refresh(run)
         duration_seconds = (datetime.utcnow() - (start_time or datetime.utcnow())).total_seconds()
         updated_config = dict(config)
         updated_config["durationSeconds"] = round(duration_seconds, 2)
+        updated_config["totalPairs"] = total
+        updated_config["completedPairs"] = completed
+        updated_config["retryCount"] = retry_count
+        updated_config["cacheHits"] = cache_hits
+        if pair_failures:
+            updated_config["errorCount"] = pair_failures
+            updated_config["errors"] = failure_messages[:10]
         run.config_json = updated_config
-        run.status = "completed"
+        if run.status == "cancel_requested":
+            run.status = "cancelled"
+        else:
+            run.status = "failed" if pair_failures else "completed"
         db.commit()
-        await q.put({"type": "done", "status": "completed", "done": True})
+        await q.put({
+            "type": "done",
+            "status": run.status,
+            "errorCount": pair_failures,
+            "done": True,
+        })
 
     except Exception as e:
         try:
@@ -333,10 +477,15 @@ async def run_eval(run_id: int) -> None:
                     updated_config = dict(config)
                     updated_config["durationSeconds"] = round(duration_seconds, 2)
                     run.config_json = updated_config
-                run.status = "failed"
+                run.status = "cancelled" if run.status == "cancel_requested" else "failed"
                 db.commit()
         except Exception:
             pass
-        await q.put({"type": "done", "status": "failed", "error": str(e), "done": True})
+        await q.put({
+            "type": "done",
+            "status": "cancelled" if run and run.status == "cancel_requested" else "failed",
+            "error": str(e),
+            "done": True,
+        })
     finally:
         db.close()

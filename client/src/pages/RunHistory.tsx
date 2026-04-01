@@ -1,14 +1,24 @@
-import { useEvalRuns } from "@/hooks/use-eval";
+import { useAllEvalResults, useEvalRuns } from "@/hooks/use-eval";
 import { useModels } from "@/hooks/use-models";
 import { useDatasets } from "@/hooks/use-datasets";
 import { Link } from "wouter";
 import { format } from "date-fns";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Activity, Clock, CheckCircle2, ChevronRight, RefreshCw, Cpu, Database, Loader2 } from "lucide-react";
+import { Activity, Clock, CheckCircle2, ChevronRight, RefreshCw, Cpu, Database, Loader2, ShieldAlert, RotateCcw } from "lucide-react";
 import { clsx } from "clsx";
 import { useEffect, useMemo, useState } from "react";
+
+const SPEED_METRICS = new Set([
+  "tokens_per_second",
+  "total_latency_s",
+  "load_latency_s",
+  "prompt_tokens",
+  "output_tokens",
+  "perplexity",
+  "Speed (T/s)",
+]);
 
 function formatDuration(seconds?: number): string {
   if (seconds === undefined || seconds === null || Number.isNaN(seconds)) return "—";
@@ -21,8 +31,14 @@ function formatDuration(seconds?: number): string {
   return `${secs}s`;
 }
 
+function formatScore(value?: number | null): string {
+  if (value === undefined || value === null || Number.isNaN(value)) return "—";
+  return `${(value * 100).toFixed(1)}%`;
+}
+
 export default function RunHistory() {
   const { data: runs = [], isLoading: runsLoading, refetch, isRefetching } = useEvalRuns();
+  const { data: results = [], isLoading: resultsLoading } = useAllEvalResults();
   const { data: models = [] } = useModels();
   const { data: datasets = [] } = useDatasets();
   const [taskFilter, setTaskFilter] = useState("all");
@@ -63,14 +79,6 @@ export default function RunHistory() {
     setSelectedView(trimmed);
   };
 
-  if (runsLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    );
-  }
-
   const taskOptions = useMemo(() => {
     const tasks = new Set<string>();
     (runs as any[]).forEach((r) => {
@@ -79,7 +87,7 @@ export default function RunHistory() {
     return Array.from(tasks).sort();
   }, [runs]);
 
-  const statusOptions = ["pending", "running", "completed", "failed"];
+  const statusOptions = ["pending", "running", "cancel_requested", "cancelled", "completed", "failed"];
 
   const filteredRuns = useMemo(() => {
     return (runs as any[]).filter((run) => {
@@ -93,10 +101,29 @@ export default function RunHistory() {
     });
   }, [runs, taskFilter, statusFilter, modelFilter]);
 
-  // Sort runs newest first
-  const sortedRuns = [...filteredRuns].sort((a: any, b: any) => {
-    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-  });
+  // Sort runs newest first by ID
+  const sortedRuns = [...filteredRuns].sort((a: any, b: any) => b.id - a.id);
+
+  const scorePreviewByRun = useMemo(() => {
+    const grouped = new Map<number, { scores: number[]; metrics: Set<string> }>();
+    (results as any[]).forEach((result) => {
+      if (result.error || SPEED_METRICS.has(result.metricName)) return;
+      const entry = grouped.get(result.runId) ?? { scores: [], metrics: new Set<string>() };
+      entry.scores.push(Number(result.score));
+      entry.metrics.add(result.metricName);
+      grouped.set(result.runId, entry);
+    });
+
+    return grouped;
+  }, [results]);
+
+  if (runsLoading || resultsLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
@@ -213,7 +240,9 @@ export default function RunHistory() {
                 <th className="text-left px-6 py-4 font-semibold text-foreground/85">Task Type</th>
                 <th className="text-left px-6 py-4 font-semibold text-foreground/85">Dataset</th>
                 <th className="text-left px-6 py-4 font-semibold text-foreground/85">Models Evaluated</th>
+                <th className="text-left px-4 py-4 font-semibold text-foreground/85">Score Preview</th>
                 <th className="text-left px-4 py-4 font-semibold text-foreground/85">Status</th>
+                <th className="text-left px-4 py-4 font-semibold text-foreground/85">Reliability</th>
                 <th className="text-right px-4 py-4 font-semibold text-foreground/85"></th>
               </tr>
             </thead>
@@ -224,9 +253,13 @@ export default function RunHistory() {
                 const datasetName = config.datasetId ? dsMap[config.datasetId]?.name : "None (Ad-hoc)";
                 const durationText = typeof config.durationSeconds === "number"
                   ? formatDuration(config.durationSeconds)
-                  : run.status === "running"
+                  : run.status === "running" || run.status === "cancel_requested"
                     ? "Running..."
                     : "—";
+                const scorePreview = scorePreviewByRun.get(run.id);
+                const avgScore = scorePreview && scorePreview.scores.length > 0
+                  ? scorePreview.scores.reduce((sum, score) => sum + score, 0) / scorePreview.scores.length
+                  : null;
                 
                 return (
                   <tr key={run.id} className="hover:bg-muted/50 transition-colors group">
@@ -268,16 +301,47 @@ export default function RunHistory() {
                       </div>
                     </td>
                     <td className="px-4 py-4">
+                      {avgScore !== null ? (
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 min-w-[150px]">
+                          <div className="text-sm font-semibold text-emerald-800">{formatScore(avgScore)}</div>
+                          <div className="text-[11px] text-emerald-700/80">
+                            {scorePreview?.metrics.size ?? 0} metrics · {scorePreview?.scores.length ?? 0} scores
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-muted-foreground min-w-[150px]">
+                          {run.status === "running" || run.status === "cancel_requested" || run.status === "pending"
+                            ? "Collecting scores..."
+                            : (config.errorCount ?? 0) > 0
+                              ? "No successful quality scores"
+                              : "No scored results"}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-4">
                       <span className={clsx(
                         "text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap",
                         run.status === "completed" ? "bg-emerald-100 text-emerald-700" :
-                        run.status === "running" || run.status === "pending" ? "bg-amber-100 text-amber-700" :
+                        run.status === "running" || run.status === "pending" || run.status === "cancel_requested" ? "bg-amber-100 text-amber-700" :
+                        run.status === "cancelled" ? "bg-slate-200 text-slate-700" :
                         "bg-muted text-muted-foreground"
                       )}>
-                        {run.status === "running" && <Loader2 className="w-3 h-3 inline mr-1 animate-spin" />}
+                        {(run.status === "running" || run.status === "cancel_requested") && <Loader2 className="w-3 h-3 inline mr-1 animate-spin" />}
                         {run.status === "completed" && <CheckCircle2 className="w-3 h-3 inline mr-1" />}
                         {run.status}
                       </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex flex-wrap gap-2 text-[10px]">
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-muted text-muted-foreground">
+                          <ShieldAlert className="w-3 h-3" />
+                          {config.errorCount ?? 0} fail
+                        </span>
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-muted text-muted-foreground">
+                          <RotateCcw className="w-3 h-3" />
+                          {config.retryCount ?? 0} retry
+                        </span>
+                      </div>
                     </td>
                     <td className="px-4 py-4 text-right">
                       <Link href={`/evaluate/${run.id}`}>
@@ -291,7 +355,7 @@ export default function RunHistory() {
               })}
               {sortedRuns.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
+                  <td colSpan={10} className="px-6 py-12 text-center text-muted-foreground">
                     No runs found.
                   </td>
                 </tr>

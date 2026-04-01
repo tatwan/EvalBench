@@ -51,6 +51,13 @@ async def lifespan(app: FastAPI):
             db.commit()
         except Exception:
             db.rollback()
+        try:
+            db.execute(
+                text("UPDATE eval_runs SET status = 'cancelled' WHERE status = 'cancel_requested'")
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
 
         dataset_seeder.seed_if_empty(db)
         # Auto-sync Ollama models on startup so the UI shows them immediately

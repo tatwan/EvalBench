@@ -620,6 +620,18 @@ TRANSLATION_ITEMS = [
     {"input": "Translate to French: Reading is to the mind what exercise is to the body.", "expected_output": "La lecture est à l'esprit ce que l'exercice est au corps.", "tags": ["translation", "french"], "difficulty": "hard"},
 ]
 
+# ─── Classification Dataset (Spam/Not Spam) ────────────────────
+CLASSIFICATION_ITEMS = [
+    {"input": "Classify as Spam or Not Spam: Congratulations! You've won a $1,000 gift card. Click here to claim your prize now.", "expected_output": "Spam", "tags": ["classification", "spam"], "difficulty": "easy"},
+    {"input": "Classify as Spam or Not Spam: Hi team, please remember to submit your weekly reports by 5 PM Friday.", "expected_output": "Not Spam", "tags": ["classification", "spam"], "difficulty": "easy"},
+    {"input": "Classify as Spam or Not Spam: URGENT: Your account has been suspended due to suspicious activity. Log in immediately to verify your identity.", "expected_output": "Spam", "tags": ["classification", "spam"], "difficulty": "easy"},
+    {"input": "Classify as Spam or Not Spam: Just checking in to see if we're still on for lunch tomorrow at 12:30?", "expected_output": "Not Spam", "tags": ["classification", "spam"], "difficulty": "easy"},
+    {"input": "Classify as Spam or Not Spam: Make $500 an hour working from home using this secret automated system!", "expected_output": "Spam", "tags": ["classification", "spam"], "difficulty": "easy"},
+    {"input": "Classify as Spam or Not Spam: Attached is the invoice for the plumbing services completed on Tuesday.", "expected_output": "Not Spam", "tags": ["classification", "spam"], "difficulty": "easy"},
+    {"input": "Classify as Spam or Not Spam: You have 1 unread secure message from HR. Click the link to view the document.", "expected_output": "Spam", "tags": ["classification", "phishing"], "difficulty": "medium"},
+    {"input": "Classify as Spam or Not Spam: Don't forget mom's birthday next week! We're planning a surprise party.", "expected_output": "Not Spam", "tags": ["classification", "spam"], "difficulty": "easy"},
+]
+
 # ─── HumanEval Dataset (Subset - Code) ────────────────────
 HUMANEVAL_ITEMS = [
     {
@@ -841,6 +853,25 @@ def seed_if_empty(db: Session) -> None:
         for item in HUMANEVAL_ITEMS:
             db.add(db_models.GoldenItem(
                 dataset_id=code_ds.id,
+                input=item["input"],
+                expected_output=item["expected_output"],
+                context=item.get("context"),
+                tags=item["tags"],
+                difficulty=item["difficulty"],
+            ))
+
+    # ── Classification dataset ──
+    if "EvalBench Classification v1" not in existing_names:
+        class_ds = db_models.GoldenDataset(
+            name="EvalBench Classification v1",
+            source="curated-inline",
+            schema_version=1,
+        )
+        db.add(class_ds)
+        db.flush()
+        for item in CLASSIFICATION_ITEMS:
+            db.add(db_models.GoldenItem(
+                dataset_id=class_ds.id,
                 input=item["input"],
                 expected_output=item["expected_output"],
                 context=item.get("context"),

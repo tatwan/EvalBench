@@ -90,3 +90,30 @@ export function useCreateEvalRun() {
     },
   });
 }
+
+export function useCancelEvalRun() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (runId: number) => {
+      const url = buildUrl(api.evalRuns.cancel.path, { id: runId });
+      const res = await fetch(url, {
+        method: api.evalRuns.cancel.method,
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to cancel evaluation");
+      return api.evalRuns.cancel.responses[200].parse(await res.json());
+    },
+    onSuccess: (run) => {
+      queryClient.invalidateQueries({ queryKey: [api.evalRuns.list.path] });
+      queryClient.invalidateQueries({ queryKey: [api.evalRuns.get.path, run.id] });
+      queryClient.invalidateQueries({ queryKey: [api.evalRuns.results.path, run.id] });
+      queryClient.invalidateQueries({ queryKey: [api.evalRuns.stats.path, run.id] });
+      toast({
+        title: "Cancellation requested",
+        description: "The run will stop after the in-flight work finishes.",
+      });
+    },
+  });
+}

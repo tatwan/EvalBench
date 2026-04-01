@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from backend.database import Base, get_db
 from backend.main import app
 from fastapi.testclient import TestClient
@@ -10,7 +11,11 @@ TEST_DATABASE_URL = "sqlite:///:memory:"
 
 @pytest.fixture(scope="session")
 def engine():
-    e = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
+    e = create_engine(
+        TEST_DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(bind=e)
     yield e
     Base.metadata.drop_all(bind=e)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import asyncio
@@ -9,7 +9,7 @@ from backend.database import get_db
 from backend.scoring.stats import calculate_confidence_interval
 from backend.services import storage
 from backend.services.eval_runner import run_eval, stream_progress
-from backend.schemas import EvalRunOut, EvalRunCreate
+from backend.schemas import EvalRunOut, EvalRunCreate, EvalRunConfig
 
 router = APIRouter(prefix="/api/eval-runs", tags=["eval-runs"])
 
@@ -22,19 +22,29 @@ def list_eval_runs(db: Session = Depends(get_db)):
 @router.post("", response_model=EvalRunOut, status_code=201)
 async def create_eval_run(
     payload: EvalRunCreate,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    config = {
-        "modelIds": payload.model_ids,
-        "taskType": payload.task_type,
-        "datasetId": payload.dataset_id,
-        # legacy field — keep for dashboard display
-        "benchmarkKeys": [payload.task_type],
-    }
+    dataset_item_count: int | None = None
+    if payload.dataset_id is not None:
+        dataset = storage.get_dataset(db, payload.dataset_id)
+        if not dataset:
+            raise HTTPException(status_code=400, detail="Selected dataset does not exist")
+        dataset_items = storage.get_dataset_items(db, payload.dataset_id)
+        dataset_item_count = len(dataset_items)
+        if dataset_item_count == 0:
+            raise HTTPException(status_code=400, detail="Selected dataset contains no items")
+
+    config = EvalRunConfig(
+        model_ids=payload.model_ids,
+        task_type=payload.task_type,
+        dataset_id=payload.dataset_id,
+        dataset_item_count=dataset_item_count,
+        benchmark_keys=payload.benchmark_keys or [payload.task_type],
+    ).model_dump(by_alias=True, exclude_none=True)
     run = storage.create_eval_run(db, config)
-    # Launch the runner as a background task (non-blocking)
-    background_tasks.add_task(run_eval, run.id)
+    # Launch the runner as an independent task so long-running evals do not
+    # rely on FastAPI BackgroundTasks semantics.
+    asyncio.create_task(run_eval(run.id))
     return run
 
 
@@ -44,6 +54,33 @@ def get_eval_run(run_id: int, db: Session = Depends(get_db)):
     if not run:
         raise HTTPException(status_code=404, detail="Eval run not found")
     return run
+
+
+@router.post("/{run_id}/cancel", response_model=EvalRunOut)
+def cancel_eval_run(run_id: int, db: Session = Depends(get_db)):
+    run = storage.get_eval_run(db, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Eval run not found")
+    if run.status in {"completed", "failed", "cancelled"}:
+        return {
+            "id": run.id,
+            "timestamp": run.timestamp,
+            "config_json": run.config_json,
+            "status": run.status,
+        }
+
+    run.status = "cancel_requested"
+    config = dict(run.config_json or {})
+    config["cancelRequested"] = True
+    run.config_json = config
+    response_payload = {
+        "id": run.id,
+        "timestamp": run.timestamp,
+        "config_json": config,
+        "status": run.status,
+    }
+    db.commit()
+    return response_payload
 
 
 @router.get("/{run_id}/results")
@@ -106,7 +143,18 @@ def get_eval_stats(run_id: int, db: Session = Depends(get_db)):
     Returns aggregated stats (mean, 95% CI margin of error) grouped by model and metric.
     """
     from backend import models as db_models
-    results = db.query(db_models.EvalResult).filter(db_models.EvalResult.run_id == run_id).all()
+    run = storage.get_eval_run(db, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Eval run not found")
+
+    results = (
+        db.query(db_models.EvalResult)
+        .filter(
+            db_models.EvalResult.run_id == run_id,
+            db_models.EvalResult.error.is_(False),
+        )
+        .all()
+    )
     
     # Group by (model_id, metric_name)
     grouped = defaultdict(list)

@@ -1,12 +1,12 @@
 import { useMemo } from "react";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useLocation } from "wouter";
 import { format } from "date-fns";
 import { clsx } from "clsx";
 import { useModels } from "@/hooks/use-models";
 import { useEvalRuns, useAllEvalResults } from "@/hooks/use-eval";
 import { useArenaLeaderboard } from "@/hooks/use-arena";
 import { useDatasets } from "@/hooks/use-datasets";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Cpu, ArrowLeft, Activity, Clock, CheckCircle2, BarChart3 } from "lucide-react";
@@ -39,6 +39,7 @@ function formatDuration(seconds?: number) {
 export default function ModelDetails() {
   const params = useParams<{ id: string }>();
   const modelId = Number(params.id ?? 0);
+  const [, navigate] = useLocation();
 
   const { data: models = [] } = useModels();
   const { data: runs = [] } = useEvalRuns();
@@ -60,7 +61,7 @@ export default function ModelDetails() {
   }, [results, modelId]);
 
   const qualityResults = useMemo(() => {
-    return modelResults.filter((r) => !SPEED_METRICS.has(r.metricName));
+    return modelResults.filter((r) => !r.error && !SPEED_METRICS.has(r.metricName));
   }, [modelResults]);
 
   const avgScore = useMemo(() => {
@@ -74,19 +75,19 @@ export default function ModelDetails() {
   }, [qualityResults]);
 
   const avgTps = useMemo(() => {
-    const tps = modelResults.filter((r) => r.metricName === "tokens_per_second");
+    const tps = modelResults.filter((r) => !r.error && r.metricName === "tokens_per_second");
     if (!tps.length) return null;
     return tps.reduce((sum, r) => sum + Number(r.score), 0) / tps.length;
   }, [modelResults]);
 
   const avgLatency = useMemo(() => {
-    const latency = modelResults.filter((r) => r.metricName === "total_latency_s");
+    const latency = modelResults.filter((r) => !r.error && r.metricName === "total_latency_s");
     if (!latency.length) return null;
     return latency.reduce((sum, r) => sum + Number(r.score), 0) / latency.length;
   }, [modelResults]);
 
   const recentOutput = useMemo(() => {
-    return modelResults.find((r) => r.rawOutput)?.rawOutput ?? null;
+    return modelResults.find((r) => !r.error && r.rawOutput)?.rawOutput ?? null;
   }, [modelResults]);
 
   const taskSet = useMemo(() => {
@@ -111,7 +112,7 @@ export default function ModelDetails() {
       Translate: [] as number[],
     };
 
-    modelResults.forEach((r) => {
+    modelResults.filter((r) => !r.error).forEach((r) => {
       const run = (runs as any[]).find((run) => run.id === r.runId);
       if (!run) return;
       const tt = run.configJson?.taskType;
@@ -228,7 +229,7 @@ export default function ModelDetails() {
                     <tr
                       key={run.id}
                       className="hover:bg-muted/50 cursor-pointer"
-                      onClick={() => window.location.assign(`/evaluate/${run.id}`)}
+                      onClick={() => navigate(`/evaluate/${run.id}`)}
                     >
                       <td className="px-5 py-3 font-mono text-primary">#{run.id}</td>
                       <td className="px-5 py-3 capitalize">{run.configJson?.taskType ?? "-"}</td>
@@ -237,7 +238,9 @@ export default function ModelDetails() {
                         <span className={clsx(
                           "text-[11px] font-semibold px-2 py-1 rounded-full",
                           run.status === "completed" ? "bg-emerald-100 text-emerald-700" :
-                          run.status === "running" || run.status === "pending" ? "bg-amber-100 text-amber-700" :
+                          run.status === "running" || run.status === "pending" || run.status === "cancel_requested" ? "bg-amber-100 text-amber-700" :
+                          run.status === "cancelled" ? "bg-slate-200 text-slate-700" :
+                          run.status === "failed" ? "bg-rose-100 text-rose-700" :
                           "bg-muted text-muted-foreground"
                         )}>
                           {run.status}

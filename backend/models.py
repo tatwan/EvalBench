@@ -1,7 +1,8 @@
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, Float, Text, ForeignKey, JSON, Boolean
+    Column, Integer, String, Float, Text, ForeignKey, JSON, Boolean, Index
 )
+from sqlalchemy.sql import func
 from backend.database import Base, FlexibleDateTime
 
 
@@ -21,7 +22,8 @@ class EvalRun(Base):
     __tablename__ = "eval_runs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(FlexibleDateTime, default=datetime.utcnow)
+    name = Column(String, nullable=True) # E17
+    timestamp = Column(FlexibleDateTime, server_default=func.now(), default=datetime.utcnow) # B8
     status = Column(String(50), default="pending")  # pending, running, completed, failed
     config_json = Column(JSON, nullable=True)  # Store criteria, taskType, etc.
 
@@ -42,7 +44,11 @@ class EvalResult(Base):
     score = Column(Float, nullable=False)
     error = Column(Boolean, default=False, nullable=False)
     raw_output = Column(Text, nullable=True)
-    item_id = Column(Integer, ForeignKey("golden_items.id"), nullable=True)
+    item_id = Column(Integer, ForeignKey("golden_items.id"), nullable=True, index=True) # E14
+
+    __table_args__ = (
+        Index("ix_eval_results_run_model_metric", "run_id", "model_id", "metric_name"), # E15
+    )
 
 
 class GoldenDataset(Base):
@@ -65,6 +71,7 @@ class GoldenItem(Base):
     context = Column(Text, nullable=True)
     tags = Column(JSON, nullable=True)
     difficulty = Column(String, nullable=True)
+    metadata_ = Column("metadata", JSON, nullable=True) # E16 (using metadata_ for the property since metadata is reserved by SQLAlchemy Base)
 
 
 class ArenaBattle(Base):

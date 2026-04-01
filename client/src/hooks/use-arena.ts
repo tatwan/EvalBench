@@ -3,7 +3,7 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 
-export function useArenaMatchup(prompt?: string) {
+export function useArenaMatchup(prompt?: string, enabled = true) {
   const url = prompt
     ? `${api.arena.getMatchup.path}?prompt=${encodeURIComponent(prompt)}`
     : api.arena.getMatchup.path;
@@ -13,12 +13,13 @@ export function useArenaMatchup(prompt?: string) {
     queryFn: async () => {
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) {
-        if (res.status === 404) return null; // Not enough models
+        if (res.status === 400 || res.status === 404) return null; // Not enough models
         throw new Error("Failed to fetch matchup");
       }
       return api.arena.getMatchup.responses[200].parse(await res.json());
     },
     refetchOnWindowFocus: false,
+    enabled,
   });
 }
 
@@ -46,14 +47,13 @@ export function useArenaVote() {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to submit vote");
-      return api.arena.vote.responses[201].parse(await res.json());
+      return api.arena.vote.responses[200].parse(await res.json());
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [api.arena.getMatchup.path] });
       queryClient.invalidateQueries({ queryKey: [api.arena.leaderboard.path] });
       toast({
         title: "Vote recorded",
-        description: "Fetching next matchup...",
+        description: "Arena ratings updated. Reveal the matchup and start the next battle when you're ready.",
         duration: 2000,
       });
     },

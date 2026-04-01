@@ -1,6 +1,6 @@
 import { useModels } from "@/hooks/use-models";
 import { useEvalRuns, useAllEvalResults } from "@/hooks/use-eval";
-import { Card } from "@/components/ui/card";
+import { Card } from "@/components/ui/Card";
 import { ScoreBadge } from "@/components/ui/ScoreBadge";
 import { MetricTooltip } from "@/components/ui/MetricTooltip";
 import { Button } from "@/components/ui/Button";
@@ -26,6 +26,8 @@ const SPEED_METRICS = new Set([
   "load_latency_s",
   "prompt_tokens",
   "output_tokens",
+  "perplexity",
+  "Speed (T/s)",
 ]);
 
 const TOOLTIP_COPY: Record<string, string> = {
@@ -64,7 +66,7 @@ export default function Dashboard() {
   }, [runs]);
 
   const filteredResults = useMemo(() => {
-    const anyResults = results as any[];
+    const anyResults = (results as any[]).filter((r) => !r.error);
     if (selectedTask === "all") return anyResults;
     return anyResults.filter((r) => runMap[r.runId]?.configJson?.taskType === selectedTask);
   }, [results, selectedTask, runMap]);
@@ -79,7 +81,7 @@ export default function Dashboard() {
   const summaries = useMemo(() => {
     const qualityResults = (filteredResults as any[]).filter((r) => !SPEED_METRICS.has(r.metricName));
     const tasksByModel = new Map<number, Set<string>>();
-    (results as any[]).forEach((r) => {
+    (results as any[]).filter((r) => !r.error).forEach((r) => {
       const task = runMap[r.runId]?.configJson?.taskType;
       if (!task) return;
       if (!tasksByModel.has(r.modelId)) tasksByModel.set(r.modelId, new Set());
@@ -88,11 +90,18 @@ export default function Dashboard() {
 
     return (models as any[]).map((model) => {
       const modelResults = qualityResults.filter((r) => r.modelId === model.id);
-      const avgScoreStats = computeCI(modelResults.map((r) => Number(r.score)));
+      const avgScoreStats = computeCI(modelResults.map((r) => {
+        const value = Number(r.score);
+        return value > 1 ? value / 100 : value;
+      }));
       const avgScore = avgScoreStats?.mean ?? 0;
       const rougeStats = getMetricStats(model.id, ["rougeL", "rouge_l", "rouge-l"], qualityResults);
       const bleuStats = getMetricStats(model.id, ["bleu", "sacrebleu"], qualityResults);
-      const latencyStats = getMetricStats(model.id, ["total_latency_s", "latency"], results as any[]);
+      const latencyStats = getMetricStats(
+        model.id,
+        ["total_latency_s", "latency"],
+        (results as any[]).filter((r) => !r.error)
+      );
       const tasks = Array.from(tasksByModel.get(model.id) ?? []);
       return {
         ...model,
@@ -118,7 +127,7 @@ export default function Dashboard() {
   }, [summaries]);
 
   const radarData = useMemo(() => {
-    const qualityResults = (results as any[]).filter((r) => !SPEED_METRICS.has(r.metricName));
+    const qualityResults = (results as any[]).filter((r) => !r.error && !SPEED_METRICS.has(r.metricName));
     const topModels = [...summaries]
       .filter((m) => m.evalsCount > 0)
       .sort((a, b) => b.avgScore - a.avgScore)
@@ -161,7 +170,12 @@ export default function Dashboard() {
     { label: "Models Loaded", value: models.length, icon: Cpu, tone: "bg-violet-100 text-violet-600" },
     { label: "Eval Runs Total", value: runs.length, icon: Activity, tone: "bg-amber-100 text-amber-600" },
     { label: "Data Points", value: results.length, icon: CheckCircle2, tone: "bg-emerald-100 text-emerald-600" },
-    { label: "Active Evals", value: runs.filter((r) => r.status === "running").length, icon: Clock, tone: "bg-rose-100 text-rose-600" },
+    {
+      label: "Active Evals",
+      value: runs.filter((r) => r.status === "running" || r.status === "cancel_requested").length,
+      icon: Clock,
+      tone: "bg-rose-100 text-rose-600",
+    },
   ];
 
   if (modelsLoading || runsLoading || resultsLoading) {
@@ -222,7 +236,7 @@ export default function Dashboard() {
               >
                 All Tasks
               </button>
-              {availableTasks.slice(0, 2).map((task) => (
+              {availableTasks.slice(0, 2).map((task: string) => (
                 <button
                   key={task}
                   onClick={() => setSelectedTask(task)}
@@ -316,7 +330,7 @@ export default function Dashboard() {
                     <td className="px-5 py-3">
                       <div className="flex gap-1.5 flex-wrap">
                         {model.tasks.length ? (
-                          model.tasks.slice(0, 2).map((task) => (
+                          model.tasks.slice(0, 2).map((task: string) => (
                             <span key={task} className="text-[10px] font-semibold px-2 py-0.5 rounded bg-muted text-muted-foreground">
                               {task}
                             </span>
@@ -388,12 +402,21 @@ export default function Dashboard() {
                 <div key={run.id} className="flex items-start gap-3">
                   <div className={clsx(
                     "h-7 w-7 rounded-md flex items-center justify-center",
-                    run.status === "completed" ? "bg-emerald-100 text-emerald-600" : "bg-violet-100 text-violet-600"
+                    run.status === "completed"
+                      ? "bg-emerald-100 text-emerald-600"
+                      : run.status === "failed"
+                        ? "bg-rose-100 text-rose-600"
+                        : run.status === "cancelled" || run.status === "cancel_requested"
+                          ? "bg-slate-200 text-slate-700"
+                          : "bg-violet-100 text-violet-600"
                   )}>
                     {run.status === "completed" ? <CheckCircle2 className="w-4 h-4" /> : <Swords className="w-4 h-4" />}
                   </div>
                   <div>
-                    <div className="text-sm font-semibold">{run.configJson?.taskType ?? "Eval run"}</div>
+                    <div className="text-sm font-semibold capitalize">
+                      {run.configJson?.taskType ?? "Eval run"}
+                      <span className="ml-2 text-xs font-medium text-muted-foreground">({run.status.replace("_", " ")})</span>
+                    </div>
                     <div className="text-xs text-muted-foreground">
                       {run.timestamp ? formatDistanceToNow(new Date(run.timestamp), { addSuffix: true }) : "Unknown time"}
                     </div>
