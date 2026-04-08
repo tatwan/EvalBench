@@ -232,6 +232,28 @@ async def run_eval(run_id: int) -> None:
         dataset_id: int | None = config.get("datasetId")
         cloud_model_names: list[str] = config.get("cloudModels", [])
 
+        # RAG requires a judge model — fail fast if none is configured
+        if task_type == "rag":
+            _db = SessionLocal()
+            try:
+                _jc, _jm, _ja, _je = get_judge_client(_db)
+            finally:
+                _db.close()
+            if _je or (not _jc and not _ja):
+                await asyncio.wait_for(
+                    q.put({"type": "error", "message": "RAG evaluation requires a judge model. Configure one in Settings → LLM-as-Judge."}),
+                    timeout=5,
+                )
+                _db2 = SessionLocal()
+                try:
+                    _run = _db2.query(db_models.EvalRun).filter_by(id=run_id).first()
+                    if _run:
+                        _run.status = "failed"
+                        _db2.commit()
+                finally:
+                    _db2.close()
+                return
+
         # ── update status ──
         start_time = datetime.utcnow()
         run.timestamp = start_time
@@ -287,11 +309,11 @@ async def run_eval(run_id: int) -> None:
                 "To enable: pip install bert-score"
             )
 
-        # BERTScore download warning — emit once before the loop
-        if task_type == "summarization" and bertscore.is_available():
+        # BERTScore download warning — emit once before the loop, only if the model hasn't been cached yet
+        if task_type == "summarization" and bertscore.is_available() and not bertscore.is_ready():
             await q.put({
                 "type": "warning",
-                "message": "BERTScore may download a large model on first use (~400MB).",
+                "message": "BERTScore may download a large model on first use (~400MB). This is a one-time download.",
                 "done": False,
             })
 
