@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useModels } from "@/hooks/use-models";
 import { useCreateEvalRun, useEvalRuns } from "@/hooks/use-eval";
 import { useDatasets } from "@/hooks/use-datasets";
@@ -171,6 +172,7 @@ function formatDurationEstimate(seconds?: number | null): string {
 export default function EvalWizard() {
   const [step, setStep] = useState(1);
   const [selectedModels, setSelectedModels] = useState<number[]>([]);
+  const [selectedCloudModels, setSelectedCloudModels] = useState<string[]>([]);
   const [selectedTaskType, setSelectedTaskType] = useState<TaskType | null>(null);
   const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
   const [lastRunId, setLastRunId] = useState<number | null>(null);
@@ -182,6 +184,8 @@ export default function EvalWizard() {
   const { data: datasets = [] } = useDatasets();
   const { data: runs = [] } = useEvalRuns();
   const createRun = useCreateEvalRun();
+  const { data: settingsRaw = [] } = useQuery<any[]>({ queryKey: ["/api/settings"] });
+  const judgeModel: string | undefined = (settingsRaw as any[]).find((s: any) => s.key === "judge_model")?.value;
 
   const selectedTask = TASK_TYPES.find((t) => t.id === selectedTaskType);
   const selectedDataset = (datasets as any[]).find((d) => d.id === selectedDatasetId);
@@ -299,6 +303,7 @@ export default function EvalWizard() {
     createRun.mutate(
       {
         modelIds: selectedModels,
+        cloudModels: selectedCloudModels,
         taskType: selectedTaskType,
         datasetId: selectedDatasetId ?? undefined,
       },
@@ -506,9 +511,42 @@ export default function EvalWizard() {
             </div>
           )}
 
+          {judgeModel && (
+            <div className="mt-4 pt-4 border-t border-border">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                Cloud (via Judge Settings)
+              </p>
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedCloudModels(prev =>
+                    prev.includes(judgeModel)
+                      ? prev.filter(m => m !== judgeModel)
+                      : [...prev, judgeModel]
+                  )
+                }
+                className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                  selectedCloudModels.includes(judgeModel)
+                    ? "border-primary bg-primary/10"
+                    : "border-border bg-card hover:border-primary/50"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-sm">{judgeModel}</span>
+                  <Badge variant="secondary" className="text-xs">Cloud</Badge>
+                </div>
+                {selectedCloudModels.includes(judgeModel) && (
+                  <p className="text-xs text-amber-400 mt-1">
+                    ⚠ Using the same model as both evaluatee and judge may produce circular results.
+                  </p>
+                )}
+              </button>
+            </div>
+          )}
+
           <div className="flex justify-between">
             <Button variant="outline" onClick={() => setStep(1)}>&lt;- Back</Button>
-            <Button onClick={() => setStep(3)} disabled={selectedModels.length === 0} className="gap-2">
+            <Button onClick={() => setStep(3)} disabled={selectedModels.length === 0 && selectedCloudModels.length === 0} className="gap-2">
               Continue: Review <ChevronRight className="w-4 h-4" />
             </Button>
           </div>

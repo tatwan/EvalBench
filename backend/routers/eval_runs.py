@@ -26,6 +26,9 @@ async def create_eval_run(
     payload: EvalRunCreate,
     db: Session = Depends(get_db),
 ):
+    if not payload.model_ids and not payload.cloud_models:
+        raise HTTPException(status_code=400, detail="At least one local or cloud model must be selected")
+
     dataset_item_count: int | None = None
     if payload.dataset_id is not None:
         dataset = storage.get_dataset(db, payload.dataset_id)
@@ -38,6 +41,7 @@ async def create_eval_run(
 
     config = EvalRunConfig(
         model_ids=payload.model_ids,
+        cloud_models=payload.cloud_models,
         task_type=payload.task_type,
         dataset_id=payload.dataset_id,
         dataset_item_count=dataset_item_count,

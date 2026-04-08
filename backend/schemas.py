@@ -51,6 +51,7 @@ class EvalRunConfig(CamelModel):
     )
 
     model_ids: list[int] = Field(default_factory=list)
+    cloud_models: list[str] = Field(default_factory=list, alias="cloudModels")
     task_type: TaskType = "qa"
     benchmark_keys: list[str] = Field(default_factory=list)
     dataset_id: Optional[int] = Field(default=None, gt=0)
@@ -72,7 +73,8 @@ class EvalRunOut(CamelModel):
 
 
 class EvalRunCreate(CamelModel):
-    model_ids: list[int] = Field(min_length=1)
+    model_ids: list[int] = Field(default_factory=list)
+    cloud_models: list[str] = []
     task_type: TaskType = "qa"
     benchmark_keys: list[str] = Field(default_factory=list)  # legacy compat
     dataset_id: Optional[int] = Field(default=None, gt=0)

@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 from backend import models as db_models
 from backend.services import storage, ollama as ollama_svc
 from backend.scoring import rouge, bleu, meteor, exact_match, distinct, speed, embeddings, code_exec, bertscore, classification, semantic_sim, toxicity
-from backend.scoring.llm_judge import evaluate_with_llm
+from backend.scoring.llm_judge import evaluate_with_llm, get_judge_client
 from backend.database import SessionLocal
 import math
 
@@ -223,6 +223,7 @@ async def run_eval(run_id: int) -> None:
         model_ids: list[int] = config.get("modelIds", [])
         task_type: str = config.get("taskType", "qa")
         dataset_id: int | None = config.get("datasetId")
+        cloud_model_names: list[str] = config.get("cloudModels", [])
 
         # ── update status ──
         start_time = datetime.utcnow()
@@ -235,7 +236,7 @@ async def run_eval(run_id: int) -> None:
 
         # ── load models ──
         models = db.query(db_models.Model).filter(db_models.Model.id.in_(model_ids)).all()
-        if not models:
+        if not models and not cloud_model_names:
             raise ValueError("No valid models were found for this evaluation run.")
 
         # ── load dataset items ──
@@ -453,6 +454,68 @@ async def run_eval(run_id: int) -> None:
         # Launch all (model, item) pairs; semaphore bounds concurrency
         tasks = [eval_pair(model, item) for model in models for item in items]
         await asyncio.gather(*tasks)
+
+        # ── Cloud model inference (via judge client) ──────────────────────────
+        if cloud_model_names:
+            db_session = SessionLocal()
+            try:
+                judge_client, judge_model_name, anthropic_client, setup_error = get_judge_client(db_session)
+            finally:
+                db_session.close()
+
+            if setup_error:
+                logger.warning(f"Cloud model inference skipped — judge not configured: {setup_error}")
+            else:
+                for cloud_model_name in cloud_model_names:
+                    db_session = SessionLocal()
+                    try:
+                        virtual_model = db_session.query(db_models.Model).filter_by(name=cloud_model_name).first()
+                        if not virtual_model:
+                            virtual_model = db_models.Model(
+                                name=cloud_model_name,
+                                size=0,
+                                family="cloud",
+                                parameter_size="unknown",
+                                quantization_level="none",
+                            )
+                            db_session.add(virtual_model)
+                            db_session.commit()
+                            db_session.refresh(virtual_model)
+                        virtual_model_id = virtual_model.id
+                    finally:
+                        db_session.close()
+
+                    for item in items:
+                        try:
+                            if anthropic_client:
+                                resp = anthropic_client.messages.create(
+                                    model=cloud_model_name,
+                                    max_tokens=512,
+                                    messages=[{"role": "user", "content": item.input}],
+                                )
+                                prediction = resp.content[0].text.strip()
+                            else:
+                                resp = judge_client.chat.completions.create(
+                                    model=cloud_model_name,
+                                    messages=[{"role": "user", "content": item.input}],
+                                    max_tokens=512,
+                                )
+                                prediction = resp.choices[0].message.content.strip()
+
+                            scores = _score(task_type, prediction, item.expected_output or "", {})
+                            db_session = SessionLocal()
+                            try:
+                                for metric_name, score_val in scores.items():
+                                    storage.save_eval_result(
+                                        db_session, run.id, virtual_model_id,
+                                        metric_name, score_val,
+                                        raw_output=prediction[:2000],
+                                        item_id=item.id,
+                                    )
+                            finally:
+                                db_session.close()
+                        except Exception as e:
+                            logger.warning(f"Cloud model inference failed for item {item.id}: {e}")
 
         db.refresh(run)
         duration_seconds = (datetime.utcnow() - (start_time or datetime.utcnow())).total_seconds()

@@ -186,7 +186,8 @@ export const api = {
       method: 'POST' as const,
       path: '/api/eval-runs' as const,
       input: z.object({
-        modelIds: z.array(z.number()).min(1),
+        modelIds: z.array(z.number()).default([]),
+        cloudModels: z.array(z.string()).optional(),
         taskType: TaskTypeSchema,
         benchmarkKeys: z.array(z.string()).optional(),
         datasetId: z.number().optional()
