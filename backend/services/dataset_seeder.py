@@ -752,7 +752,7 @@ def seed_if_empty(db: Session) -> None:
         for item in HELLASWAG_ITEMS:
             db.add(db_models.GoldenItem(
                 dataset_id=hs_ds.id, input=item["input"], expected_output=item["expected_output"],
-                context=item.get("context"), tags=item["tags"], difficulty=item.get("difficulty")
+                context=item.get("context"), tags=item["tags"], difficulty=item.get("difficulty", "medium")
             ))
 
     # ── ARC dataset ──
@@ -767,7 +767,7 @@ def seed_if_empty(db: Session) -> None:
         for item in ARC_ITEMS:
             db.add(db_models.GoldenItem(
                 dataset_id=arc_ds.id, input=item["input"], expected_output=item["expected_output"],
-                context=item.get("context"), tags=item["tags"], difficulty=item.get("difficulty")
+                context=item.get("context"), tags=item["tags"], difficulty=item.get("difficulty", "medium")
             ))
 
     # ── BoolQ dataset ──
@@ -782,7 +782,7 @@ def seed_if_empty(db: Session) -> None:
         for item in BOOLQ_ITEMS:
             db.add(db_models.GoldenItem(
                 dataset_id=bq_ds.id, input=item["input"], expected_output=item["expected_output"],
-                context=item.get("context"), tags=item["tags"], difficulty=item.get("difficulty")
+                context=item.get("context"), tags=item["tags"], difficulty=item.get("difficulty", "medium")
             ))
 
     # ── CommonsenseQA dataset ──
@@ -797,7 +797,7 @@ def seed_if_empty(db: Session) -> None:
         for item in COMMONSENSEQA_ITEMS:
             db.add(db_models.GoldenItem(
                 dataset_id=csqa_ds.id, input=item["input"], expected_output=item["expected_output"],
-                context=item.get("context"), tags=item["tags"], difficulty=item.get("difficulty")
+                context=item.get("context"), tags=item["tags"], difficulty=item.get("difficulty", "medium")
             ))
 
     # ── GSM8K dataset ──
