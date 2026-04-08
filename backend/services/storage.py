@@ -82,8 +82,6 @@ def record_arena_battle(
 
 
 def _update_elo(db: Session, model_a_id: int, model_b_id: int, winner: str):
-    K = 32
-
     def get_or_create_elo(model_id: int) -> db_models.EloRating:
         elo = db.query(db_models.EloRating).filter_by(model_id=model_id).first()
         if not elo:
@@ -91,6 +89,13 @@ def _update_elo(db: Session, model_a_id: int, model_b_id: int, winner: str):
             db.add(elo)
             db.flush()
         return elo
+
+    def _dynamic_k(games: int) -> int:
+        if games < 10:
+            return 64
+        if games < 30:
+            return 32
+        return 16
 
     elo_a = get_or_create_elo(model_a_id)
     elo_b = get_or_create_elo(model_b_id)
@@ -105,8 +110,8 @@ def _update_elo(db: Session, model_a_id: int, model_b_id: int, winner: str):
     else:  # tie
         actual_a, actual_b = 0.5, 0.5
 
-    elo_a.rating = round(elo_a.rating + K * (actual_a - expected_a))
-    elo_b.rating = round(elo_b.rating + K * (actual_b - expected_b))
+    elo_a.rating = round(elo_a.rating + _dynamic_k(elo_a.games_played) * (actual_a - expected_a))
+    elo_b.rating = round(elo_b.rating + _dynamic_k(elo_b.games_played) * (actual_b - expected_b))
     elo_a.games_played += 1
     elo_b.games_played += 1
     elo_a.last_updated = datetime.utcnow()
