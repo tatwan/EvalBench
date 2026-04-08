@@ -177,32 +177,42 @@ export default function Settings() {
               <label className="text-sm font-medium">Judge Model</label>
               <Select value={judgeModel} onValueChange={setJudgeModel}>
                 <SelectTrigger className="w-full bg-muted">
-                  <SelectValue placeholder="Select a frontier judge model (GPT-5.4, Claude Opus 4.1, Gemini 3 Pro)" />
+                  <SelectValue placeholder="Select a judge model" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectLabel>OpenAI (Frontier)</SelectLabel>
-                    <SelectItem value="gpt-5.4">GPT-5.4 (Flagship)</SelectItem>
-                    <SelectItem value="gpt-5-mini-2025-08-07">GPT-5 mini (2025-08-07)</SelectItem>
+                    <SelectLabel>OpenAI</SelectLabel>
+                    <SelectItem value="gpt-4o">GPT-4o</SelectItem>
+                    <SelectItem value="gpt-4o-mini">GPT-4o mini</SelectItem>
+                    <SelectItem value="gpt-4.1">GPT-4.1</SelectItem>
+                    <SelectItem value="gpt-4.1-mini">GPT-4.1 mini</SelectItem>
+                    <SelectItem value="o3-mini">o3-mini (Reasoning)</SelectItem>
                   </SelectGroup>
                   <SelectSeparator />
                   <SelectGroup>
                     <SelectLabel>Anthropic (Claude)</SelectLabel>
-                    <SelectItem value="claude-opus-4-1-20250805">Claude Opus 4.1 (2025-08-05)</SelectItem>
-                    <SelectItem value="claude-sonnet-4-20250514">Claude Sonnet 4 (2025-05-14)</SelectItem>
-                    <SelectItem value="claude-3-5-haiku-latest">Claude Haiku 3.5 (Latest)</SelectItem>
+                    <SelectItem value="claude-opus-4-6">Claude Opus 4.6 (Most Capable)</SelectItem>
+                    <SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6 (Balanced)</SelectItem>
+                    <SelectItem value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (Fast)</SelectItem>
                   </SelectGroup>
                   <SelectSeparator />
                   <SelectGroup>
                     <SelectLabel>Google (Gemini)</SelectLabel>
-                    <SelectItem value="gemini-3-pro-preview">Gemini 3 Pro Preview</SelectItem>
-                    <SelectItem value="gemini-3-flash-preview">Gemini 3 Flash Preview</SelectItem>
                     <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
                     <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
                   </SelectGroup>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectLabel>Groq (Fast Inference)</SelectLabel>
+                    <SelectItem value="groq-llama-3.3-70b-versatile">Llama 3.3 70B Versatile</SelectItem>
+                    <SelectItem value="groq-llama-3.1-8b-instant">Llama 3.1 8B Instant</SelectItem>
+                    <SelectItem value="groq-mixtral-8x7b-32768">Mixtral 8x7B</SelectItem>
+                  </SelectGroup>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">These are the latest frontier model IDs from each provider.</p>
+              <p className="text-xs text-muted-foreground">
+                Claude IDs reflect the Anthropic API as of April 2026. Verify OpenAI/Gemini IDs at their respective API docs if you need a newer version.
+              </p>
             </div>
             <div className="flex justify-end">
               {renderTestButton("judge", "Test Judge Setup")}
