@@ -505,10 +505,10 @@ async def run_eval(run_id: int) -> None:
                         if not virtual_model:
                             virtual_model = db_models.Model(
                                 name=cloud_model_name,
-                                size=0,
+                                size_gb=0,
                                 family="cloud",
-                                parameter_size="unknown",
-                                quantization_level="none",
+                                params="unknown",
+                                quantization="none",
                             )
                             db_session.add(virtual_model)
                             db_session.commit()
