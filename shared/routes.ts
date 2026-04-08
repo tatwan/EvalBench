@@ -13,6 +13,7 @@ export const TaskTypeSchema = z.enum([
   'embedding',
   'classification',
   'safety',
+  'rag',
 ]);
 
 export const ModelSchema = z.object({
@@ -26,6 +27,7 @@ export const ModelSchema = z.object({
 
 export const EvalRunConfigSchema = z.object({
   modelIds: z.array(z.number()).default([]),
+  cloudModels: z.array(z.string()).optional().default([]),
   taskType: TaskTypeSchema.default('qa'),
   benchmarkKeys: z.array(z.string()).optional().default([]),
   datasetId: z.number().nullable().optional(),
@@ -186,7 +188,8 @@ export const api = {
       method: 'POST' as const,
       path: '/api/eval-runs' as const,
       input: z.object({
-        modelIds: z.array(z.number()).min(1),
+        modelIds: z.array(z.number()).default([]),
+        cloudModels: z.array(z.string()).optional(),
         taskType: TaskTypeSchema,
         benchmarkKeys: z.array(z.string()).optional(),
         datasetId: z.number().optional()

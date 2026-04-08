@@ -4,8 +4,14 @@ import { useCancelEvalRun, useEvalRun, useEvalResults, useEvalStats } from "@/ho
 import { useModels } from "@/hooks/use-models";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { Activity, Cpu, ArrowLeft, CheckCircle2, Loader2, ShieldAlert, RotateCcw, Database } from "lucide-react";
+import { Activity, Cpu, ArrowLeft, CheckCircle2, Loader2, ShieldAlert, RotateCcw, Database, Download } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
 import { clsx } from "clsx";
 import { AlertTriangle } from "lucide-react";
@@ -270,6 +276,26 @@ export default function RunDetails() {
           )}
           <Button variant="outline" size="sm" onClick={exportCsv}>Export CSV</Button>
           <Button variant="outline" size="sm" onClick={exportMarkdown}>Export Markdown</Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Download className="w-4 h-4" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => window.open(`/api/eval-runs/${run.id}/export?format=json`, "_blank")}
+              >
+                Export as JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => window.open(`/api/eval-runs/${run.id}/export?format=csv`, "_blank")}
+              >
+                Export as CSV
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

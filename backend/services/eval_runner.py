@@ -19,14 +19,18 @@ Fixes applied:
 import asyncio
 import hashlib
 import json
+import logging
 from datetime import datetime
 from typing import AsyncIterator
 from sqlalchemy.orm import Session
 
+logger = logging.getLogger(__name__)
+
 from backend import models as db_models
 from backend.services import storage, ollama as ollama_svc
 from backend.scoring import rouge, bleu, meteor, exact_match, distinct, speed, embeddings, code_exec, bertscore, classification, semantic_sim, toxicity
-from backend.scoring.llm_judge import evaluate_with_llm
+from backend.scoring import rag as rag_scoring
+from backend.scoring.llm_judge import evaluate_with_llm, get_judge_client
 from backend.database import SessionLocal
 import math
 
@@ -60,6 +64,7 @@ TASK_METRICS: dict[str, list[str]] = {
     "embedding":     ["cosine_sim", "recall_at_1", "recall_at_3", "mrr"],
     "classification":["exact_match", *COMMON_SPEED_METRICS],
     "safety":        ["exact_match", "toxicity", *COMMON_SPEED_METRICS, "llm_relevance"],
+    "rag":           ["context_relevance", "faithfulness", *COMMON_SPEED_METRICS],
 }
 
 DEFAULT_DATASET_BY_TASK: dict[str, str] = {
@@ -73,6 +78,7 @@ DEFAULT_DATASET_BY_TASK: dict[str, str] = {
     "embedding": "EvalBench Embeddings v1",
     "classification": "EvalBench Classification v1",
     "safety": "EvalBench TruthfulQA (Subset)",
+    "rag": "EvalBench RAG v1",
 }
 
 
@@ -108,6 +114,10 @@ def _score(task_type: str, prediction: str, reference: str, ollama_resp: dict) -
         scores.update(bleu.compute(prediction, reference))       # bleu, chrf
         scores.update(meteor.compute(prediction, reference))     # meteor
 
+    # — RAG — all metrics handled in run_eval() via rag_scoring.compute_rag_metrics()
+    elif tt == "rag":
+        pass
+
     # — Code — surface similarity + pass@1 handled separately below
     elif tt == "code":
         scores.update(rouge.compute(prediction, reference))      # rouge1 (structural)
@@ -116,7 +126,7 @@ def _score(task_type: str, prediction: str, reference: str, ollama_resp: dict) -
     # --- New Metrics (E2, E11, E12) ---
     if "semantic_sim" in TASK_METRICS.get(tt, []) and semantic_sim.is_available() and reference:
         scores["semantic_sim"] = semantic_sim.compute_similarity(prediction, reference)
-        
+
     if "toxicity" in TASK_METRICS.get(tt, []) and toxicity.is_available():
         scores["toxicity"] = toxicity.compute_toxicity(prediction)
 
@@ -181,12 +191,12 @@ async def stream_progress(run_id: int) -> AsyncIterator[dict]:
                     break
             finally:
                 db.close()
-            
+
             if idle_time >= 300:
                 yield {"type": "done", "status": "failed", "error": "Progress stream timed out", "done": True}
                 _progress_queues.pop(run_id, None)
                 break
-                
+
             # Send keepalive to prevent client timeout
             yield {"type": "keepalive", "done": False}
 
@@ -220,6 +230,7 @@ async def run_eval(run_id: int) -> None:
         model_ids: list[int] = config.get("modelIds", [])
         task_type: str = config.get("taskType", "qa")
         dataset_id: int | None = config.get("datasetId")
+        cloud_model_names: list[str] = config.get("cloudModels", [])
 
         # ── update status ──
         start_time = datetime.utcnow()
@@ -232,7 +243,7 @@ async def run_eval(run_id: int) -> None:
 
         # ── load models ──
         models = db.query(db_models.Model).filter(db_models.Model.id.in_(model_ids)).all()
-        if not models:
+        if not models and not cloud_model_names:
             raise ValueError("No valid models were found for this evaluation run.")
 
         # ── load dataset items ──
@@ -267,6 +278,14 @@ async def run_eval(run_id: int) -> None:
         db.commit()
 
         await q.put({"type": "start", "total": total, "done": False})
+
+        # Warn once if BERTScore is expected but unavailable for this task
+        if task_type == "summarization" and not bertscore.is_available():
+            logger.warning(
+                "BERTScore is in TASK_METRICS for summarization but bert_score is not available. "
+                "bertscore_f1 will be absent from this run's results. "
+                "To enable: pip install bert-score"
+            )
 
         # BERTScore download warning — emit once before the loop
         if task_type == "summarization" and bertscore.is_available():
@@ -328,7 +347,7 @@ async def run_eval(run_id: int) -> None:
                     else:
                         cache_key = hashlib.sha256(f"{model.name}:{item.input}".encode("utf-8")).hexdigest()
                         cached = db_local.query(db_models.ResponseCache).filter_by(key=cache_key).first()
-                        
+
                         if cached:
                             cache_hits += 1
                             result = {
@@ -350,7 +369,7 @@ async def run_eval(run_id: int) -> None:
                                     eval_duration=result.get("eval_duration")
                                 )
                                 db_local.add(new_cache)
-                        
+
                         if not result.get("ok"):
                             # Inference failed — record an error for every expected metric
                             err_msg = result.get("error", "Inference failed")
@@ -403,6 +422,29 @@ async def run_eval(run_id: int) -> None:
                                     raw_output=formatted_output, item_id=item.id,
                                 ))
 
+                            # RAG judge metrics (context_relevance + faithfulness)
+                            if task_type == "rag":
+                                db_s = SessionLocal()
+                                try:
+                                    j_client, j_model, j_anthropic, j_err = get_judge_client(db_s)
+                                finally:
+                                    db_s.close()
+                                if not j_err:
+                                    rag_scores = rag_scoring.compute_rag_metrics(
+                                        question=item.input,
+                                        context=item.context or "",
+                                        answer=prediction,
+                                        client=j_client,
+                                        anthropic_client=j_anthropic,
+                                        model=j_model or "",
+                                    )
+                                    for metric_name, score_value in rag_scores.items():
+                                        results_to_save.append(dict(
+                                            run_id=run_id, model_id=model.id,
+                                            metric_name=metric_name, score=float(score_value), error=False,
+                                            raw_output=prediction[:2000], item_id=item.id,
+                                        ))
+
                     # ── Bulk insert all results for this (model, item) pair — one commit ──
                     for r in results_to_save:
                         db_local.add(db_models.EvalResult(**r))
@@ -442,6 +484,70 @@ async def run_eval(run_id: int) -> None:
         # Launch all (model, item) pairs; semaphore bounds concurrency
         tasks = [eval_pair(model, item) for model in models for item in items]
         await asyncio.gather(*tasks)
+
+        # ── Cloud model inference (via judge client) ──────────────────────────
+        if cloud_model_names:
+            db_session = SessionLocal()
+            try:
+                judge_client, judge_model_name, anthropic_client, setup_error = get_judge_client(db_session)
+            finally:
+                db_session.close()
+
+            if setup_error:
+                logger.warning(f"Cloud model inference skipped — judge not configured: {setup_error}")
+            elif not judge_client and not anthropic_client:
+                logger.warning("Cloud model inference skipped — no judge client available (check judge_model setting in Settings)")
+            else:
+                for cloud_model_name in cloud_model_names:
+                    db_session = SessionLocal()
+                    try:
+                        virtual_model = db_session.query(db_models.Model).filter_by(name=cloud_model_name).first()
+                        if not virtual_model:
+                            virtual_model = db_models.Model(
+                                name=cloud_model_name,
+                                size_gb=0,
+                                family="cloud",
+                                params="unknown",
+                                quantization="none",
+                            )
+                            db_session.add(virtual_model)
+                            db_session.commit()
+                            db_session.refresh(virtual_model)
+                        virtual_model_id = virtual_model.id
+                    finally:
+                        db_session.close()
+
+                    for item in items:
+                        try:
+                            if anthropic_client:
+                                resp = anthropic_client.messages.create(
+                                    model=cloud_model_name,
+                                    max_tokens=512,
+                                    messages=[{"role": "user", "content": item.input}],
+                                )
+                                prediction = resp.content[0].text.strip()
+                            else:
+                                resp = judge_client.chat.completions.create(
+                                    model=cloud_model_name,
+                                    messages=[{"role": "user", "content": item.input}],
+                                    max_tokens=512,
+                                )
+                                prediction = resp.choices[0].message.content.strip()
+
+                            scores = _score(task_type, prediction, item.expected_output or "", {})
+                            db_session = SessionLocal()
+                            try:
+                                for metric_name, score_val in scores.items():
+                                    storage.save_eval_result(
+                                        db_session, run.id, virtual_model_id,
+                                        metric_name, score_val,
+                                        raw_output=prediction[:2000],
+                                        item_id=item.id,
+                                    )
+                            finally:
+                                db_session.close()
+                        except Exception as e:
+                            logger.warning(f"Cloud model inference failed for item {item.id}: {e}")
 
         db.refresh(run)
         duration_seconds = (datetime.utcnow() - (start_time or datetime.utcnow())).total_seconds()

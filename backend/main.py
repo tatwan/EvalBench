@@ -12,6 +12,7 @@ from backend.routers import settings as settings_router
 from backend.services import dataset_seeder
 from backend.services.ollama import list_models
 from backend.services import storage
+from backend.scoring import meteor as meteor_scoring
 from sqlalchemy import text
 
 
@@ -64,6 +65,9 @@ async def lifespan(app: FastAPI):
         ollama_models = await list_models()
         if ollama_models:
             storage.upsert_models_from_ollama(db, ollama_models)
+        # Pre-load METEOR scorer so NLTK downloads happen at startup, not during eval runs.
+        # Intentionally synchronous — consistent with other blocking startup ops above (seed, migrations).
+        meteor_scoring.warm_up()
     finally:
         db.close()
     yield

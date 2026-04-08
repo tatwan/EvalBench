@@ -14,13 +14,14 @@
 ## Table of Contents
 
 - [Why EvalBench](#why-evalbench)
+- [Demo](#demo)
 - [Architecture](#architecture)
 - [Core Concepts](#core-concepts)
 - [Features](#features)
 - [Technical Stack](#technical-stack)
-- [How It Works](#how-it-works)
 - [Setup & Installation](#setup--installation)
 - [How to Run and Stop](#how-to-run-and-stop)
+- [Validation](#validation)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 
@@ -34,59 +35,19 @@ EvalBench is built for people who **run local models and care about measurable q
 
 If you want “LM Studio but for evaluation,” this is it.
 
-## Design
+## Demo
 
-#### __Landing/Dashboard Page__
+### Eval Wizard — Run a benchmark in seconds
+<!-- TODO: replace with images/demo-eval-wizard.gif -->
+![Eval Wizard](images/image-20260401192033058.png)
 
-![image-20260401192653430](images/image-20260401192653430.png)
+### Arena — Blind pairwise voting with ELO
+<!-- TODO: replace with images/demo-arena.gif -->
+![Arena](images/image-20260313104835222.png)
 
-#### Eval Wizard
-
-![image-20260401192033058](images/image-20260401192033058.png)
-
-#### Model Cards
-
-![image-20260401192050785](images/image-20260401192050785.png)
-
-#### **Eval History**
-
-![image-20260401192114070](images/image-20260401192114070.png)
-
-
-
-#### Eval/Run Detail
-
-![image-20260401192149803](images/image-20260401192149803.png)
-
-<img src="images/image-20260401192202974.png" alt="image-20260401192202974" style="zoom:25%;" />
-
-#### Head-to-Head Compare 
-
-![image-20260401192243905](images/image-20260401192243905.png)
-
-![image-20260401192255003](images/image-20260401192255003.png)
-
-#### Metrics Guide
-
-![image-20260401192308752](images/image-20260401192308752.png)
-
-#### Battle Arena and Leaderboard
-
-![image-20260313104835222](images/image-20260313104835222.png)
-
-![image-20260313104808494](images/image-20260313104808494.png)
-
-
-
-### Build or Import you datasets
-
-This is a powerful dataset builder for creating your own benchmark datasets:
-
-![image-20260401192956234](images/image-20260401192956234.png)
-
-### LLM as a Judge Setup
-
-![image-20260401193118631](images/image-20260401193118631.png)
+### Head-to-Head Compare
+<!-- TODO: replace with images/demo-compare.gif -->
+![Compare](images/image-20260401192243905.png)
 
 ## Architecture
 
@@ -186,6 +147,14 @@ Or use the npm helper:
 ```bash
 npm run py:install
 ```
+
+### Security Note — Encryption Key Backup
+
+On first run, EvalBench auto-generates an encryption key at `~/.evalbench_key` (chmod 600). All API keys entered in Settings are encrypted with this key before being stored in `evalbench.db`.
+
+**Back up `~/.evalbench_key`.** If you lose this file, stored API keys become permanently unreadable and must be re-entered.
+
+> This app is designed for single-user local use. Do not expose the backend port over a network.
 
 ---
 

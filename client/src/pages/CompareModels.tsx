@@ -280,6 +280,38 @@ export default function CompareModels() {
         </CardContent>
       </Card>
 
+      {modelA && modelB && statsA && statsB && Object.keys(significanceMap).length > 0 && (() => {
+        const nameA = (models as any[]).find(m => m.id.toString() === modelA)?.name ?? "Model A";
+        const nameB = (models as any[]).find(m => m.id.toString() === modelB)?.name ?? "Model B";
+        const sigEntries = Object.entries(significanceMap).filter(([, s]) => (s as any)?.significant === true);
+        const aWins = sigEntries.filter(([m]) => {
+          const mA = statsA.metrics[m]?.mean;
+          const mB = statsB?.metrics[m]?.mean;
+          return mA !== undefined && mB !== undefined && (isLowerBetter(m) ? mA < mB : mA > mB);
+        }).length;
+        const bWins = sigEntries.length - aWins;
+        return (
+          <Card className="bg-muted/20 border-border">
+            <CardContent className="p-4 flex flex-wrap gap-3 items-center text-sm">
+              <span className="text-muted-foreground font-medium">Statistically significant differences (p&lt;0.05):</span>
+              {aWins > 0 && (
+                <Badge className="bg-sky-500/20 text-sky-400 border border-sky-500/30">
+                  {nameA} leads on {aWins} metric{aWins !== 1 ? "s" : ""}
+                </Badge>
+              )}
+              {bWins > 0 && (
+                <Badge className="bg-pink-500/20 text-pink-400 border border-pink-500/30">
+                  {nameB} leads on {bWins} metric{bWins !== 1 ? "s" : ""}
+                </Badge>
+              )}
+              {sigEntries.length === 0 && (
+                <Badge variant="secondary">No significant differences detected</Badge>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
+
       {modelA && modelB && radarData.length > 0 && (
         <Card className="bg-card border-border mb-8 overflow-hidden">
           <CardHeader className="bg-muted/30 border-b border-border">
@@ -339,7 +371,7 @@ export default function CompareModels() {
                             ? meanA < meanB
                             : meanA > meanB
                           : false;
-                        
+
                         return (
                           <div key={metric} className="flex items-center justify-between">
                             <span className="text-sm text-muted-foreground flex items-center gap-2">
@@ -349,6 +381,11 @@ export default function CompareModels() {
                               )}
                               {significanceMap[metric]?.significant === true && isWinner && (
                                 <Badge variant="default" className="h-[18px] text-[10px] px-1.5 font-medium bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Winner</Badge>
+                              )}
+                              {significanceMap[metric] === null && (
+                                <Badge variant="outline" className="h-[18px] text-[10px] px-1.5 font-normal text-muted-foreground border-border/50">
+                                  &lt;5 pairs
+                                </Badge>
                               )}
                             </span>
                             <div className="flex items-center gap-1">
@@ -413,7 +450,7 @@ export default function CompareModels() {
                             ? meanB < meanA
                             : meanB > meanA
                           : false;
-                        
+
                         return (
                           <div key={metric} className="flex items-center justify-between">
                             <span className="text-sm text-muted-foreground flex items-center gap-2">
@@ -423,6 +460,11 @@ export default function CompareModels() {
                               )}
                               {significanceMap[metric]?.significant === true && isWinner && (
                                 <Badge variant="default" className="h-[18px] text-[10px] px-1.5 font-medium bg-pink-500/20 text-pink-400 border-pink-500/30">Winner</Badge>
+                              )}
+                              {significanceMap[metric] === null && (
+                                <Badge variant="outline" className="h-[18px] text-[10px] px-1.5 font-normal text-muted-foreground border-border/50">
+                                  &lt;5 pairs
+                                </Badge>
                               )}
                             </span>
                             <div className="flex items-center gap-1">

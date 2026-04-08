@@ -61,7 +61,7 @@ export function computeCI(scores: number[]) {
 }
 
 export function pairedTTest(scoresA: number[], scoresB: number[]) {
-  if (scoresA.length !== scoresB.length || scoresA.length < 2) return null;
+  if (scoresA.length !== scoresB.length || scoresA.length < 5) return null;
   const n = scoresA.length;
   
   let diffSum = 0;

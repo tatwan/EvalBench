@@ -11,7 +11,8 @@ def test_eval_run_create_requires_model_ids(client):
         },
     )
 
-    assert response.status_code == 422
+    # 400 when neither local nor cloud models are provided
+    assert response.status_code == 400
 
 
 def test_eval_stats_excludes_error_rows(client, db):

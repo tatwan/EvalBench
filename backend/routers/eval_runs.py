@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+import csv
+import io
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 import asyncio
 import json
@@ -24,6 +26,9 @@ async def create_eval_run(
     payload: EvalRunCreate,
     db: Session = Depends(get_db),
 ):
+    if not payload.model_ids and not payload.cloud_models:
+        raise HTTPException(status_code=400, detail="At least one local or cloud model must be selected")
+
     dataset_item_count: int | None = None
     if payload.dataset_id is not None:
         dataset = storage.get_dataset(db, payload.dataset_id)
@@ -36,6 +41,7 @@ async def create_eval_run(
 
     config = EvalRunConfig(
         model_ids=payload.model_ids,
+        cloud_models=payload.cloud_models,
         task_type=payload.task_type,
         dataset_id=payload.dataset_id,
         dataset_item_count=dataset_item_count,
@@ -54,6 +60,56 @@ def get_eval_run(run_id: int, db: Session = Depends(get_db)):
     if not run:
         raise HTTPException(status_code=404, detail="Eval run not found")
     return run
+
+
+@router.get("/{run_id}/export")
+def export_eval_run(
+    run_id: int,
+    format: str = Query(default="json", pattern="^(json|csv)$"),
+    db: Session = Depends(get_db),
+):
+    run = storage.get_eval_run(db, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Eval run not found")
+
+    results = storage.get_eval_results(db, run_id)
+
+    run_data = {
+        "run_id": run.id,
+        "status": run.status,
+        "config": run.config_json,
+        "created_at": run.timestamp.isoformat() if run.timestamp else None,
+        "results": [
+            {
+                "model_id": r.model_id,
+                "item_id": r.item_id,
+                "metric_name": r.metric_name,
+                "score": r.score,
+                "raw_output": r.raw_output,
+                "error": bool(r.error),
+            }
+            for r in results
+        ],
+    }
+
+    if format == "json":
+        return JSONResponse(
+            content=run_data,
+            headers={"Content-Disposition": f"attachment; filename=eval_run_{run_id}.json"},
+        )
+
+    output = io.StringIO()
+    fieldnames = ["run_id", "model_id", "item_id", "metric_name", "score", "raw_output", "error"]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    for r in run_data["results"]:
+        writer.writerow({"run_id": run_id, **r})
+
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode("utf-8")),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=eval_run_{run_id}.csv"},
+    )
 
 
 @router.post("/{run_id}/cancel", response_model=EvalRunOut)
