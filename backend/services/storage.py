@@ -91,6 +91,8 @@ def _update_elo(db: Session, model_a_id: int, model_b_id: int, winner: str):
         return elo
 
     def _dynamic_k(games: int) -> int:
+        """Return ELO K-factor based on career game count (pre-increment).
+        New models (< 10 games) converge quickly; established models (>= 30) are stable."""
         if games < 10:
             return 64
         if games < 30:
