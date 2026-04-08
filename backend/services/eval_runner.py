@@ -245,9 +245,17 @@ async def run_eval(run_id: int) -> None:
             dataset_name = DEFAULT_DATASET_BY_TASK.get(task_type.lower())
             ds = None
             if dataset_name:
-                ds = db.query(db_models.GoldenDataset).filter_by(name=dataset_name).first()
+                ds = db.query(db_models.GoldenDataset).filter(
+                    db_models.GoldenDataset.name == dataset_name
+                ).first()
             if not ds:
                 ds = db.query(db_models.GoldenDataset).first()
+                if ds:
+                    logger.warning(
+                        f"No default dataset configured for task_type='{task_type}'. "
+                        f"Falling back to '{ds.name}'. "
+                        "Pass a datasetId explicitly to avoid this."
+                    )
             items = db.query(db_models.GoldenItem).filter_by(dataset_id=ds.id).all() if ds else []
 
         if not items:
