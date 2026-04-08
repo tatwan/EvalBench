@@ -465,6 +465,8 @@ async def run_eval(run_id: int) -> None:
 
             if setup_error:
                 logger.warning(f"Cloud model inference skipped — judge not configured: {setup_error}")
+            elif not judge_client and not anthropic_client:
+                logger.warning("Cloud model inference skipped — no judge client available (check judge_model setting in Settings)")
             else:
                 for cloud_model_name in cloud_model_names:
                     db_session = SessionLocal()

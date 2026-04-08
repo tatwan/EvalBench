@@ -26,6 +26,7 @@ export const ModelSchema = z.object({
 
 export const EvalRunConfigSchema = z.object({
   modelIds: z.array(z.number()).default([]),
+  cloudModels: z.array(z.string()).optional().default([]),
   taskType: TaskTypeSchema.default('qa'),
   benchmarkKeys: z.array(z.string()).optional().default([]),
   datasetId: z.number().nullable().optional(),
