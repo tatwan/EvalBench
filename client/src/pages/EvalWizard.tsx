@@ -200,6 +200,12 @@ export default function EvalWizard() {
   const { data: settingsRaw = [] } = useQuery<any[]>({ queryKey: ["/api/settings"] });
   const judgeModel: string | undefined = (settingsRaw as any[]).find((s: any) => s.key === "judge_model")?.value;
 
+  const filteredModels = (models as any[]).filter((model) => {
+    const isEmbed = model.name?.toLowerCase().includes("embed");
+    if (selectedTaskType === "embedding") return isEmbed;
+    return !isEmbed;
+  });
+
   const selectedTask = TASK_TYPES.find((t) => t.id === selectedTaskType);
   const selectedDataset = (datasets as any[]).find((d) => d.id === selectedDatasetId);
 
@@ -489,14 +495,24 @@ export default function EvalWizard() {
             <div className="flex items-center justify-center h-40">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
             </div>
-          ) : models.length === 0 ? (
-            <div className="text-center p-12 border border-dashed border-border rounded-xl bg-muted">
-              <p className="text-muted-foreground mb-4">No models available.</p>
+          ) : filteredModels.length === 0 ? (
+            <div className="text-center py-8 border border-dashed border-border rounded-xl bg-muted">
+              {selectedTaskType === "embedding" ? (
+                <>
+                  <p className="text-muted-foreground mb-4">No embedding models found.</p>
+                  <p className="text-xs text-muted-foreground mb-4">Pull an embedding model (e.g. <code>nomic-embed-text</code>) from the Models page.</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-muted-foreground mb-4">No generative models available.</p>
+                  <p className="text-xs text-muted-foreground mb-4">Pull a model from the Models page first.</p>
+                </>
+              )}
               <Button variant="outline" onClick={() => navigate("/models")}>Go to Models Page</Button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {(models as any[]).map((model) => {
+              {filteredModels.map((model) => {
                 const isSelected = selectedModels.includes(model.id);
                 return (
                   <div
