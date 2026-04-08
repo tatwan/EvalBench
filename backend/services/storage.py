@@ -53,7 +53,9 @@ def upsert_models_from_ollama(db: Session, ollama_models: list[dict]) -> list[db
 # ─── Arena ────────────────────────────────────────────────
 
 def get_random_model_pair(db: Session) -> tuple[db_models.Model, db_models.Model] | None:
-    models = db.query(db_models.Model).all()
+    models = db.query(db_models.Model).filter(
+        ~db_models.Model.name.ilike("%embed%")
+    ).all()
     if len(models) < 2:
         return None
     pair = random.sample(models, 2)
