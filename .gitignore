@@ -40,7 +40,6 @@ Thumbs.db
 # Node
 node_modules/
 package-lock.json
-dist/
 .next/
 out/
 
