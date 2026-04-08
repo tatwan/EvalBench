@@ -49,3 +49,6 @@ evalbench.db-shm
 evalbench.db-wal
 runs.json
 compare.md
+
+# Git worktrees
+.worktrees/
