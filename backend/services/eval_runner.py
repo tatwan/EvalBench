@@ -19,9 +19,12 @@ Fixes applied:
 import asyncio
 import hashlib
 import json
+import logging
 from datetime import datetime
 from typing import AsyncIterator
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from backend import models as db_models
 from backend.services import storage, ollama as ollama_svc
@@ -116,7 +119,7 @@ def _score(task_type: str, prediction: str, reference: str, ollama_resp: dict) -
     # --- New Metrics (E2, E11, E12) ---
     if "semantic_sim" in TASK_METRICS.get(tt, []) and semantic_sim.is_available() and reference:
         scores["semantic_sim"] = semantic_sim.compute_similarity(prediction, reference)
-        
+
     if "toxicity" in TASK_METRICS.get(tt, []) and toxicity.is_available():
         scores["toxicity"] = toxicity.compute_toxicity(prediction)
 
@@ -181,12 +184,12 @@ async def stream_progress(run_id: int) -> AsyncIterator[dict]:
                     break
             finally:
                 db.close()
-            
+
             if idle_time >= 300:
                 yield {"type": "done", "status": "failed", "error": "Progress stream timed out", "done": True}
                 _progress_queues.pop(run_id, None)
                 break
-                
+
             # Send keepalive to prevent client timeout
             yield {"type": "keepalive", "done": False}
 
@@ -245,17 +248,9 @@ async def run_eval(run_id: int) -> None:
             dataset_name = DEFAULT_DATASET_BY_TASK.get(task_type.lower())
             ds = None
             if dataset_name:
-                ds = db.query(db_models.GoldenDataset).filter(
-                    db_models.GoldenDataset.name == dataset_name
-                ).first()
+                ds = db.query(db_models.GoldenDataset).filter_by(name=dataset_name).first()
             if not ds:
                 ds = db.query(db_models.GoldenDataset).first()
-                if ds:
-                    logger.warning(
-                        f"No default dataset configured for task_type='{task_type}'. "
-                        f"Falling back to '{ds.name}'. "
-                        "Pass a datasetId explicitly to avoid this."
-                    )
             items = db.query(db_models.GoldenItem).filter_by(dataset_id=ds.id).all() if ds else []
 
         if not items:
@@ -275,6 +270,14 @@ async def run_eval(run_id: int) -> None:
         db.commit()
 
         await q.put({"type": "start", "total": total, "done": False})
+
+        # Warn once if BERTScore is expected but unavailable for this task
+        if task_type == "summarization" and not bertscore.is_available():
+            logger.warning(
+                "BERTScore is in TASK_METRICS for summarization but bert_score is not available. "
+                "bertscore_f1 will be absent from this run's results. "
+                "To enable: pip install bert-score"
+            )
 
         # BERTScore download warning — emit once before the loop
         if task_type == "summarization" and bertscore.is_available():
@@ -336,7 +339,7 @@ async def run_eval(run_id: int) -> None:
                     else:
                         cache_key = hashlib.sha256(f"{model.name}:{item.input}".encode("utf-8")).hexdigest()
                         cached = db_local.query(db_models.ResponseCache).filter_by(key=cache_key).first()
-                        
+
                         if cached:
                             cache_hits += 1
                             result = {
@@ -358,7 +361,7 @@ async def run_eval(run_id: int) -> None:
                                     eval_duration=result.get("eval_duration")
                                 )
                                 db_local.add(new_cache)
-                        
+
                         if not result.get("ok"):
                             # Inference failed — record an error for every expected metric
                             err_msg = result.get("error", "Inference failed")
