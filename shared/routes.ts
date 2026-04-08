@@ -13,6 +13,7 @@ export const TaskTypeSchema = z.enum([
   'embedding',
   'classification',
   'safety',
+  'rag',
 ]);
 
 export const ModelSchema = z.object({

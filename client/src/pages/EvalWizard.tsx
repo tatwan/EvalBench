@@ -6,7 +6,7 @@ import { useDatasets } from "@/hooks/use-datasets";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Check, ChevronRight, Activity, Cpu, Layers, BookOpen, AlignLeft, MessageCircleQuestion, MessageSquare, Code2, BrainCircuit, Sparkles, Network, Languages, Clock3, Shield, Tags } from "lucide-react";
+import { Check, ChevronRight, Activity, Cpu, Layers, BookOpen, AlignLeft, MessageCircleQuestion, MessageSquare, Code2, BrainCircuit, Sparkles, Network, Languages, Clock3, Shield, Tags, Search } from "lucide-react";
 import { clsx } from "clsx";
 import { useLocation } from "wouter";
 import type { TaskType } from "@shared/routes";
@@ -143,6 +143,18 @@ const TASK_TYPES: Array<{
     datasetLabel: "EvalBench TruthfulQA (Subset)",
     usesJudge: true,
   },
+  {
+    id: "rag",
+    label: "RAG",
+    icon: Search,
+    desc: "Retrieval-Augmented Generation — evaluates context relevance and answer faithfulness.",
+    tests: "Context relevance and answer faithfulness via LLM judge.",
+    goal: "Generate answers that are grounded in the retrieved context.",
+    metrics: ["Context Relevance", "Faithfulness", "Tokens/sec"],
+    datasetHint: "EvalBench RAG v1",
+    datasetLabel: "EvalBench RAG v1",
+    usesJudge: true,
+  },
 ];
 
 const FALLBACK_SECONDS_PER_PAIR: Record<TaskType, number> = {
@@ -156,6 +168,7 @@ const FALLBACK_SECONDS_PER_PAIR: Record<TaskType, number> = {
   embedding: 3,
   classification: 5,
   safety: 10,
+  rag: 10,
 };
 
 function formatDurationEstimate(seconds?: number | null): string {
@@ -201,6 +214,7 @@ export default function EvalWizard() {
     reasoning: ["gsm8k"],
     classification: ["classification"],
     safety: ["truthfulqa", "safety"],
+    rag: ["rag"],
   };
 
   const datasetOptions = useMemo(() => {

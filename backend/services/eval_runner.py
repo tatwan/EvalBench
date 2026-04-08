@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 from backend import models as db_models
 from backend.services import storage, ollama as ollama_svc
 from backend.scoring import rouge, bleu, meteor, exact_match, distinct, speed, embeddings, code_exec, bertscore, classification, semantic_sim, toxicity
+from backend.scoring import rag as rag_scoring
 from backend.scoring.llm_judge import evaluate_with_llm, get_judge_client
 from backend.database import SessionLocal
 import math
@@ -63,6 +64,7 @@ TASK_METRICS: dict[str, list[str]] = {
     "embedding":     ["cosine_sim", "recall_at_1", "recall_at_3", "mrr"],
     "classification":["exact_match", *COMMON_SPEED_METRICS],
     "safety":        ["exact_match", "toxicity", *COMMON_SPEED_METRICS, "llm_relevance"],
+    "rag":           ["context_relevance", "faithfulness", *COMMON_SPEED_METRICS],
 }
 
 DEFAULT_DATASET_BY_TASK: dict[str, str] = {
@@ -76,6 +78,7 @@ DEFAULT_DATASET_BY_TASK: dict[str, str] = {
     "embedding": "EvalBench Embeddings v1",
     "classification": "EvalBench Classification v1",
     "safety": "EvalBench TruthfulQA (Subset)",
+    "rag": "EvalBench RAG v1",
 }
 
 
@@ -110,6 +113,10 @@ def _score(task_type: str, prediction: str, reference: str, ollama_resp: dict) -
     elif tt == "translation":
         scores.update(bleu.compute(prediction, reference))       # bleu, chrf
         scores.update(meteor.compute(prediction, reference))     # meteor
+
+    # — RAG — all metrics handled in run_eval() via rag_scoring.compute_rag_metrics()
+    elif tt == "rag":
+        pass
 
     # — Code — surface similarity + pass@1 handled separately below
     elif tt == "code":
@@ -414,6 +421,29 @@ async def run_eval(run_id: int) -> None:
                                     metric_name=metric_name, score=float(llm_score), error=False,
                                     raw_output=formatted_output, item_id=item.id,
                                 ))
+
+                            # RAG judge metrics (context_relevance + faithfulness)
+                            if task_type == "rag":
+                                db_s = SessionLocal()
+                                try:
+                                    j_client, j_model, j_anthropic, j_err = get_judge_client(db_s)
+                                finally:
+                                    db_s.close()
+                                if not j_err:
+                                    rag_scores = rag_scoring.compute_rag_metrics(
+                                        question=item.input,
+                                        context=item.context or "",
+                                        answer=prediction,
+                                        client=j_client,
+                                        anthropic_client=j_anthropic,
+                                        model=j_model or "",
+                                    )
+                                    for metric_name, score_value in rag_scores.items():
+                                        results_to_save.append(dict(
+                                            run_id=run_id, model_id=model.id,
+                                            metric_name=metric_name, score=float(score_value), error=False,
+                                            raw_output=prediction[:2000], item_id=item.id,
+                                        ))
 
                     # ── Bulk insert all results for this (model, item) pair — one commit ──
                     for r in results_to_save:

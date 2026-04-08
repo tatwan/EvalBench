@@ -497,6 +497,20 @@ COMMONSENSEQA_ITEMS = [
     {"input": "Where would you go to get your hair cut?\nA) A bakery\nB) A barbershop\nC) A pharmacy\nD) A gas station\nE) A hardware store", "expected_output": "B", "tags": ["commonsenseqa"]},
 ]
 
+# ─── RAG Dataset ─────────────────────────────────────────
+RAG_ITEMS = [
+    {"input": "What is the capital of France?", "context": "France is a country in Western Europe. Its capital and largest city is Paris, known for the Eiffel Tower and the Louvre museum.", "expected_output": "Paris", "tags": ["rag", "geography"]},
+    {"input": "Who wrote the novel 1984?", "context": "George Orwell was an English novelist and critic. His most famous works include Animal Farm and Nineteen Eighty-Four (1984), a dystopian novel published in 1949.", "expected_output": "George Orwell", "tags": ["rag", "literature"]},
+    {"input": "What is the boiling point of water at sea level?", "context": "Water boils at 100 degrees Celsius (212 degrees Fahrenheit) at standard atmospheric pressure. At higher altitudes, water boils at a lower temperature.", "expected_output": "100 degrees Celsius", "tags": ["rag", "science"]},
+    {"input": "What company makes the iPhone?", "context": "Apple Inc. is an American multinational technology company. It designs and manufactures consumer electronics including the iPhone, iPad, and Mac computers.", "expected_output": "Apple", "tags": ["rag", "technology"]},
+    {"input": "In what year did World War II end?", "context": "World War II was a global war that lasted from 1939 to 1945. It ended with the surrender of Germany in May 1945 and Japan in September 1945.", "expected_output": "1945", "tags": ["rag", "history"]},
+    {"input": "What is the largest planet in our solar system?", "context": "Jupiter is the fifth planet from the Sun and the largest in the Solar System. It is a gas giant with a mass more than two and a half times that of all other planets combined.", "expected_output": "Jupiter", "tags": ["rag", "astronomy"]},
+    {"input": "What programming language was created by Guido van Rossum?", "context": "Python is a high-level, general-purpose programming language created by Guido van Rossum, first released in 1991. Python emphasizes code readability.", "expected_output": "Python", "tags": ["rag", "technology"]},
+    {"input": "What is the speed of light?", "context": "The speed of light in vacuum is approximately 299,792,458 metres per second, commonly denoted as c. Nothing with mass can travel at or faster than this speed.", "expected_output": "approximately 299,792,458 metres per second", "tags": ["rag", "physics"]},
+    {"input": "Who painted the Mona Lisa?", "context": "The Mona Lisa is a half-length portrait painting by Italian Renaissance artist Leonardo da Vinci, created between approximately 1503 and 1519.", "expected_output": "Leonardo da Vinci", "tags": ["rag", "art"]},
+    {"input": "What is the chemical symbol for gold?", "context": "Gold is a chemical element with the symbol Au (from the Latin word aurum) and atomic number 79. It is a bright, dense metal.", "expected_output": "Au", "tags": ["rag", "chemistry"]},
+]
+
 # ─── GSM8K Dataset (Subset - Math Reasoning) ────────────
 GSM8K_ITEMS = [
     {"input": "Q: Natalia sold clips to 48 of her friends in April, and then she sold half as many clips in May. How many clips did Natalia sell altogether?", "expected_output": "72", "tags": ["math", "reasoning"], "difficulty": "medium"},
@@ -904,6 +918,25 @@ def seed_if_empty(db: Session) -> None:
                 context=item.get("context"),
                 tags=item["tags"],
                 difficulty=item["difficulty"],
+            ))
+
+    # ── RAG dataset ──
+    if "EvalBench RAG v1" not in existing_names:
+        rag_dataset = db_models.GoldenDataset(
+            name="EvalBench RAG v1",
+            source="curated-inline",
+            schema_version=1,
+        )
+        db.add(rag_dataset)
+        db.flush()
+        for item in RAG_ITEMS:
+            db.add(db_models.GoldenItem(
+                dataset_id=rag_dataset.id,
+                input=item["input"],
+                expected_output=item["expected_output"],
+                context=item.get("context"),
+                tags=item.get("tags", []),
+                difficulty="medium",
             ))
 
     db.commit()
