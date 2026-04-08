@@ -7,7 +7,10 @@ bleu and chrf are in [0, 1], consistent with all other EvalBench metrics
 (ROUGE, Exact Match, F1, BERTScore, etc.). This makes leaderboard rankings
 and radar charts directly comparable across metric types.
 """
+import logging
 import evaluate
+
+logger = logging.getLogger(__name__)
 
 _bleu_scorer = None
 _chrf_scorer = None
@@ -43,10 +46,20 @@ def compute(prediction: str, reference: str) -> dict[str, float]:
     bleu_scorer = _get_bleu_scorer()
     chrf_scorer = _get_chrf_scorer()
 
-    bleu_result = bleu_scorer.compute(predictions=[prediction], references=[[reference]])
-    chrf_result = chrf_scorer.compute(predictions=[prediction], references=[[reference]])
+    scores: dict[str, float] = {}
 
-    return {
-        "bleu": round(bleu_result.get("score", 0.0) / 100.0, 4),
-        "chrf": round(chrf_result.get("score", 0.0) / 100.0, 4),
-    }
+    try:
+        bleu_result = bleu_scorer.compute(predictions=[prediction], references=[[reference]])
+        scores["bleu"] = round(float(bleu_result.get("score", 0.0)) / 100.0, 4)
+    except Exception as e:
+        logger.warning(f"BLEU computation failed: {e}")
+        scores["bleu"] = 0.0
+
+    try:
+        chrf_result = chrf_scorer.compute(predictions=[prediction], references=[[reference]])
+        scores["chrf"] = round(float(chrf_result.get("score", 0.0)) / 100.0, 4)
+    except Exception as e:
+        logger.warning(f"ChrF computation failed: {e}")
+        scores["chrf"] = 0.0
+
+    return scores

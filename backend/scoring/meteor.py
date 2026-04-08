@@ -40,6 +40,10 @@ def compute(prediction: str, reference: str) -> dict[str, float]:
         return {"meteor": 0.0}
 
     scorer = _get_scorer()
-    result = scorer.compute(predictions=[prediction], references=[[reference]])
 
-    return {"meteor": round(result.get("meteor", 0.0), 4)}
+    try:
+        result = scorer.compute(predictions=[prediction], references=[[reference]])
+        return {"meteor": round(float(result.get("meteor", 0.0)), 4)}
+    except Exception as e:
+        logger.warning(f"METEOR computation failed: {e}")
+        return {"meteor": 0.0}
