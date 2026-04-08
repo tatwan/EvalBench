@@ -219,6 +219,111 @@ async def test_connection(payload: SettingConnectionTestIn, db: Session = Depend
         details=f"Provider: {provider.title()}. Live judge requests will use the saved configuration.",
     )
 
+@router.get("/judge-models")
+async def get_judge_models(db: Session = Depends(get_db)):
+    """
+    Fetch available chat/completion models from each configured provider.
+    Returns grouped by provider. Falls back to empty list for unconfigured providers.
+    """
+    import httpx
+
+    # Read decrypted API keys from settings
+    all_settings = {s.key: s.value for s in db.query(Setting).all()}
+
+    def _key(name: str) -> str:
+        raw = all_settings.get(name, "")
+        try:
+            return decrypt_value(raw).strip() if raw else ""
+        except Exception:
+            return raw.strip() if raw else ""
+
+    openai_key    = _key("openai_api_key")
+    anthropic_key = _key("anthropic_api_key")
+    gemini_key    = _key("gemini_api_key")
+    groq_key      = _key("groq_api_key")
+
+    result: dict[str, list[dict]] = {
+        "openai": [], "anthropic": [], "gemini": [], "groq": []
+    }
+
+    async with httpx.AsyncClient(timeout=8.0) as client:
+
+        # OpenAI
+        if openai_key:
+            try:
+                r = await client.get(
+                    "https://api.openai.com/v1/models",
+                    headers={"Authorization": f"Bearer {openai_key}"},
+                )
+                if r.status_code == 200:
+                    KEEP = ("gpt-", "o1", "o3", "o4", "chatgpt-")
+                    SKIP = ("instruct", "tts", "whisper", "dall-e", "embedding", "realtime", "audio", "search", "transcribe")
+                    models = sorted(
+                        [m for m in r.json().get("data", [])
+                         if any(m["id"].startswith(p) for p in KEEP)
+                         and not any(s in m["id"] for s in SKIP)],
+                        key=lambda m: m.get("created", 0), reverse=True
+                    )
+                    result["openai"] = [{"id": m["id"], "label": m["id"]} for m in models[:15]]
+            except Exception:
+                pass
+
+        # Anthropic
+        if anthropic_key:
+            try:
+                r = await client.get(
+                    "https://api.anthropic.com/v1/models",
+                    headers={"x-api-key": anthropic_key, "anthropic-version": "2023-06-01"},
+                )
+                if r.status_code == 200:
+                    models = sorted(
+                        [m for m in r.json().get("data", []) if not m.get("deprecated_at")],
+                        key=lambda m: m.get("created_at", ""), reverse=True
+                    )
+                    result["anthropic"] = [{"id": m["id"], "label": m.get("display_name", m["id"])} for m in models[:10]]
+            except Exception:
+                pass
+
+        # Gemini
+        if gemini_key:
+            try:
+                r = await client.get(
+                    "https://generativelanguage.googleapis.com/v1beta/models",
+                    params={"key": gemini_key},
+                )
+                if r.status_code == 200:
+                    models = [
+                        m for m in r.json().get("models", [])
+                        if "generateContent" in m.get("supportedGenerationMethods", [])
+                        and m.get("name", "").startswith("models/gemini-")
+                    ]
+                    result["gemini"] = [
+                        {"id": m["name"].replace("models/", ""), "label": m.get("displayName", m["name"].replace("models/", ""))}
+                        for m in models[:10]
+                    ]
+            except Exception:
+                pass
+
+        # Groq
+        if groq_key:
+            try:
+                r = await client.get(
+                    "https://api.groq.com/openai/v1/models",
+                    headers={"Authorization": f"Bearer {groq_key}"},
+                )
+                if r.status_code == 200:
+                    SKIP_GROQ = ("whisper", "tts", "guard", "embed")
+                    models = [
+                        m for m in r.json().get("data", [])
+                        if not any(s in m["id"] for s in SKIP_GROQ)
+                    ]
+                    result["groq"] = [{"id": f"groq-{m['id']}", "label": m["id"]} for m in models[:10]]
+            except Exception:
+                pass
+
+    return result
+
+
 @router.post("/wipe-data")
 def wipe_data(db: Session = Depends(get_db)):
     """Permanently delete all evaluation results, runs, battles, elo ratings, and cached responses."""

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   useSettings,
   useUpdateSetting,
@@ -30,6 +31,16 @@ export default function Settings() {
   const testConnection = useTestSettingConnection();
   const wipeData = useWipeData();
   const { toast } = useToast();
+
+  const { data: liveModels } = useQuery<{
+    openai: Array<{id: string; label: string}>;
+    anthropic: Array<{id: string; label: string}>;
+    gemini: Array<{id: string; label: string}>;
+    groq: Array<{id: string; label: string}>;
+  }>({
+    queryKey: ["/api/settings/judge-models"],
+    staleTime: 5 * 60 * 1000, // cache for 5 minutes
+  });
 
   const [ollamaHost, setOllamaHost] = useState("http://localhost:11434");
   const [judgeModel, setJudgeModel] = useState("");
@@ -182,36 +193,64 @@ export default function Settings() {
                 <SelectContent>
                   <SelectGroup>
                     <SelectLabel>OpenAI</SelectLabel>
-                    <SelectItem value="gpt-4o">GPT-4o</SelectItem>
-                    <SelectItem value="gpt-4o-mini">GPT-4o mini</SelectItem>
-                    <SelectItem value="gpt-4.1">GPT-4.1</SelectItem>
-                    <SelectItem value="gpt-4.1-mini">GPT-4.1 mini</SelectItem>
-                    <SelectItem value="o3-mini">o3-mini (Reasoning)</SelectItem>
+                    {(liveModels?.openai && liveModels.openai.length > 0
+                      ? liveModels.openai
+                      : [
+                          { id: "gpt-4o", label: "GPT-4o" },
+                          { id: "gpt-4o-mini", label: "GPT-4o mini" },
+                          { id: "gpt-4.1", label: "GPT-4.1" },
+                          { id: "gpt-4.1-mini", label: "GPT-4.1 mini" },
+                          { id: "o3-mini", label: "o3-mini (Reasoning)" },
+                        ]
+                    ).map(m => (
+                      <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+                    ))}
                   </SelectGroup>
                   <SelectSeparator />
                   <SelectGroup>
                     <SelectLabel>Anthropic (Claude)</SelectLabel>
-                    <SelectItem value="claude-opus-4-6">Claude Opus 4.6 (Most Capable)</SelectItem>
-                    <SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6 (Balanced)</SelectItem>
-                    <SelectItem value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (Fast)</SelectItem>
+                    {(liveModels?.anthropic && liveModels.anthropic.length > 0
+                      ? liveModels.anthropic
+                      : [
+                          { id: "claude-opus-4-6", label: "Claude Opus 4.6 (Most Capable)" },
+                          { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 (Balanced)" },
+                          { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5 (Fast)" },
+                        ]
+                    ).map(m => (
+                      <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+                    ))}
                   </SelectGroup>
                   <SelectSeparator />
                   <SelectGroup>
                     <SelectLabel>Google (Gemini)</SelectLabel>
-                    <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
-                    <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
+                    {(liveModels?.gemini && liveModels.gemini.length > 0
+                      ? liveModels.gemini
+                      : [
+                          { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+                          { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+                        ]
+                    ).map(m => (
+                      <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+                    ))}
                   </SelectGroup>
                   <SelectSeparator />
                   <SelectGroup>
                     <SelectLabel>Groq (Fast Inference)</SelectLabel>
-                    <SelectItem value="groq-llama-3.3-70b-versatile">Llama 3.3 70B Versatile</SelectItem>
-                    <SelectItem value="groq-llama-3.1-8b-instant">Llama 3.1 8B Instant</SelectItem>
-                    <SelectItem value="groq-mixtral-8x7b-32768">Mixtral 8x7B</SelectItem>
+                    {(liveModels?.groq && liveModels.groq.length > 0
+                      ? liveModels.groq
+                      : [
+                          { id: "groq-llama-3.3-70b-versatile", label: "Llama 3.3 70B Versatile" },
+                          { id: "groq-llama-3.1-8b-instant", label: "Llama 3.1 8B Instant" },
+                          { id: "groq-mixtral-8x7b-32768", label: "Mixtral 8x7B" },
+                        ]
+                    ).map(m => (
+                      <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+                    ))}
                   </SelectGroup>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Claude IDs reflect the Anthropic API as of April 2026. Verify OpenAI/Gemini IDs at their respective API docs if you need a newer version.
+                {liveModels ? "Showing live models from your configured providers." : "Configure API keys above to see live model lists from each provider."}
               </p>
             </div>
             <div className="flex justify-end">
