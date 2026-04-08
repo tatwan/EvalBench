@@ -403,90 +403,98 @@ MMLU_ITEMS = [
 
 # ─── HellaSwag Dataset (Subset) ──────────────────────────
 HELLASWAG_ITEMS = [
-    {
-        "input": "Context: A woman opens the fridge and takes out a carton of milk. She pours it into a glass. What happens next?\nA. She puts the milk back and closes the fridge.\nB. She throws the glass into the trash.\nC. She drops the glass and breaks it.\nD. She turns off the kitchen light and leaves.\nAnswer with the letter only.",
-        "expected_output": "A",
-        "tags": ["commonsense", "hellaswag"],
-        "difficulty": "easy",
-    },
-    {
-        "input": "Context: A man is assembling a piece of furniture. He reads the instructions and uses a screwdriver. What is he likely doing?\nA. Fixing a flat tire.\nB. Installing a shelf.\nC. Painting a wall.\nD. Cooking dinner.\nAnswer with the letter only.",
-        "expected_output": "B",
-        "tags": ["commonsense", "hellaswag"],
-        "difficulty": "easy",
-    },
-    {
-        "input": "Context: A student walks into a classroom, sits down, and opens a notebook. The teacher begins to speak. What is the student likely doing?\nA. Taking notes.\nB. Driving a car.\nC. Washing dishes.\nD. Playing tennis.\nAnswer with the letter only.",
-        "expected_output": "A",
-        "tags": ["commonsense", "hellaswag"],
-        "difficulty": "easy",
-    },
+    {"input": "She found a twenty dollar bill on the ground. She picked it up and", "expected_output": "put it in her pocket.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "A man is washing his car. He then", "expected_output": "rinses it off with a hose.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "The woman is cutting vegetables for dinner. She", "expected_output": "chops the carrots and adds them to the pot.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "He forgot his umbrella on a rainy day. As a result, he", "expected_output": "got soaked walking to his car.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "The children are playing at the park. They", "expected_output": "run and slide down the jungle gym.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "She poured boiling water into the cup with a tea bag. After a few minutes she", "expected_output": "removed the tea bag and added some milk.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "The dog saw the squirrel in the yard. It", "expected_output": "barked and chased after it.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "He studied for hours the night before the exam. The next morning he", "expected_output": "felt prepared and confident.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "The fire alarm went off in the building. Everyone", "expected_output": "quickly evacuated through the emergency exits.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "She dropped her phone on the pavement. She picked it up and", "expected_output": "checked if the screen had cracked.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "The pot of water was left on the stove. Eventually it", "expected_output": "began to boil and steam rose from the surface.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "He planted a seed in the garden. Over the next few weeks it", "expected_output": "sprouted and began to grow into a small plant.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "The library was very crowded. She had difficulty finding", "expected_output": "an empty seat at one of the study tables.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "They arrived at the airport two hours early. After checking in they", "expected_output": "went through security and waited at the gate.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "The battery in his laptop died. He looked around for", "expected_output": "a power outlet to plug in his charger.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "She knitted a scarf for her grandmother. When she finished she", "expected_output": "wrapped it carefully and tied it with a ribbon.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "The streetlights turned on as darkness fell. People on the street", "expected_output": "started heading home for the evening.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "He made a cake for his friend's birthday. He carefully", "expected_output": "decorated it with icing and wrote a message on top.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "The class was over and the bell rang. Students", "expected_output": "packed up their bags and filed out of the classroom.", "tags": ["commonsense", "hellaswag"]},
+    {"input": "She looked out the window and saw snow falling. She went to the closet to get her", "expected_output": "winter coat and boots.", "tags": ["commonsense", "hellaswag"]},
 ]
 
 # ─── ARC Dataset (Subset) ────────────────────────────────
 ARC_ITEMS = [
-    {
-        "input": "Q: Which object is the best conductor of electricity?\nA. Rubber band\nB. Plastic spoon\nC. Copper wire\nD. Wooden stick\nAnswer with the letter only.",
-        "expected_output": "C",
-        "tags": ["science", "arc"],
-        "difficulty": "easy",
-    },
-    {
-        "input": "Q: Which process changes liquid water into water vapor?\nA. Condensation\nB. Freezing\nC. Evaporation\nD. Melting\nAnswer with the letter only.",
-        "expected_output": "C",
-        "tags": ["science", "arc"],
-        "difficulty": "easy",
-    },
-    {
-        "input": "Q: What force pulls objects toward Earth?\nA. Magnetism\nB. Gravity\nC. Friction\nD. Electricity\nAnswer with the letter only.",
-        "expected_output": "B",
-        "tags": ["science", "arc"],
-        "difficulty": "easy",
-    },
+    {"input": "Which of the following is a property of all living things?\nA) They are made of metal\nB) They reproduce\nC) They are always visible to the naked eye\nD) They require sunlight", "expected_output": "B", "tags": ["arc", "science"]},
+    {"input": "What causes the seasons on Earth?\nA) Earth's distance from the Sun changing\nB) The tilt of Earth's axis\nC) Clouds blocking sunlight\nD) The rotation of Earth", "expected_output": "B", "tags": ["arc", "science"]},
+    {"input": "Which organ filters waste from the blood?\nA) Heart\nB) Lungs\nC) Kidneys\nD) Liver", "expected_output": "C", "tags": ["arc", "science"]},
+    {"input": "What is the basic unit of life?\nA) Atom\nB) Molecule\nC) Cell\nD) Organ", "expected_output": "C", "tags": ["arc", "science"]},
+    {"input": "What type of energy does a stretched rubber band have?\nA) Kinetic energy\nB) Thermal energy\nC) Chemical energy\nD) Potential energy", "expected_output": "D", "tags": ["arc", "science"]},
+    {"input": "Which gas do plants use during photosynthesis?\nA) Oxygen\nB) Nitrogen\nC) Carbon dioxide\nD) Hydrogen", "expected_output": "C", "tags": ["arc", "science"]},
+    {"input": "What is the state of matter in which particles are most tightly packed?\nA) Gas\nB) Liquid\nC) Solid\nD) Plasma", "expected_output": "C", "tags": ["arc", "science"]},
+    {"input": "Which planet is closest to the Sun?\nA) Venus\nB) Mars\nC) Earth\nD) Mercury", "expected_output": "D", "tags": ["arc", "science"]},
+    {"input": "What force pulls objects toward Earth?\nA) Friction\nB) Gravity\nC) Magnetism\nD) Tension", "expected_output": "B", "tags": ["arc", "science"]},
+    {"input": "Which of the following is a renewable energy source?\nA) Coal\nB) Natural gas\nC) Solar power\nD) Oil", "expected_output": "C", "tags": ["arc", "science"]},
+    {"input": "What process do plants use to make food?\nA) Respiration\nB) Fermentation\nC) Photosynthesis\nD) Digestion", "expected_output": "C", "tags": ["arc", "science"]},
+    {"input": "What is the chemical formula for water?\nA) CO2\nB) NaCl\nC) H2O\nD) O2", "expected_output": "C", "tags": ["arc", "science"]},
+    {"input": "Which animal is a mammal?\nA) Salmon\nB) Eagle\nC) Frog\nD) Dolphin", "expected_output": "D", "tags": ["arc", "science"]},
+    {"input": "What layer of the atmosphere contains the ozone layer?\nA) Troposphere\nB) Stratosphere\nC) Mesosphere\nD) Thermosphere", "expected_output": "B", "tags": ["arc", "science"]},
+    {"input": "What is the main function of red blood cells?\nA) Fight infection\nB) Carry oxygen\nC) Produce hormones\nD) Clot blood", "expected_output": "B", "tags": ["arc", "science"]},
+    {"input": "Which type of rock is formed from cooled lava?\nA) Sedimentary\nB) Metamorphic\nC) Igneous\nD) Limestone", "expected_output": "C", "tags": ["arc", "science"]},
+    {"input": "What is the approximate speed of light?\nA) 300 km/s\nB) 3,000 km/s\nC) 300,000 km/s\nD) 3,000,000 km/s", "expected_output": "C", "tags": ["arc", "science"]},
+    {"input": "An object at rest will remain at rest unless acted on by:\nA) Friction\nB) Mass\nC) An unbalanced force\nD) Gravity alone", "expected_output": "C", "tags": ["arc", "science"]},
+    {"input": "Which nutrient provides the most energy per gram?\nA) Protein\nB) Carbohydrate\nC) Fat\nD) Fiber", "expected_output": "C", "tags": ["arc", "science"]},
+    {"input": "What type of bond holds the two hydrogen atoms to the oxygen atom in water?\nA) Ionic bond\nB) Covalent bond\nC) Metallic bond\nD) Hydrogen bond", "expected_output": "B", "tags": ["arc", "science"]},
 ]
 
 # ─── BoolQ Dataset (Subset) ──────────────────────────────
 BOOLQ_ITEMS = [
-    {
-        "input": "Q: Can penguins fly? Context: Penguins are flightless birds adapted to swimming. Answer yes or no.",
-        "expected_output": "no",
-        "tags": ["boolq", "science"],
-        "difficulty": "easy",
-    },
-    {
-        "input": "Q: Is the Great Wall of China visible from space with the naked eye? Context: It is a common myth. Answer yes or no.",
-        "expected_output": "no",
-        "tags": ["boolq", "history"],
-        "difficulty": "easy",
-    },
-    {
-        "input": "Q: Does water boil at 100°C at sea level? Context: At standard atmospheric pressure, it does. Answer yes or no.",
-        "expected_output": "yes",
-        "tags": ["boolq", "science"],
-        "difficulty": "easy",
-    },
+    {"input": "Passage: The Great Wall of China was built to protect China from invasions by various nomadic groups.\nQuestion: Was the Great Wall of China built as a defensive structure?", "expected_output": "yes", "tags": ["boolq"]},
+    {"input": "Passage: Bats are mammals that are capable of sustained flight. They are the only mammals naturally capable of true and sustained flight.\nQuestion: Can bats fly?", "expected_output": "yes", "tags": ["boolq"]},
+    {"input": "Passage: The Amazon River is located in South America and is the largest river in the world by volume of water discharged.\nQuestion: Is the Amazon River located in Africa?", "expected_output": "no", "tags": ["boolq"]},
+    {"input": "Passage: Mount Everest is Earth's highest mountain above sea level, located in the Himalayas on the border between Nepal and Tibet.\nQuestion: Is Mount Everest located in the Alps?", "expected_output": "no", "tags": ["boolq"]},
+    {"input": "Passage: Penguins are flightless birds found almost exclusively in the Southern Hemisphere, primarily in Antarctica.\nQuestion: Are penguins able to fly?", "expected_output": "no", "tags": ["boolq"]},
+    {"input": "Passage: The human heart has four chambers: two atria and two ventricles. It pumps blood through the circulatory system.\nQuestion: Does the human heart have four chambers?", "expected_output": "yes", "tags": ["boolq"]},
+    {"input": "Passage: Gold is a chemical element with the symbol Au, derived from the Latin word aurum. It is a dense, soft, shiny metal.\nQuestion: Is the chemical symbol for gold Ag?", "expected_output": "no", "tags": ["boolq"]},
+    {"input": "Passage: Shakespeare wrote plays including Hamlet, Othello, and A Midsummer Night's Dream. He is widely regarded as the greatest writer in the English language.\nQuestion: Did Shakespeare write Hamlet?", "expected_output": "yes", "tags": ["boolq"]},
+    {"input": "Passage: Dolphins are marine mammals and are not fish. They breathe air through a blowhole on top of their heads.\nQuestion: Are dolphins fish?", "expected_output": "no", "tags": ["boolq"]},
+    {"input": "Passage: The Berlin Wall separated East and West Berlin from 1961 to 1989, when it was opened and subsequently demolished.\nQuestion: Was the Berlin Wall demolished?", "expected_output": "yes", "tags": ["boolq"]},
+    {"input": "Passage: The human body has 206 bones in adults. Babies are born with around 270 to 300 bones that fuse together as they grow.\nQuestion: Do adults have more bones than babies?", "expected_output": "no", "tags": ["boolq"]},
+    {"input": "Passage: Photosynthesis is the process used by plants to convert light energy into chemical energy stored in glucose.\nQuestion: Do plants use sunlight to produce food through photosynthesis?", "expected_output": "yes", "tags": ["boolq"]},
+    {"input": "Passage: Australia is both a country and a continent. It is the sixth-largest country in the world by total area.\nQuestion: Is Australia both a country and a continent?", "expected_output": "yes", "tags": ["boolq"]},
+    {"input": "Passage: The speed of sound in air at sea level is approximately 343 meters per second, much slower than the speed of light.\nQuestion: Is the speed of sound faster than the speed of light?", "expected_output": "no", "tags": ["boolq"]},
+    {"input": "Passage: Vaccines work by training the immune system to recognize and combat specific pathogens without causing the full disease.\nQuestion: Do vaccines help the immune system fight diseases?", "expected_output": "yes", "tags": ["boolq"]},
+    {"input": "Passage: Venus is the second planet from the Sun and is often called Earth's twin due to their similar size, though Venus has a toxic atmosphere.\nQuestion: Is Venus the closest planet to the Sun?", "expected_output": "no", "tags": ["boolq"]},
+    {"input": "Passage: DNA stands for deoxyribonucleic acid. It carries the genetic instructions for the development and functioning of all known living organisms.\nQuestion: Does DNA carry genetic information?", "expected_output": "yes", "tags": ["boolq"]},
+    {"input": "Passage: The Pacific Ocean is the largest and deepest of the world's oceanic divisions, covering more than 165 million square kilometers.\nQuestion: Is the Atlantic Ocean the largest ocean?", "expected_output": "no", "tags": ["boolq"]},
+    {"input": "Passage: Isaac Newton formulated the laws of motion and universal gravitation in his work Principia Mathematica, published in 1687.\nQuestion: Did Isaac Newton formulate the laws of motion?", "expected_output": "yes", "tags": ["boolq"]},
+    {"input": "Passage: The Sahara Desert is the largest hot desert in the world. Antarctica is technically a polar desert and is larger overall.\nQuestion: Is the Sahara the largest desert of any kind in the world?", "expected_output": "no", "tags": ["boolq"]},
 ]
 
 # ─── CommonsenseQA Dataset (Subset) ──────────────────────
-CSQA_ITEMS = [
-    {
-        "input": "Q: Where would you store a toothbrush?\nA. In a refrigerator\nB. In a bathroom cabinet\nC. In a toolbox\nD. In a shoe\nAnswer with the letter only.",
-        "expected_output": "B",
-        "tags": ["commonsense", "csqa"],
-        "difficulty": "easy",
-    },
-    {
-        "input": "Q: Which object is used to write on paper?\nA. Spoon\nB. Hammer\nC. Pen\nD. Plate\nAnswer with the letter only.",
-        "expected_output": "C",
-        "tags": ["commonsense", "csqa"],
-        "difficulty": "easy",
-    },
-    {
-        "input": "Q: Where would you find a steering wheel?\nA. Bicycle\nB. Car\nC. Desk\nD. Refrigerator\nAnswer with the letter only.",
-        "expected_output": "B",
-        "tags": ["commonsense", "csqa"],
-        "difficulty": "easy",
-    },
+COMMONSENSEQA_ITEMS = [
+    {"input": "Where would you find a spoon?\nA) In a garage\nB) In a kitchen drawer\nC) In a garden\nD) In a library\nE) In a factory", "expected_output": "B", "tags": ["commonsenseqa"]},
+    {"input": "What do you do with a book?\nA) Eat it\nB) Plant it\nC) Read it\nD) Drive it\nE) Wear it", "expected_output": "C", "tags": ["commonsenseqa"]},
+    {"input": "Where would you most likely find a stethoscope?\nA) In a gym\nB) In a kitchen\nC) In a doctor's office\nD) In a park\nE) In a library", "expected_output": "C", "tags": ["commonsenseqa"]},
+    {"input": "If you want to cool down on a hot day, what would you do?\nA) Put on a winter coat\nB) Drink hot coffee\nC) Swim in a pool\nD) Stand next to an oven\nE) Exercise vigorously", "expected_output": "C", "tags": ["commonsenseqa"]},
+    {"input": "What do you typically use to write a letter?\nA) A hammer\nB) A pen\nC) A spatula\nD) A ladder\nE) A wrench", "expected_output": "B", "tags": ["commonsenseqa"]},
+    {"input": "Where would you go to borrow books for free?\nA) A restaurant\nB) A gas station\nC) A library\nD) A gym\nE) A bank", "expected_output": "C", "tags": ["commonsenseqa"]},
+    {"input": "What would you need to play basketball?\nA) A fishing rod\nB) A ball and a hoop\nC) Skis\nD) A tennis racket\nE) A golf club", "expected_output": "B", "tags": ["commonsenseqa"]},
+    {"input": "What happens when you mix all paint colors together?\nA) You get white\nB) You get blue\nC) You get red\nD) You get a dark brownish-black color\nE) Nothing changes", "expected_output": "D", "tags": ["commonsenseqa"]},
+    {"input": "If it is raining outside, what would you take with you?\nA) Sunglasses\nB) A swimsuit\nC) An umbrella\nD) A blanket\nE) A surfboard", "expected_output": "C", "tags": ["commonsenseqa"]},
+    {"input": "Where would you go to see live animals in a city?\nA) A bookstore\nB) A cinema\nC) A zoo\nD) A post office\nE) A bakery", "expected_output": "C", "tags": ["commonsenseqa"]},
+    {"input": "What do you call a person who flies an airplane?\nA) A sailor\nB) A pilot\nC) A conductor\nD) A captain\nE) A mechanic", "expected_output": "B", "tags": ["commonsenseqa"]},
+    {"input": "Which would you use to cut paper?\nA) A spoon\nB) A fork\nC) Scissors\nD) A ruler\nE) A stapler", "expected_output": "C", "tags": ["commonsenseqa"]},
+    {"input": "What do you call the person who delivers mail to your home?\nA) A chef\nB) A firefighter\nC) A mail carrier\nD) A carpenter\nE) A teacher", "expected_output": "C", "tags": ["commonsenseqa"]},
+    {"input": "Where would you keep fresh food cold?\nA) In a cabinet\nB) In a refrigerator\nC) On a shelf\nD) On the counter\nE) In the attic", "expected_output": "B", "tags": ["commonsenseqa"]},
+    {"input": "What would you do if your shoe lace became untied?\nA) Throw the shoe away\nB) Tie it again\nC) Buy new shoes\nD) Walk without shoes\nE) Call for help", "expected_output": "B", "tags": ["commonsenseqa"]},
+    {"input": "What would you wear to keep your hands warm in winter?\nA) Sunglasses\nB) A scarf\nC) Gloves\nD) A hat\nE) Boots", "expected_output": "C", "tags": ["commonsenseqa"]},
+    {"input": "Where would you go to watch a movie on a large screen?\nA) A library\nB) A cinema\nC) A supermarket\nD) A hospital\nE) A school", "expected_output": "B", "tags": ["commonsenseqa"]},
+    {"input": "If you want to wake up at a specific time, what would you set?\nA) A timer on the oven\nB) An alarm clock\nC) A calendar reminder\nD) A light switch\nE) A thermometer", "expected_output": "B", "tags": ["commonsenseqa"]},
+    {"input": "What do firefighters use to put out fires?\nA) Sand and salt only\nB) Shovels\nC) Water and foam\nD) Ice cubes\nE) Electric fans", "expected_output": "C", "tags": ["commonsenseqa"]},
+    {"input": "Where would you go to get your hair cut?\nA) A bakery\nB) A barbershop\nC) A pharmacy\nD) A gas station\nE) A hardware store", "expected_output": "B", "tags": ["commonsenseqa"]},
 ]
 
 # ─── GSM8K Dataset (Subset - Math Reasoning) ────────────
@@ -744,7 +752,7 @@ def seed_if_empty(db: Session) -> None:
         for item in HELLASWAG_ITEMS:
             db.add(db_models.GoldenItem(
                 dataset_id=hs_ds.id, input=item["input"], expected_output=item["expected_output"],
-                context=item.get("context"), tags=item["tags"], difficulty=item["difficulty"]
+                context=item.get("context"), tags=item["tags"], difficulty=item.get("difficulty")
             ))
 
     # ── ARC dataset ──
@@ -759,7 +767,7 @@ def seed_if_empty(db: Session) -> None:
         for item in ARC_ITEMS:
             db.add(db_models.GoldenItem(
                 dataset_id=arc_ds.id, input=item["input"], expected_output=item["expected_output"],
-                context=item.get("context"), tags=item["tags"], difficulty=item["difficulty"]
+                context=item.get("context"), tags=item["tags"], difficulty=item.get("difficulty")
             ))
 
     # ── BoolQ dataset ──
@@ -774,7 +782,7 @@ def seed_if_empty(db: Session) -> None:
         for item in BOOLQ_ITEMS:
             db.add(db_models.GoldenItem(
                 dataset_id=bq_ds.id, input=item["input"], expected_output=item["expected_output"],
-                context=item.get("context"), tags=item["tags"], difficulty=item["difficulty"]
+                context=item.get("context"), tags=item["tags"], difficulty=item.get("difficulty")
             ))
 
     # ── CommonsenseQA dataset ──
@@ -786,10 +794,10 @@ def seed_if_empty(db: Session) -> None:
         )
         db.add(csqa_ds)
         db.flush()
-        for item in CSQA_ITEMS:
+        for item in COMMONSENSEQA_ITEMS:
             db.add(db_models.GoldenItem(
                 dataset_id=csqa_ds.id, input=item["input"], expected_output=item["expected_output"],
-                context=item.get("context"), tags=item["tags"], difficulty=item["difficulty"]
+                context=item.get("context"), tags=item["tags"], difficulty=item.get("difficulty")
             ))
 
     # ── GSM8K dataset ──
