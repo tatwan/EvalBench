@@ -36,6 +36,7 @@ TaskType = Literal[
     "code",
     "reasoning",
     "knowledge",
+    "rag",
     "embedding",
     "classification",
     "safety",
