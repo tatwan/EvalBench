@@ -206,9 +206,6 @@ export default function EvalWizard() {
   const [selectedCloudModels, setSelectedCloudModels] = useState<string[]>([]);
   const [selectedTaskType, setSelectedTaskType] = useState<TaskType | null>(null);
   const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
-  const [lastRunId, setLastRunId] = useState<number | null>(null);
-  const [progress, setProgress] = useState<{ completed: number; total: number; percent: number; model?: string; status?: string } | null>(null);
-  const [streamNotice, setStreamNotice] = useState<{ message: string; tone: "info" | "warning" | "error" } | null>(null);
   const [, navigate] = useLocation();
 
   const { data: models = [], isLoading: modelsLoading } = useModels();
@@ -355,38 +352,6 @@ export default function EvalWizard() {
     }
   }, [selectedTaskType, selectedDatasetId, datasetOptions]);
 
-  useEffect(() => {
-    if (step !== 4 || !lastRunId) return;
-    
-    const es = new EventSource(`/api/eval-runs/${lastRunId}/progress`);
-    es.onmessage = (e) => {
-      const event = JSON.parse(e.data);
-      if (event.type === "progress") {
-        setProgress({ completed: event.completed, total: event.total, percent: event.percent, model: event.model });
-      } else if (event.type === "error" || event.type === "warning" || event.type === "info") {
-        setStreamNotice({
-          message: event.message || event.error,
-          tone: event.type === "error" ? "error" : event.type === "warning" ? "warning" : "info",
-        });
-      } else if (event.type === "done") {
-        setProgress(prev => prev ? { ...prev, percent: 100, status: event.status } : { completed: 1, total: 1, percent: 100, status: event.status });
-        queryClient.invalidateQueries({ queryKey: ["/api/eval-runs"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/eval-runs/:id", lastRunId] });
-        queryClient.invalidateQueries({ queryKey: ["/api/eval-runs/:id/results", lastRunId] });
-        queryClient.invalidateQueries({ queryKey: ["/api/eval-runs/:id/stats", lastRunId] });
-        queryClient.invalidateQueries({ queryKey: ["/api/eval-results"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/models"] });
-        es.close();
-      }
-    };
-    es.onerror = () => {
-      setStreamNotice({ message: "Lost connection to the progress stream.", tone: "error" });
-      es.close();
-    };
-
-    return () => es.close();
-  }, [step, lastRunId, queryClient]);
-
   const handleRun = () => {
     if (!selectedTaskType) return;
     createRun.mutate(
@@ -397,10 +362,14 @@ export default function EvalWizard() {
         datasetId: selectedDatasetId ?? undefined,
       },
       { onSuccess: (run: any) => {
-          setLastRunId(run?.id ?? null);
-          setProgress(null);
-          setStreamNotice(null);
-          setStep(4);
+          if (run?.id) {
+            queryClient.invalidateQueries({ queryKey: ["/api/eval-runs/:id", run.id] });
+            queryClient.invalidateQueries({ queryKey: ["/api/eval-runs/:id/results", run.id] });
+            queryClient.invalidateQueries({ queryKey: ["/api/eval-runs/:id/stats", run.id] });
+            navigate(`/evaluate/${run.id}`);
+            return;
+          }
+          navigate("/history");
         }
       }
     );
@@ -410,7 +379,6 @@ export default function EvalWizard() {
     { num: 1, title: "Task Type", icon: Layers },
     { num: 2, title: "Models", icon: Cpu },
     { num: 3, title: "Review & Run", icon: Activity },
-    { num: 4, title: "Started", icon: Check },
   ];
 
   return (
@@ -791,80 +759,6 @@ export default function EvalWizard() {
         </div>
       )}
 
-      {step === 4 && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-10 text-center max-w-2xl mx-auto">
-          {progress?.percent === 100 ? (
-            <div className={clsx(
-              "w-16 h-16 rounded-full flex items-center justify-center mb-4 mx-auto animate-in zoom-in",
-              progress?.status === "failed" ? "bg-rose-100" : "bg-emerald-100"
-            )}>
-              <Check className={clsx("w-8 h-8", progress?.status === "failed" ? "text-rose-600" : "text-emerald-600")} />
-            </div>
-          ) : (
-            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-4 mx-auto">
-              <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-            </div>
-          )}
-          
-          <h2 className="text-xl font-bold mb-2">
-            {progress?.status === "failed"
-              ? "Evaluation Finished With Errors"
-              : progress?.percent === 100
-                ? "Evaluation Complete"
-                : "Evaluation Running"}
-          </h2>
-          
-          <div className="mb-6 max-w-md mx-auto space-y-4">
-            <p className="text-muted-foreground text-sm">
-              {progress?.percent === 100 
-                ? progress?.status === "failed"
-                  ? "Some items failed during scoring. Open the run details to inspect the failed metrics and partial results."
-                  : "Models have been scored and results are ready."
-                : `Currently scoring ${progress?.model ? `model: ${progress.model}` : "models"} in the background.`}
-            </p>
-            
-            {progress && progress.percent < 100 && (
-              <div className="space-y-2">
-                <div className="flex justify-between text-xs font-semibold text-emerald-800">
-                  <span>{progress.completed} / {progress.total} items</span>
-                  <span>{progress.percent}%</span>
-                </div>
-                <div className="h-3 w-full bg-emerald-200/50 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-emerald-500 transition-all duration-300 ease-out rounded-full"
-                    style={{ width: `${progress.percent}%` }}
-                  />
-                </div>
-              </div>
-            )}
-            {streamNotice && (
-              <p className={clsx(
-                "text-xs p-2 rounded",
-                streamNotice.tone === "error" && "text-rose-700 bg-rose-100",
-                streamNotice.tone === "warning" && "text-amber-700 bg-amber-100",
-                streamNotice.tone === "info" && "text-sky-700 bg-sky-100"
-              )}>
-                {streamNotice.message}
-              </p>
-            )}
-          </div>
-
-          <div className="flex justify-center gap-3 mt-8">
-            <Button variant="outline" onClick={() => { setStep(1); setSelectedModels([]); setSelectedTaskType(null); setProgress(null); setLastRunId(null); }}>
-              Run Another
-            </Button>
-            <Button onClick={() => navigate(lastRunId ? `/evaluate/${lastRunId}` : "/history")}>
-              {progress?.percent === 100
-                ? progress?.status === "failed"
-                  ? "Inspect Run"
-                  : "View Results"
-                : lastRunId
-                  ? "Go to Live Details"
-                  : "Go to History"}
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

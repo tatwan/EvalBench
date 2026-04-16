@@ -14,9 +14,22 @@ from backend.services import dataset_importer, storage
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
 
-def _is_user_dataset(source: str | None) -> bool:
-    normalized = (source or "").strip().lower()
-    return normalized.startswith(("manual", "import", "upload", "template:"))
+def _normalize_dataset_source(source: str | None) -> str:
+    normalized = (source or "").strip()
+    lowered = normalized.lower()
+    if not normalized:
+        return "manual"
+    if lowered == "curated-inline":
+        return "manual:derived"
+    return normalized
+
+
+def _serialized_dataset_source(dataset) -> str | None:
+    return storage.normalized_dataset_source(
+        dataset.name,
+        dataset.source,
+        dataset.schema_version,
+    )
 
 
 @router.get("", response_model=list[GoldenDatasetOut])
@@ -28,7 +41,7 @@ def list_datasets(db: Session = Depends(get_db)):
             {
                 "id": dataset.id,
                 "name": dataset.name,
-                "source": dataset.source,
+                "source": _serialized_dataset_source(dataset),
                 "created_at": dataset.created_at,
                 "schema_version": dataset.schema_version,
                 "item_count": counts.get(dataset.id, 0),
@@ -59,7 +72,7 @@ def create_dataset(payload: GoldenDatasetCreate, db: Session = Depends(get_db)):
     dataset = storage.create_dataset(
         db,
         name=payload.name.strip(),
-        source=payload.source.strip() if payload.source else "manual",
+        source=_normalize_dataset_source(payload.source),
         items=[item.model_dump() for item in payload.items],
     )
     items = storage.get_dataset_items(db, dataset.id)
@@ -67,7 +80,7 @@ def create_dataset(payload: GoldenDatasetCreate, db: Session = Depends(get_db)):
         {
             "id": dataset.id,
             "name": dataset.name,
-            "source": dataset.source,
+            "source": _serialized_dataset_source(dataset),
             "created_at": dataset.created_at,
             "schema_version": dataset.schema_version,
             "item_count": len(items),
@@ -95,7 +108,7 @@ def import_dataset(payload: GoldenDatasetImport, db: Session = Depends(get_db)):
         {
             "id": dataset.id,
             "name": dataset.name,
-            "source": dataset.source,
+            "source": _serialized_dataset_source(dataset),
             "created_at": dataset.created_at,
             "schema_version": dataset.schema_version,
             "item_count": len(persisted_items),
@@ -115,7 +128,7 @@ def get_dataset(dataset_id: int, db: Session = Depends(get_db)):
         {
             "id": dataset.id,
             "name": dataset.name,
-            "source": dataset.source,
+            "source": _serialized_dataset_source(dataset),
             "created_at": dataset.created_at,
             "schema_version": dataset.schema_version,
             "item_count": len(items),
@@ -130,7 +143,7 @@ def delete_dataset(dataset_id: int, db: Session = Depends(get_db)):
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    if not _is_user_dataset(dataset.source):
+    if storage.is_builtin_dataset_record(dataset):
         raise HTTPException(status_code=400, detail="Built-in datasets cannot be deleted.")
 
     if storage.dataset_has_results(db, dataset_id):

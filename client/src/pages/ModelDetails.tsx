@@ -37,6 +37,12 @@ function formatDuration(seconds?: number) {
   return `${secs}s`;
 }
 
+function humanizeStatus(status?: string | null) {
+  const normalized = String(status ?? "").replace(/_/g, " ").trim();
+  if (!normalized) return "Unknown";
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
 export default function ModelDetails() {
   const params = useParams<{ id: string }>();
   const modelId = Number(params.id ?? 0);
@@ -210,9 +216,9 @@ export default function ModelDetails() {
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          { label: "Total Runs", value: modelRuns.length, detail: `${taskSet.length || 0} task families`, icon: Activity, tone: "bg-amber-100 text-amber-600" },
-          { label: "Avg Score", value: avgScore !== null ? formatScore(avgScore) : "—", detail: taskSummary.strongestTask ? `Strongest in ${taskSummary.strongestTask}` : "No task context yet", icon: BarChart3, tone: "bg-emerald-100 text-emerald-600" },
-          { label: "Best Score", value: bestScore !== null ? formatScore(bestScore) : "—", detail: taskSummary.bestTask ? `Best single result in ${taskSummary.bestTask}` : "No task context yet", icon: CheckCircle2, tone: "bg-violet-100 text-violet-600" },
+          { label: "Total Runs", value: modelRuns.length, detail: `${taskSet.length || 0} task families · ${qualityResults.length} quality rows`, icon: Activity, tone: "bg-amber-100 text-amber-600" },
+          { label: "Avg Score", value: avgScore !== null ? formatScore(avgScore) : "—", detail: taskSummary.strongestTask ? `Successful quality rows, strongest in ${taskSummary.strongestTask}` : "Successful quality rows only", icon: BarChart3, tone: "bg-emerald-100 text-emerald-600" },
+          { label: "Best Score", value: bestScore !== null ? formatScore(bestScore) : "—", detail: taskSummary.bestTask ? `Best single quality result in ${taskSummary.bestTask}` : "Best single quality result", icon: CheckCircle2, tone: "bg-violet-100 text-violet-600" },
           { label: "Avg Speed", value: avgTps !== null ? `${avgTps.toFixed(1)} t/s` : "—", detail: avgLatency !== null ? `Avg latency ${avgLatency.toFixed(2)}s` : "Latency unavailable", icon: Clock, tone: "bg-sky-100 text-sky-600" },
         ].map((stat) => {
           const Icon = stat.icon;
@@ -233,11 +239,26 @@ export default function ModelDetails() {
         })}
       </div>
 
+      <Card className="p-4">
+        <div className="text-sm font-semibold text-foreground">How To Read This Model Page</div>
+        <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-muted-foreground">
+          <div>
+            Avg Score blends successful non-speed quality metrics across this model's recorded runs.
+          </div>
+          <div>
+            Best Score is the strongest single quality result, so compare it within similar task types.
+          </div>
+          <div>
+            Speed stays separate because fast inference should not inflate or depress quality summaries.
+          </div>
+        </div>
+      </Card>
+
       <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-4">
         <Card className="p-0 overflow-hidden">
           <CardHeader className="border-b border-border">
             <CardTitle className="text-base">Evaluation History</CardTitle>
-            <div className="text-xs text-muted-foreground">Latest runs for this model</div>
+            <div className="text-xs text-muted-foreground">Latest runs for this model. Open a run to inspect pair counts, retries, and failed items.</div>
           </CardHeader>
           <CardContent className="p-0 overflow-x-auto">
             <table className="w-full text-sm">
@@ -272,8 +293,11 @@ export default function ModelDetails() {
                           run.status === "failed" ? "bg-rose-100 text-rose-700" :
                           "bg-muted text-muted-foreground"
                         )}>
-                          {run.status}
+                          {humanizeStatus(run.status)}
                         </span>
+                        {run.configJson?.completedWithErrors ? (
+                          <div className="text-[10px] text-amber-700 mt-1">Scores stayed usable; failed pairs were excluded.</div>
+                        ) : null}
                       </td>
                       <td className="px-5 py-3 font-mono text-xs text-muted-foreground">
                         {formatDuration(run.configJson?.durationSeconds)}
@@ -318,6 +342,9 @@ export default function ModelDetails() {
                     <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: "#e2e8f0" }} />
                   </RadarChart>
                 </ResponsiveContainer>
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                Radar axes reflect task-specific quality metrics only, not latency or token usage.
               </div>
               <div className="flex items-center justify-between text-sm pt-2 border-t border-border">
                 <span className="text-muted-foreground">Tasks Evaluated</span>

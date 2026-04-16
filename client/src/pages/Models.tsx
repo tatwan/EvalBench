@@ -4,13 +4,12 @@ import { useDatasets } from "@/hooks/use-datasets";
 import { useArenaLeaderboard } from "@/hooks/use-arena";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card } from "@/components/ui/Card";
 import { ScoreBadge } from "@/components/ui/ScoreBadge";
 import { useToast } from "@/hooks/use-toast";
 import { Cpu, Search, RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { clsx } from "clsx";
 import { Link, useLocation } from "wouter";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from "recharts";
@@ -22,11 +21,23 @@ const CODE_TOKENS = ["code", "coder", "codellama", "starcoder", "deepseek-coder"
 const VISION_TOKENS = ["vision", "llava", "vl", "clip"];
 const INSTRUCT_TOKENS = ["instruct", "chat", "assistant"];
 
+type ParamPresetKey = "all" | "small" | "medium" | "large";
+
 function parseParamCount(params?: string | null): number | null {
   if (!params) return null;
-  const match = params.match(/(\d+(\.\d+)?)(\s*)b/i);
+  const match = params.match(/(\d+(\.\d+)?)(\s*)([bm])/i);
   if (!match) return null;
-  return Number(match[1]);
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) return null;
+  return match[4].toLowerCase() === "m" ? value / 1000 : value;
+}
+
+function matchesParamPreset(paramCount: number | null, preset: ParamPresetKey): boolean {
+  if (preset === "all") return true;
+  if (paramCount === null) return false;
+  if (preset === "small") return paramCount < 3;
+  if (preset === "medium") return paramCount >= 3 && paramCount <= 13;
+  return paramCount > 13;
 }
 
 function sizeBucket(sizeGb?: number | null): string {
@@ -61,7 +72,7 @@ export default function Models() {
   const { toast } = useToast();
   const [sizeFilter, setSizeFilter] = useState("all");
   const [specialtyFilter, setSpecialtyFilter] = useState("all");
-  const [paramRange, setParamRange] = useState<[number, number]>([0, 0]);
+  const [paramFilter, setParamFilter] = useState<ParamPresetKey>("all");
   const [, navigate] = useLocation();
 
   const eloMap = useMemo(() => {
@@ -145,27 +156,6 @@ export default function Models() {
     return (models as any[]).filter((model) => model.family === "cloud");
   }, [models]);
 
-  const paramBounds = useMemo<[number, number]>(() => {
-    const counts = localModels
-      .map((model) => parseParamCount(model.params))
-      .filter((value): value is number => value !== null);
-    if (counts.length === 0) return [0, 0];
-    return [Math.min(...counts), Math.max(...counts)];
-  }, [localModels]);
-
-  useEffect(() => {
-    setParamRange((current) => {
-      const [minBound, maxBound] = paramBounds;
-      if (current[0] === 0 && current[1] === 0 && maxBound > 0) {
-        return [minBound, maxBound];
-      }
-      if (current[0] < minBound || current[1] > maxBound || current[0] > current[1]) {
-        return [minBound, maxBound];
-      }
-      return current;
-    });
-  }, [paramBounds]);
-
   const sizeOptions = useMemo(() => {
     const buckets = Array.from(new Set((models as any[]).map((m) => sizeBucket(m.sizeGb))));
     return buckets.filter((b) => b !== "Unknown").sort((a, b) => a.localeCompare(b));
@@ -183,13 +173,12 @@ export default function Models() {
     return localModels.filter((model) => {
       const paramCount = parseParamCount(model.params);
       const specialties = deriveSpecialties(model.name, model.family);
-      const hasParamBounds = paramBounds[1] > 0;
-      const matchesParam = !hasParamBounds || (paramCount !== null && paramCount >= paramRange[0] && paramCount <= paramRange[1]);
+      const matchesParam = matchesParamPreset(paramCount, paramFilter);
       const matchesSize = sizeFilter === "all" || sizeBucket(model.sizeGb) === sizeFilter;
       const matchesSpecialty = specialtyFilter === "all" || specialties.includes(specialtyFilter);
       return matchesParam && matchesSize && matchesSpecialty;
     });
-  }, [localModels, paramBounds, paramRange, sizeFilter, specialtyFilter]);
+  }, [localModels, paramFilter, sizeFilter, specialtyFilter]);
 
   const embeddingModels = useMemo(() => {
     return (models as any[]).filter((model) => model.family !== "cloud" && deriveSpecialties(model.name, model.family).includes("embedding"));
@@ -210,6 +199,14 @@ export default function Models() {
       })
       .slice(0, 3);
   }, [embeddingModels, modelMeta]);
+
+  const activeLocalFilterCount = useMemo(() => {
+    let count = 0;
+    if (paramFilter !== "all") count += 1;
+    if (sizeFilter !== "all") count += 1;
+    if (specialtyFilter !== "all") count += 1;
+    return count;
+  }, [paramFilter, sizeFilter, specialtyFilter]);
 
   const handleEmbeddingEval = () => {
     if (embeddingModelIds.length === 0) {
@@ -246,8 +243,13 @@ export default function Models() {
         <div>
           <h1 className="text-2xl font-extrabold">Models</h1>
           <p className="text-sm text-muted-foreground">
-            {filteredLocalModels.length} local model{filteredLocalModels.length === 1 ? "" : "s"} ready for local-first evaluation
+            {localModels.length} local model{localModels.length === 1 ? "" : "s"} ready for local-first evaluation
           </p>
+          {activeLocalFilterCount > 0 ? (
+            <p className="text-xs text-muted-foreground mt-1">
+              Showing {filteredLocalModels.length} after {activeLocalFilterCount} active filter{activeLocalFilterCount === 1 ? "" : "s"}.
+            </p>
+          ) : null}
           {comparisonModels.length > 0 ? (
             <p className="text-xs text-muted-foreground mt-1">
               {comparisonModels.length} model{comparisonModels.length === 1 ? "" : "s"} captured from benchmark/comparison runs live below the local catalog.
@@ -296,71 +298,62 @@ export default function Models() {
       </div>
 
       <Card className="p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="text-xs font-semibold text-muted-foreground">Filter</div>
-          <div className="w-[160px]">
-            <Select value={sizeFilter} onValueChange={setSizeFilter}>
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="Size" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All sizes</SelectItem>
-                {sizeOptions.map((size) => (
-                  <SelectItem key={size} value={size}>{size}</SelectItem>
-                ))}
-                <SelectItem value="Unknown">Unknown</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="min-w-[220px] flex-1 max-w-sm rounded-lg border border-border bg-background px-3 py-2">
-            <div className="flex items-center justify-between text-[11px] font-medium text-muted-foreground">
-              <span>Parameter range</span>
-              <span>
-                {paramBounds[1] > 0 ? `${paramRange[0].toFixed(1)}B - ${paramRange[1].toFixed(1)}B` : "Unknown"}
-              </span>
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="text-xs font-semibold text-muted-foreground">Filter</div>
+            <div className="w-[170px] space-y-1">
+              <div className="text-[11px] font-medium text-muted-foreground">Model size</div>
+              <Select value={sizeFilter} onValueChange={setSizeFilter}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Model size" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sizes</SelectItem>
+                  {sizeOptions.map((size) => (
+                    <SelectItem key={size} value={size}>{size}</SelectItem>
+                  ))}
+                  <SelectItem value="Unknown">Unknown</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div className="mt-3 px-1">
-              <Slider
-                value={paramRange}
-                min={paramBounds[0]}
-                max={paramBounds[1] || 1}
-                step={0.1}
-                minStepsBetweenThumbs={1}
-                onValueChange={(value) => {
-                  if (value.length === 2) {
-                    setParamRange([value[0], value[1]]);
-                  }
-                }}
-                disabled={paramBounds[1] === 0}
-              />
+            <div className="w-[200px] space-y-1">
+              <div className="text-[11px] font-medium text-muted-foreground">Model parameters</div>
+              <Select value={paramFilter} onValueChange={(value) => setParamFilter(value as ParamPresetKey)}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Model parameters" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="small">Small (&lt;3B)</SelectItem>
+                  <SelectItem value="medium">Medium (3-13B)</SelectItem>
+                  <SelectItem value="large">Large (&gt;13B)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
-              <span>{paramBounds[0] > 0 ? `${paramBounds[0].toFixed(1)}B` : "Min"}</span>
-              <span>{paramBounds[1] > 0 ? `${paramBounds[1].toFixed(1)}B` : "Max"}</span>
+            <div className="w-[180px] space-y-1">
+              <div className="text-[11px] font-medium text-muted-foreground">Model specialty</div>
+              <Select value={specialtyFilter} onValueChange={setSpecialtyFilter}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Model specialty" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All specialties</SelectItem>
+                  {specialtyOptions.map((tag) => (
+                    <SelectItem key={tag} value={tag}>
+                      {tag.charAt(0).toUpperCase() + tag.slice(1)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+            <Button variant="ghost" size="sm" className="text-xs" onClick={() => {
+              setParamFilter("all");
+              setSizeFilter("all");
+              setSpecialtyFilter("all");
+            }}>
+              Reset
+            </Button>
           </div>
-          <div className="w-[180px]">
-            <Select value={specialtyFilter} onValueChange={setSpecialtyFilter}>
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="Specialty" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All specialties</SelectItem>
-                {specialtyOptions.map((tag) => (
-                  <SelectItem key={tag} value={tag}>
-                    {tag.charAt(0).toUpperCase() + tag.slice(1)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <Button variant="ghost" size="sm" className="text-xs" onClick={() => {
-            setParamRange(paramBounds);
-            setSizeFilter("all");
-            setSpecialtyFilter("all");
-          }}>
-            Reset
-          </Button>
         </div>
       </Card>
 

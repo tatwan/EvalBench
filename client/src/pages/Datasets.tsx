@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { useLocation } from "wouter";
 import {
@@ -267,14 +267,14 @@ function detectTemplateFromSource(source: string | null | undefined): TemplateId
 
 function isUserDataset(source: string | null | undefined): boolean {
   const cleaned = String(source ?? "").toLowerCase();
-  return cleaned.startsWith("manual") || cleaned.startsWith("import") || cleaned.startsWith("upload") || cleaned.startsWith("template:");
+  return cleaned !== "curated-inline";
 }
 
 function datasetKind(source: string | null | undefined): "built-in" | "custom" | "imported" {
   const cleaned = String(source ?? "").toLowerCase();
+  if (cleaned === "curated-inline") return "built-in";
   if (cleaned.startsWith("import") || cleaned.startsWith("upload")) return "imported";
-  if (cleaned.startsWith("manual") || cleaned.startsWith("template:")) return "custom";
-  return "built-in";
+  return "custom";
 }
 
 type ValidationIssue = {
@@ -416,12 +416,6 @@ export default function Datasets() {
   const [importError, setImportError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
 
-  useEffect(() => {
-    if (!selectedDatasetId && datasets.length > 0) {
-      setSelectedDatasetId(datasets[0].id);
-    }
-  }, [datasets, selectedDatasetId]);
-
   const totalItems = useMemo(
     () => (datasets as any[]).reduce((sum, dataset) => sum + (dataset.itemCount ?? 0), 0),
     [datasets]
@@ -454,7 +448,6 @@ export default function Datasets() {
         .some((value) => String(value).toLowerCase().includes(query));
     });
   }, [datasets, datasetSearch]);
-
   const filledManualItems = useMemo(
     () =>
       manualItems.filter(
@@ -534,7 +527,7 @@ export default function Datasets() {
     if (!selectedDataset) return;
     setSelectedTemplate(detectTemplateFromSource(selectedDataset.source));
     setManualName(selectedDataset.name);
-    setManualSource(selectedDataset.source ?? "manual");
+    setManualSource(selectedDataset.source === "curated-inline" ? "manual:derived" : selectedDataset.source ?? "manual");
     setManualItems(
       selectedDataset.items.length
         ? selectedDataset.items.map((item) => ({
@@ -1146,10 +1139,32 @@ export default function Datasets() {
               Inspect metadata and sample items before using the dataset in an evaluation run.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Choose Dataset</label>
+              <Select
+                value={selectedDatasetId ? String(selectedDatasetId) : ""}
+                onValueChange={(value) => setSelectedDatasetId(value ? Number(value) : null)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a dataset to inspect" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(datasets as any[]).map((dataset) => {
+                    const kind = datasetKind(dataset.source);
+                    const kindLabel = kind === "built-in" ? "Built-in" : kind === "imported" ? "Imported" : "Custom";
+                    return (
+                      <SelectItem key={dataset.id} value={String(dataset.id)}>
+                        {dataset.name} · v{dataset.schemaVersion ?? 1} · {kindLabel}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
             {!selectedDataset ? (
               <div className="text-sm text-muted-foreground">
-                Select a dataset below to inspect its structure and examples.
+                Select a dataset from the dropdown or registry below to inspect its structure and examples.
               </div>
             ) : (
               <div className="space-y-4">
@@ -1339,7 +1354,7 @@ export default function Datasets() {
               {filteredDatasets.map((dataset) => (
                 <TableRow
                   key={dataset.id}
-                  className="cursor-pointer"
+                  className={`cursor-pointer ${selectedDatasetId === dataset.id ? "bg-muted/40" : ""}`}
                   onClick={() => setSelectedDatasetId(dataset.id)}
                 >
                   <TableCell className="font-medium">

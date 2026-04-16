@@ -49,7 +49,14 @@ export function useOllamaStatus() {
     queryFn: async () => {
       const res = await fetch(api.ollama.status.path, { credentials: "include" });
       if (!res.ok) return { running: false, modelCount: 0 };
-      return res.json() as Promise<{ running: boolean; modelCount: number; error?: string }>;
+      const payload = await res.json().catch(() => null) as
+        | { running?: boolean; modelCount?: number; model_count?: number; error?: string }
+        | null;
+      return {
+        running: Boolean(payload?.running),
+        modelCount: Number(payload?.modelCount ?? payload?.model_count ?? 0),
+        error: payload?.error,
+      };
     },
     refetchInterval: 10_000,
     staleTime: 8_000,

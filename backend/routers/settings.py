@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from backend.database import get_db
-from backend.models import Setting, EvalRun, EvalResult, ArenaBattle, EloRating, ResponseCache
+from backend.models import Setting, EvalRun, EvalResult, ArenaBattle, EloRating, ResponseCache, Model
 from backend.schemas import (
     SettingConnectionTestIn,
     SettingConnectionTestOut,
@@ -506,11 +506,12 @@ def wipe_data(db: Session = Depends(get_db)):
     db.query(ArenaBattle).delete()
     db.query(EloRating).delete()
     db.query(ResponseCache).delete()
+    db.query(Model).filter(Model.family == "cloud").delete()
     try:
         db.execute(
             text(
                 "DELETE FROM sqlite_sequence "
-                "WHERE name IN ('eval_results', 'eval_runs', 'arena_battles')"
+                "WHERE name IN ('eval_results', 'eval_runs', 'arena_battles', 'models')"
             )
         )
     except Exception:
@@ -520,5 +521,6 @@ def wipe_data(db: Session = Depends(get_db)):
         db.query(ArenaBattle).delete()
         db.query(EloRating).delete()
         db.query(ResponseCache).delete()
+        db.query(Model).filter(Model.family == "cloud").delete()
     db.commit()
     return {"message": "All captured stats, runs, and evals have been permanently deleted."}

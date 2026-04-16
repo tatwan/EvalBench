@@ -37,6 +37,12 @@ function formatScore(value?: number | null): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function humanizeStatus(status?: string | null): string {
+  const normalized = String(status ?? "").replace(/_/g, " ").trim();
+  if (!normalized) return "Unknown";
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
 export default function RunHistory() {
   const { data: runs = [], isLoading: runsLoading, refetch } = useEvalRuns();
   const { data: results = [], isLoading: resultsLoading, refetch: refetchResults } = useAllEvalResults();
@@ -184,7 +190,7 @@ export default function RunHistory() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gradient">Run History</h1>
-          <p className="text-foreground/80 mt-2">View all your past evaluations.</p>
+          <p className="text-foreground/80 mt-2">Review finished and in-flight evaluations with quality snapshots and run health.</p>
           <p className="text-xs text-muted-foreground mt-2">
             A pair means one model on one dataset item. Stored scores are metric rows written for each pair.
           </p>
@@ -299,12 +305,12 @@ export default function RunHistory() {
                 <th className="text-left px-6 py-4 font-semibold text-foreground/85">Models Evaluated</th>
                 <th className="text-left px-4 py-4 font-semibold text-foreground/85">
                   <span className="inline-flex items-center gap-1">
-                    Score Preview
-                    <MetricTooltip description="Preview cards show the average across successful non-speed metric rows only. A pair is model × item; multiple metric rows can be stored per pair." />
+                    Quality Snapshot
+                    <MetricTooltip description="Snapshot cards average successful non-speed quality rows only. Use Run Details for pair-level counts, confidence context, and failed-item inspection." />
                   </span>
                 </th>
                 <th className="text-left px-4 py-4 font-semibold text-foreground/85">Status</th>
-                <th className="text-left px-4 py-4 font-semibold text-foreground/85">Reliability</th>
+                <th className="text-left px-4 py-4 font-semibold text-foreground/85">Run Health</th>
                 <th className="text-right px-4 py-4 font-semibold text-foreground/85"></th>
               </tr>
             </thead>
@@ -322,9 +328,16 @@ export default function RunHistory() {
                 const avgScore = scorePreview && scorePreview.scores.length > 0
                   ? scorePreview.scores.reduce((sum, score) => sum + score, 0) / scorePreview.scores.length
                   : null;
+                const totalPairs = typeof config.totalPairs === "number" ? config.totalPairs : null;
+                const completedPairs = typeof config.completedPairs === "number" ? config.completedPairs : null;
+                const errorCount = typeof config.errorCount === "number" ? config.errorCount : 0;
+                const retryCount = typeof config.retryCount === "number" ? config.retryCount : 0;
+                const successRate = totalPairs && totalPairs > 0
+                  ? Math.max(0, (totalPairs - errorCount) / totalPairs)
+                  : null;
                 const expectedItemsPerModel =
                   config.datasetItemCount ??
-                  (total > 0 && typeof config.totalPairs === "number" ? Math.round(config.totalPairs / total) : null);
+                  (total > 0 && totalPairs !== null ? Math.round(totalPairs / total) : null);
                 
                 return (
                   <tr key={run.id} className="hover:bg-muted/50 transition-colors group">
@@ -410,17 +423,17 @@ export default function RunHistory() {
                         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 min-w-[150px]">
                           <div className="text-sm font-semibold text-emerald-800">{formatScore(avgScore)}</div>
                           <div className="text-[11px] text-emerald-700/80">
-                            {scorePreview?.metrics.size ?? 0} metric types · {scorePreview?.scores.length ?? 0} successful quality rows
+                            {scorePreview?.metrics.size ?? 0} metric types across {scorePreview?.scores.length ?? 0} successful quality rows
                           </div>
                           <div className="text-[10px] text-emerald-700/70 mt-1">
-                            Pair totals live in Run Details.
+                            Pair totals and confidence context live in Run Details.
                           </div>
                         </div>
                       ) : (
                         <div className="text-xs text-muted-foreground min-w-[150px]">
                           {run.status === "running" || run.status === "cancel_requested" || run.status === "pending"
-                            ? "Collecting scores..."
-                            : (config.errorCount ?? 0) > 0
+                            ? "Waiting for successful quality rows..."
+                            : errorCount > 0
                               ? "No successful quality scores"
                               : "No scored results"}
                         </div>
@@ -436,22 +449,36 @@ export default function RunHistory() {
                       )}>
                         {(run.status === "running" || run.status === "cancel_requested") && <Loader2 className="w-3 h-3 inline mr-1 animate-spin" />}
                         {run.status === "completed" && <CheckCircle2 className="w-3 h-3 inline mr-1" />}
-                        {run.status}
+                        {humanizeStatus(run.status)}
                       </span>
                       {run.configJson?.completedWithErrors ? (
-                        <div className="text-[10px] text-amber-700 mt-1">Completed with some failed pairs</div>
+                        <div className="text-[10px] text-amber-700 mt-1">Scores are usable. Failed pairs were excluded.</div>
+                      ) : run.status === "running" || run.status === "cancel_requested" || run.status === "pending" ? (
+                        <div className="text-[10px] text-muted-foreground mt-1">Rows may appear before pair totals finish.</div>
                       ) : null}
                     </td>
                     <td className="px-4 py-4">
-                      <div className="flex flex-wrap gap-2 text-[10px]">
-                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-muted text-muted-foreground">
-                          <ShieldAlert className="w-3 h-3" />
-                          {config.errorCount ?? 0} fail
-                        </span>
-                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-muted text-muted-foreground">
-                          <RotateCcw className="w-3 h-3" />
-                          {config.retryCount ?? 0} retry
-                        </span>
+                      <div className="space-y-2 min-w-[170px]">
+                        <div className="text-[10px] text-muted-foreground">
+                          {completedPairs !== null && totalPairs !== null
+                            ? `${completedPairs}/${totalPairs} pairs completed`
+                            : "Pair totals appear in Run Details"}
+                        </div>
+                        {successRate !== null ? (
+                          <div className="text-[11px] font-medium text-foreground/85">
+                            {(successRate * 100).toFixed(1)}% pair success
+                          </div>
+                        ) : null}
+                        <div className="flex flex-wrap gap-2 text-[10px]">
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-muted text-muted-foreground">
+                            <ShieldAlert className="w-3 h-3" />
+                            {errorCount} fail
+                          </span>
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-muted text-muted-foreground">
+                            <RotateCcw className="w-3 h-3" />
+                            {retryCount} retry
+                          </span>
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-4 text-right">

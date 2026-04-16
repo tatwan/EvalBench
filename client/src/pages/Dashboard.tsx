@@ -37,6 +37,12 @@ const TOOLTIP_COPY: Record<string, string> = {
   latency: "Total latency per request. Lower is better.",
 };
 
+function humanizeStatus(status?: string | null) {
+  const normalized = String(status ?? "").replace(/_/g, " ").trim();
+  if (!normalized) return "Unknown";
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
 function normalizeRadar(value: number) {
   if (!Number.isFinite(value)) return 0;
   if (value <= 1) return value * 100;
@@ -48,6 +54,8 @@ export default function Dashboard() {
   const { data: runs = [], isLoading: runsLoading, refetch: refetchRuns, isRefetching: isRefetchingRuns } = useEvalRuns();
   const { data: results = [], isLoading: resultsLoading, refetch: refetchResults, isRefetching: isRefetchingResults } = useAllEvalResults();
   const [selectedTask, setSelectedTask] = useState<string>("all");
+  const localModels = useMemo(() => (models as any[]).filter((model) => model.family !== "cloud"), [models]);
+  const comparisonModels = useMemo(() => (models as any[]).filter((model) => model.family === "cloud"), [models]);
 
   const handleRefresh = async () => {
     await Promise.all([refetchRuns(), refetchResults()]);
@@ -114,6 +122,7 @@ export default function Dashboard() {
         latency: latencyStats?.mean ?? null,
         latencyMoe: latencyStats?.moe ?? null,
         tasks,
+        qualityRowCount: modelResults.length,
         evalsCount: modelResults.length,
       };
     });
@@ -125,6 +134,16 @@ export default function Dashboard() {
       .sort((a, b) => b.avgScore - a.avgScore)
       .slice(0, 4);
   }, [summaries]);
+
+  const leaderboardLocalCount = useMemo(
+    () => leaderboard.filter((model) => model.family !== "cloud").length,
+    [leaderboard]
+  );
+
+  const leaderboardComparisonCount = useMemo(
+    () => leaderboard.filter((model) => model.family === "cloud").length,
+    [leaderboard]
+  );
 
   const radarData = useMemo(() => {
     const qualityResults = (results as any[]).filter((r) => !r.error && !SPEED_METRICS.has(r.metricName));
@@ -167,12 +186,33 @@ export default function Dashboard() {
   }, [runs]);
 
   const stats = [
-    { label: "Models Loaded", value: models.length, icon: Cpu, tone: "bg-violet-100 text-violet-600" },
-    { label: "Eval Runs Total", value: runs.length, icon: Activity, tone: "bg-amber-100 text-amber-600" },
-    { label: "Data Points", value: results.length, icon: CheckCircle2, tone: "bg-emerald-100 text-emerald-600" },
+    {
+      label: "Local Models",
+      value: localModels.length,
+      detail: comparisonModels.length > 0
+        ? `${comparisonModels.length} comparison models tracked separately`
+        : "Ollama-first catalog ready for evaluation",
+      icon: Cpu,
+      tone: "bg-violet-100 text-violet-600",
+    },
+    {
+      label: "Eval Runs Total",
+      value: runs.length,
+      detail: runs.length > 0 ? "Run History tracks active and completed evaluations." : "No runs recorded yet.",
+      icon: Activity,
+      tone: "bg-amber-100 text-amber-600",
+    },
+    {
+      label: "Stored Rows",
+      value: results.length,
+      detail: "Successful score rows written by the evaluation pipeline.",
+      icon: CheckCircle2,
+      tone: "bg-emerald-100 text-emerald-600",
+    },
     {
       label: "Active Evals",
       value: runs.filter((r) => r.status === "running" || r.status === "cancel_requested").length,
+      detail: "Runs currently evaluating or waiting to finish cleanup.",
       icon: Clock,
       tone: "bg-rose-100 text-rose-600",
     },
@@ -188,7 +228,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-extrabold text-foreground">Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Your local LLM evaluation workspace - Updated{" "}
+            Your local-first LLM evaluation workspace - Updated{" "}
             {recentRuns[0]?.timestamp
               ? formatDistanceToNow(new Date(recentRuns[0].timestamp), { addSuffix: true })
               : "just now"}
@@ -212,6 +252,7 @@ export default function Dashboard() {
                 <div>
                   <div className="text-2xl font-extrabold text-foreground">{stat.value}</div>
                   <div className="text-xs font-medium text-muted-foreground">{stat.label}</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">{stat.detail}</div>
                 </div>
               </div>
             </Card>
@@ -219,12 +260,31 @@ export default function Dashboard() {
         })}
       </div>
 
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="text-sm font-semibold text-foreground">How To Read These Scores</div>
+        <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-muted-foreground">
+          <div>
+            Overall score averages successful non-speed quality metrics for the current task filter.
+          </div>
+          <div>
+            Confidence intervals show how noisy the average is. Wider bands mean less stable comparisons.
+          </div>
+          <div>
+            Latency and token-speed metrics stay separate so slow models do not look worse on quality.
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
         <Card className="p-0 overflow-hidden">
           <div className="px-5 py-4 border-b border-border flex items-center justify-between">
             <div>
               <div className="text-sm font-semibold text-foreground">Model Leaderboard</div>
-              <div className="text-xs text-muted-foreground">Sorted by overall score across all tasks</div>
+              <div className="text-xs text-muted-foreground">
+                {selectedTask === "all"
+                  ? "Sorted by overall quality score across all evaluated tasks"
+                  : `Sorted by overall quality score for ${selectedTask}`}
+              </div>
             </div>
             <div className="flex gap-2">
               <button
@@ -289,6 +349,7 @@ export default function Dashboard() {
                         {model.avgScoreMoe !== null && model.avgScoreMoe > 0 ? (
                           <div className="text-[10px] text-muted-foreground">± {(model.avgScoreMoe * 100).toFixed(1)}%</div>
                         ) : null}
+                        <div className="text-[10px] text-muted-foreground">{model.qualityRowCount} quality rows</div>
                       </div>
                     </td>
                     <td className="px-5 py-3">
@@ -352,8 +413,14 @@ export default function Dashboard() {
               </tbody>
             </table>
           </div>
-          <div className="px-5 py-3 border-t border-border text-xs text-muted-foreground flex items-center justify-between">
-            <span>{leaderboard.length} of {models.length} models evaluated</span>
+          <div className="px-5 py-3 border-t border-border text-xs text-muted-foreground flex items-center justify-between gap-4">
+            <span>
+              Showing {leaderboard.length} evaluated models
+              {leaderboard.length > 0
+                ? ` (${leaderboardLocalCount} local${leaderboardComparisonCount > 0 ? `, ${leaderboardComparisonCount} comparison` : ""})`
+                : ""}
+              . Task-specific metrics appear only where they apply.
+            </span>
             <Link href="/models" className="text-violet-600 font-semibold">View All -&gt;</Link>
           </div>
         </Card>
@@ -415,11 +482,14 @@ export default function Dashboard() {
                   <div>
                     <div className="text-sm font-semibold capitalize">
                       {run.configJson?.taskType ?? "Eval run"}
-                      <span className="ml-2 text-xs font-medium text-muted-foreground">({run.status.replace("_", " ")})</span>
+                      <span className="ml-2 text-xs font-medium text-muted-foreground">({humanizeStatus(run.status)})</span>
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {run.timestamp ? formatDistanceToNow(new Date(run.timestamp), { addSuffix: true }) : "Unknown time"}
                     </div>
+                    {run.configJson?.completedWithErrors ? (
+                      <div className="text-[11px] text-amber-700 mt-1">Completed with failed pairs excluded from score summaries.</div>
+                    ) : null}
                   </div>
                 </div>
               ))}

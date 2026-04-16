@@ -61,6 +61,7 @@ async def lifespan(app: FastAPI):
             db.rollback()
 
         dataset_seeder.seed_if_empty(db)
+        storage.repair_legacy_dataset_sources(db)
         # Auto-sync Ollama models on startup so the UI shows them immediately
         ollama_models = await list_models()
         if ollama_models:

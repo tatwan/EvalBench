@@ -25,6 +25,8 @@ export function Sidebar() {
   const { data: runs = [] } = useEvalRuns();
   const { data: ollamaStatus } = useOllamaStatus();
   const startOllama = useStartOllama();
+  const localModelCount = (models as any[]).filter((model) => model.family !== "cloud").length;
+  const runCount = (runs as any[]).length;
 
   const sections: { label: string; items: NavItem[] }[] = [
     {
@@ -32,13 +34,13 @@ export function Sidebar() {
       items: [
         { href: "/", label: "Dashboard", icon: LayoutDashboard },
         { href: "/evaluate", label: "Eval Wizard", icon: Activity, match: (path) => path.startsWith("/evaluate") },
-        { href: "/history", label: "Run History", icon: History, badge: runs.length },
+        { href: "/history", label: "Run History", icon: History, badge: runCount > 0 ? runCount : undefined },
       ],
     },
     {
       label: "Analyze",
       items: [
-        { href: "/models", label: "Models", icon: Cpu, badge: models.length },
+        { href: "/models", label: "Models", icon: Cpu, badge: localModelCount },
         { href: "/arena", label: "Arena", icon: Swords },
         { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
         { href: "/compare", label: "Compare", icon: SplitSquareHorizontal },
@@ -112,7 +114,7 @@ export function Sidebar() {
               {ollamaStatus?.running ? "Ollama Connected" : "Ollama Offline"}
             </div>
             <div className="text-[11px] text-foreground/70 font-mono truncate">
-              {ollamaStatus?.running ? "localhost:11434" : "Run `ollama serve`"}
+              {ollamaStatus?.running ? `localhost:11434 · ${localModelCount} local` : "Run `ollama serve`"}
             </div>
           </div>
         </div>

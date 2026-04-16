@@ -205,8 +205,6 @@ Both are kept green as part of the active audit/remediation work.
 - Provider expansion beyond Ollama for evaluated models
 - Dataset provenance reporting and stronger shareable benchmark outputs
 
-See [BACKLOG.md](./docs/superpowers/plans/BACKLOG.md) for full details.
-
 ---
 
 ## Contributing

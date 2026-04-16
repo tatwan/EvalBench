@@ -3,6 +3,25 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from backend import models as db_models
 
+BUILT_IN_DATASET_BASELINES: dict[str, int] = {
+    "EvalBench Summarization v1": 1,
+    "EvalBench QA v1": 1,
+    "EvalBench MMLU (Subset)": 1,
+    "EvalBench MMLU (Expanded v2)": 2,
+    "EvalBench HellaSwag (Subset)": 1,
+    "EvalBench ARC (Subset)": 1,
+    "EvalBench BoolQ (Subset)": 1,
+    "EvalBench CommonsenseQA (Subset)": 1,
+    "EvalBench GSM8K (Subset)": 1,
+    "EvalBench TruthfulQA (Subset)": 1,
+    "EvalBench TruthfulQA (MC v2)": 2,
+    "EvalBench Embeddings v1": 1,
+    "EvalBench HumanEval (Subset)": 1,
+    "EvalBench Classification v1": 1,
+    "EvalBench Translation v1": 1,
+    "EvalBench RAG v1": 1,
+}
+
 
 # ─── Models ────────────────────────────────────────────────
 
@@ -233,6 +252,36 @@ def get_all_datasets(db: Session) -> list[db_models.GoldenDataset]:
 
 def get_dataset(db: Session, dataset_id: int) -> db_models.GoldenDataset | None:
     return db.query(db_models.GoldenDataset).filter_by(id=dataset_id).first()
+
+
+def normalized_dataset_source(name: str, source: str | None, schema_version: int | None) -> str | None:
+    if source is None:
+        return source
+    normalized = source.strip().lower()
+    if normalized != "curated-inline":
+        return source
+
+    baseline_version = BUILT_IN_DATASET_BASELINES.get(name)
+    if baseline_version is None:
+        return "manual:derived"
+    if (schema_version or 1) > baseline_version:
+        return "manual:derived"
+    return "curated-inline"
+
+
+def is_builtin_dataset_record(dataset: db_models.GoldenDataset) -> bool:
+    return normalized_dataset_source(dataset.name, dataset.source, dataset.schema_version) == "curated-inline"
+
+
+def repair_legacy_dataset_sources(db: Session) -> None:
+    dirty = False
+    for dataset in db.query(db_models.GoldenDataset).all():
+        normalized = normalized_dataset_source(dataset.name, dataset.source, dataset.schema_version)
+        if normalized != dataset.source:
+            dataset.source = normalized
+            dirty = True
+    if dirty:
+        db.commit()
 
 
 def get_dataset_items(db: Session, dataset_id: int) -> list[db_models.GoldenItem]:

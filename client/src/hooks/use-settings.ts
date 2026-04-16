@@ -82,6 +82,9 @@ export function useWipeData() {
       return res.json();
     },
     onSuccess: () => {
+      queryClient.setQueryData(["/api/eval-runs"], []);
+      queryClient.setQueryData(["/api/eval-results"], []);
+      queryClient.setQueryData(["/api/arena"], []);
       queryClient.invalidateQueries({ queryKey: ["/api/eval-runs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/eval-results"] });
       queryClient.invalidateQueries({ queryKey: ["/api/arena"] });
