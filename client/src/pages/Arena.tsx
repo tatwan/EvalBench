@@ -1,23 +1,41 @@
 import { useArenaMatchup, useArenaVote } from "@/hooks/use-arena";
+import { useModels } from "@/hooks/use-models";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MarkdownContent } from "@/components/ui/MarkdownContent";
 import { Swords, RefreshCw, Trophy, Skull, ThumbsUp, Scale, Pencil, Play } from "lucide-react";
 import { clsx } from "clsx";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 
 export default function Arena() {
   const [customPrompt, setCustomPrompt] = useState("");
   const [submittedPrompt, setSubmittedPrompt] = useState<string | undefined>(undefined);
+  const [selectionMode, setSelectionMode] = useState<"random" | "manual">("random");
+  const [manualModelAId, setManualModelAId] = useState<string>("");
+  const [manualModelBId, setManualModelBId] = useState<string>("");
   const [hasStarted, setHasStarted] = useState(false);
-  const { data: matchup, isLoading, refetch, isRefetching } = useArenaMatchup(submittedPrompt, hasStarted);
+  const { data: models = [] } = useModels();
+  const manualArenaReady = selectionMode === "random" || (!!manualModelAId && !!manualModelBId && manualModelAId !== manualModelBId);
+  const { data: matchup, isLoading, refetch, isRefetching } = useArenaMatchup(
+    submittedPrompt,
+    hasStarted && manualArenaReady,
+    selectionMode === "manual" ? Number(manualModelAId || 0) : null,
+    selectionMode === "manual" ? Number(manualModelBId || 0) : null,
+  );
   const voteMutation = useArenaVote();
   const [votedFor, setVotedFor] = useState<"model_a" | "model_b" | "tie" | null>(null);
   const [revealedWinner, setRevealedWinner] = useState<"model_a" | "model_b" | "tie" | null>(null);
   const [, navigate] = useLocation();
+  const arenaModels = useMemo(
+    () => (models as any[]).filter((model) => model.family !== "cloud" && !model.name.toLowerCase().includes("embed")),
+    [models],
+  );
 
   const handleNewBattle = () => {
+    if (!manualArenaReady) return;
     setSubmittedPrompt(customPrompt.trim() || undefined);
     setVotedFor(null);
     setRevealedWinner(null);
@@ -72,13 +90,69 @@ export default function Arena() {
           </Button>
         </div>
 
-        <div className="rounded-2xl border border-violet-200 bg-violet-50 p-6 space-y-4">
+          <div className="rounded-2xl border border-violet-200 bg-violet-50 p-6 space-y-4">
           <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-600">Opt-In Arena</div>
           <h2 className="text-xl font-bold text-violet-950">Start a blind head-to-head battle when you're ready</h2>
           <p className="text-sm text-violet-900/80">
-            EvalBench will fetch two model responses for a random prompt, or for the custom prompt you provide below.
+            EvalBench will fetch two model responses for a random matchup or for the exact pair you choose below.
             No generations begin until you explicitly start.
           </p>
+          <div className="grid gap-3 md:grid-cols-3">
+            <Button
+              type="button"
+              variant={selectionMode === "random" ? "default" : "outline"}
+              onClick={() => setSelectionMode("random")}
+            >
+              Random Matchup
+            </Button>
+            <Button
+              type="button"
+              variant={selectionMode === "manual" ? "default" : "outline"}
+              onClick={() => setSelectionMode("manual")}
+            >
+              Manual Matchup
+            </Button>
+          </div>
+          {selectionMode === "manual" ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-violet-700 mb-1">Model A</div>
+                <Select value={manualModelAId} onValueChange={setManualModelAId}>
+                  <SelectTrigger className="bg-white">
+                    <SelectValue placeholder="Choose Model A" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectLabel>Local Models</SelectLabel>
+                      {arenaModels.map((model: any) => (
+                        <SelectItem key={model.id} value={String(model.id)}>
+                          {model.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-violet-700 mb-1">Model B</div>
+                <Select value={manualModelBId} onValueChange={setManualModelBId}>
+                  <SelectTrigger className="bg-white">
+                    <SelectValue placeholder="Choose Model B" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectLabel>Local Models</SelectLabel>
+                      {arenaModels.map((model: any) => (
+                        <SelectItem key={model.id} value={String(model.id)} disabled={String(model.id) === manualModelAId}>
+                          {model.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          ) : null}
           <div className="flex gap-2 items-center">
             <Pencil className="w-4 h-4 text-muted-foreground shrink-0" />
             <Input
@@ -88,11 +162,16 @@ export default function Arena() {
               placeholder="Type a custom prompt, or leave blank for a random one…"
               className="bg-white text-sm"
             />
-            <Button onClick={handleNewBattle} className="shrink-0 gap-2">
+            <Button onClick={handleNewBattle} className="shrink-0 gap-2" disabled={!manualArenaReady}>
               <Play className="w-4 h-4" />
               Start Battle
             </Button>
           </div>
+          {selectionMode === "manual" && !manualArenaReady ? (
+            <p className="text-xs text-violet-800/80">
+              Pick two distinct non-embedding models to start a targeted battle.
+            </p>
+          ) : null}
         </div>
       </div>
     );
@@ -150,7 +229,58 @@ export default function Arena() {
       </div>
 
       {/* Custom prompt input */}
-      <div className="flex gap-2 items-center">
+      <div className="space-y-3">
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant={selectionMode === "random" ? "default" : "outline"}
+            onClick={() => setSelectionMode("random")}
+          >
+            Random Matchup
+          </Button>
+          <Button
+            type="button"
+            variant={selectionMode === "manual" ? "default" : "outline"}
+            onClick={() => setSelectionMode("manual")}
+          >
+            Manual Matchup
+          </Button>
+        </div>
+        {selectionMode === "manual" ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            <Select value={manualModelAId} onValueChange={setManualModelAId}>
+              <SelectTrigger className="bg-muted text-sm">
+                <SelectValue placeholder="Choose Model A" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Local Models</SelectLabel>
+                  {arenaModels.map((model: any) => (
+                    <SelectItem key={model.id} value={String(model.id)}>
+                      {model.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Select value={manualModelBId} onValueChange={setManualModelBId}>
+              <SelectTrigger className="bg-muted text-sm">
+                <SelectValue placeholder="Choose Model B" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Local Models</SelectLabel>
+                  {arenaModels.map((model: any) => (
+                    <SelectItem key={model.id} value={String(model.id)} disabled={String(model.id) === manualModelAId}>
+                      {model.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+        <div className="flex gap-2 items-center">
         <Pencil className="w-4 h-4 text-muted-foreground shrink-0" />
         <Input
           value={customPrompt}
@@ -159,9 +289,10 @@ export default function Arena() {
           placeholder="Type a custom prompt, or leave blank for a random one…"
           className="bg-muted text-sm"
         />
-        <Button size="sm" variant="outline" onClick={handleNewBattle} className="shrink-0">
+        <Button size="sm" variant="outline" onClick={handleNewBattle} className="shrink-0" disabled={!manualArenaReady}>
           New Battle
         </Button>
+      </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_48px_1fr] gap-4">
@@ -173,8 +304,8 @@ export default function Arena() {
               <div className="text-xs text-muted-foreground">{revealedWinner ? matchup.modelA.name : "Hidden until you vote"}</div>
             </div>
           </div>
-          <div className="p-5 text-sm leading-relaxed text-foreground whitespace-pre-wrap max-h-[420px] overflow-y-auto">
-            {matchup.outputA}
+          <div className="p-5 text-sm leading-relaxed text-foreground max-h-[420px] overflow-y-auto">
+            <MarkdownContent content={matchup.outputA} className="space-y-3" />
           </div>
         </Card>
 
@@ -192,8 +323,8 @@ export default function Arena() {
               <div className="text-xs text-muted-foreground">{revealedWinner ? matchup.modelB.name : "Hidden until you vote"}</div>
             </div>
           </div>
-          <div className="p-5 text-sm leading-relaxed text-foreground whitespace-pre-wrap max-h-[420px] overflow-y-auto">
-            {matchup.outputB}
+          <div className="p-5 text-sm leading-relaxed text-foreground max-h-[420px] overflow-y-auto">
+            <MarkdownContent content={matchup.outputB} className="space-y-3" />
           </div>
         </Card>
       </div>

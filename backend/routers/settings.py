@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -14,6 +15,8 @@ from backend.security import encrypt_value, decrypt_value, is_sensitive
 from backend.services.ollama import check_status, invalidate_host_cache
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+EVAL_PROVIDERS = ("openai", "anthropic", "gemini", "groq", "grok")
 
 
 def _safe_out(setting: Setting) -> dict:
@@ -37,7 +40,7 @@ def _current_settings(db: Session) -> dict[str, str]:
 
 
 def _provider_for_judge_model(judge_model: str) -> str:
-    if judge_model.startswith("gpt-"):
+    if judge_model.startswith(("gpt-", "o1", "o3", "o4", "chatgpt-", "text-embedding-")):
         return "openai"
     if judge_model.startswith("claude-"):
         return "anthropic"
@@ -48,6 +51,18 @@ def _provider_for_judge_model(judge_model: str) -> str:
     if judge_model.startswith("groq-"):
         return "groq"
     return "ollama"
+
+
+def _capabilities_for_model(model_id: str, generation_methods: list[str] | None = None) -> list[str]:
+    lowered = model_id.lower()
+    capabilities: list[str] = []
+    methods = {method.lower() for method in generation_methods or []}
+    if any("embed" in method for method in methods) or any(token in lowered for token in ("embed", "embedding", "text-embedding")):
+        capabilities.append("embedding")
+    if any("generate" in method or "message" in method for method in methods) or not methods:
+        if not any(token in lowered for token in ("tts", "whisper", "audio", "image", "realtime", "search", "transcribe")):
+            capabilities.append("text")
+    return capabilities or ["text"]
 
 
 @router.get("", response_model=List[SettingOut])
@@ -241,9 +256,10 @@ async def get_judge_models(db: Session = Depends(get_db)):
     anthropic_key = _key("anthropic_api_key")
     gemini_key    = _key("gemini_api_key")
     groq_key      = _key("groq_api_key")
+    grok_key      = _key("grok_api_key")
 
     result: dict[str, list[dict]] = {
-        "openai": [], "anthropic": [], "gemini": [], "groq": []
+        "openai": [], "anthropic": [], "gemini": [], "groq": [], "grok": []
     }
 
     async with httpx.AsyncClient(timeout=8.0) as client:
@@ -321,6 +337,164 @@ async def get_judge_models(db: Session = Depends(get_db)):
             except Exception:
                 pass
 
+        # xAI Grok
+        if grok_key:
+            try:
+                r = await client.get(
+                    "https://api.x.ai/v1/models",
+                    headers={"Authorization": f"Bearer {grok_key}"},
+                )
+                if r.status_code == 200:
+                    models = [
+                        m for m in r.json().get("data", [])
+                        if not any(token in m["id"] for token in ("audio", "image", "realtime"))
+                    ]
+                    result["grok"] = [{"id": m["id"], "label": m["id"]} for m in models[:10]]
+            except Exception:
+                pass
+
+    return result
+
+
+@router.get("/eval-models")
+async def get_eval_models(db: Session = Depends(get_db)):
+    """
+    Fetch available provider models for use as evaluated cloud/frontier models.
+    Includes capability hints so the wizard can separate text vs embedding tasks.
+    """
+    import httpx
+
+    all_settings = {s.key: s.value for s in db.query(Setting).all()}
+
+    def _key(name: str) -> str:
+        raw = all_settings.get(name, "")
+        try:
+            return decrypt_value(raw).strip() if raw else ""
+        except Exception:
+            return raw.strip() if raw else ""
+
+    openai_key = _key("openai_api_key")
+    anthropic_key = _key("anthropic_api_key")
+    gemini_key = _key("gemini_api_key")
+    groq_key = _key("groq_api_key")
+    grok_key = _key("grok_api_key")
+
+    result: dict[str, list[dict]] = {provider: [] for provider in EVAL_PROVIDERS}
+
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        if openai_key:
+            try:
+                r = await client.get(
+                    "https://api.openai.com/v1/models",
+                    headers={"Authorization": f"Bearer {openai_key}"},
+                )
+                if r.status_code == 200:
+                    SKIP = ("tts", "whisper", "dall-e", "realtime", "audio", "search", "transcribe")
+                    models = [
+                        m for m in r.json().get("data", [])
+                        if not any(token in m["id"] for token in SKIP)
+                    ]
+                    result["openai"] = [
+                        {
+                            "id": m["id"],
+                            "label": m["id"],
+                            "capabilities": _capabilities_for_model(m["id"]),
+                        }
+                        for m in models[:25]
+                    ]
+            except Exception:
+                pass
+
+        if anthropic_key:
+            try:
+                r = await client.get(
+                    "https://api.anthropic.com/v1/models",
+                    headers={"x-api-key": anthropic_key, "anthropic-version": "2023-06-01"},
+                )
+                if r.status_code == 200:
+                    models = sorted(
+                        [m for m in r.json().get("data", []) if not m.get("deprecated_at")],
+                        key=lambda m: m.get("created_at", ""),
+                        reverse=True,
+                    )
+                    result["anthropic"] = [
+                        {
+                            "id": m["id"],
+                            "label": m.get("display_name", m["id"]),
+                            "capabilities": ["text"],
+                        }
+                        for m in models[:10]
+                    ]
+            except Exception:
+                pass
+
+        if gemini_key:
+            try:
+                r = await client.get(
+                    "https://generativelanguage.googleapis.com/v1beta/models",
+                    params={"key": gemini_key},
+                )
+                if r.status_code == 200:
+                    models = [m for m in r.json().get("models", []) if m.get("name", "").startswith("models/gemini-")]
+                    result["gemini"] = [
+                        {
+                            "id": m["name"].replace("models/", ""),
+                            "label": m.get("displayName", m["name"].replace("models/", "")),
+                            "capabilities": _capabilities_for_model(
+                                m["name"].replace("models/", ""),
+                                m.get("supportedGenerationMethods", []),
+                            ),
+                        }
+                        for m in models[:15]
+                    ]
+            except Exception:
+                pass
+
+        if groq_key:
+            try:
+                r = await client.get(
+                    "https://api.groq.com/openai/v1/models",
+                    headers={"Authorization": f"Bearer {groq_key}"},
+                )
+                if r.status_code == 200:
+                    SKIP_GROQ = ("whisper", "tts", "guard", "audio")
+                    models = [
+                        m for m in r.json().get("data", [])
+                        if not any(token in m["id"] for token in SKIP_GROQ)
+                    ]
+                    result["groq"] = [
+                        {
+                            "id": f"groq-{m['id']}",
+                            "label": m["id"],
+                            "capabilities": _capabilities_for_model(m["id"]),
+                        }
+                        for m in models[:15]
+                    ]
+            except Exception:
+                pass
+
+        if grok_key:
+            try:
+                r = await client.get(
+                    "https://api.x.ai/v1/models",
+                    headers={"Authorization": f"Bearer {grok_key}"},
+                )
+                if r.status_code == 200:
+                    models = [
+                        m for m in r.json().get("data", [])
+                        if not any(token in m["id"] for token in ("audio", "image", "realtime"))
+                    ]
+                    result["grok"] = [
+                        {
+                            "id": m["id"],
+                            "label": m.get("id", ""),
+                            "capabilities": _capabilities_for_model(m["id"]),
+                        }
+                        for m in models[:15]
+                    ]
+            except Exception:
+                pass
+
     return result
 
 
@@ -332,6 +506,19 @@ def wipe_data(db: Session = Depends(get_db)):
     db.query(ArenaBattle).delete()
     db.query(EloRating).delete()
     db.query(ResponseCache).delete()
+    try:
+        db.execute(
+            text(
+                "DELETE FROM sqlite_sequence "
+                "WHERE name IN ('eval_results', 'eval_runs', 'arena_battles')"
+            )
+        )
+    except Exception:
+        db.rollback()
+        db.query(EvalResult).delete()
+        db.query(EvalRun).delete()
+        db.query(ArenaBattle).delete()
+        db.query(EloRating).delete()
+        db.query(ResponseCache).delete()
     db.commit()
     return {"message": "All captured stats, runs, and evals have been permanently deleted."}
-

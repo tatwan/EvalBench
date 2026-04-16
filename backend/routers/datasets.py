@@ -14,6 +14,11 @@ from backend.services import dataset_importer, storage
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
 
+def _is_user_dataset(source: str | None) -> bool:
+    normalized = (source or "").strip().lower()
+    return normalized.startswith(("manual", "import", "upload", "template:"))
+
+
 @router.get("", response_model=list[GoldenDatasetOut])
 def list_datasets(db: Session = Depends(get_db)):
     datasets = storage.get_all_datasets(db)
@@ -117,3 +122,25 @@ def get_dataset(dataset_id: int, db: Session = Depends(get_db)):
             "items": [GoldenItemOut.model_validate(item) for item in items],
         }
     )
+
+
+@router.delete("/{dataset_id}")
+def delete_dataset(dataset_id: int, db: Session = Depends(get_db)):
+    dataset = storage.get_dataset(db, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    if not _is_user_dataset(dataset.source):
+        raise HTTPException(status_code=400, detail="Built-in datasets cannot be deleted.")
+
+    if storage.dataset_has_results(db, dataset_id):
+        raise HTTPException(
+            status_code=400,
+            detail="This dataset has already been used in an evaluation run and cannot be deleted without losing run history.",
+        )
+
+    deleted = storage.delete_dataset(db, dataset_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    return {"id": dataset_id, "name": dataset.name}

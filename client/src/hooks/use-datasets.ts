@@ -95,3 +95,24 @@ export function useImportDataset() {
     },
   });
 }
+
+export function useDeleteDataset() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (datasetId: number) => {
+      const url = buildUrl(api.datasets.delete.path, { id: datasetId });
+      const res = await apiRequest(api.datasets.delete.method, url);
+      return api.datasets.delete.responses[200].parse(await res.json());
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.datasets.list.path] });
+      queryClient.invalidateQueries({ queryKey: [api.datasets.get.path] });
+      toast({
+        title: "Dataset deleted",
+        description: "The custom dataset was removed from your local registry.",
+      });
+    },
+  });
+}

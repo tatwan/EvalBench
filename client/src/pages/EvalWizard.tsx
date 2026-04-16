@@ -1,15 +1,32 @@
 import { useMemo, useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useModels } from "@/hooks/use-models";
 import { useCreateEvalRun, useEvalRuns } from "@/hooks/use-eval";
 import { useDatasets } from "@/hooks/use-datasets";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Check, ChevronRight, Activity, Cpu, Layers, BookOpen, AlignLeft, MessageCircleQuestion, MessageSquare, Code2, BrainCircuit, Sparkles, Network, Languages, Clock3, Shield, Tags, Search } from "lucide-react";
 import { clsx } from "clsx";
 import { useLocation } from "wouter";
 import type { TaskType } from "@shared/routes";
+
+function parseJsonSetting<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 const TASK_TYPES: Array<{
   id: TaskType;
@@ -30,7 +47,7 @@ const TASK_TYPES: Array<{
     desc: "How well does the model condense articles or documents?",
     tests: "Compression, coverage, and faithfulness to source.",
     goal: "Produce concise summaries without losing key facts.",
-    metrics: ["ROUGE-1", "ROUGE-2", "ROUGE-L", "BERTScore", "METEOR", "LLM Coherence", "LLM Relevance"],
+    metrics: ["ROUGE-1", "ROUGE-2", "ROUGE-L", "ROUGE-Lsum", "BERTScore", "METEOR", "LLM Coherence", "LLM Relevance"],
     datasetHint: "EvalBench Summarization v1",
     datasetLabel: "EvalBench Summarization v1",
     usesJudge: true,
@@ -79,8 +96,8 @@ const TASK_TYPES: Array<{
     tests: "Breadth of factual knowledge and reasoning.",
     goal: "Score well across standardized subject benchmarks.",
     metrics: ["Exact Match", "Token F1", "Tokens/sec", "LLM Relevance"],
-    datasetHint: "EvalBench MMLU (Subset)",
-    datasetLabel: "EvalBench MMLU (Subset)",
+    datasetHint: "EvalBench MMLU (Expanded v2)",
+    datasetLabel: "EvalBench MMLU (Expanded v2)",
     usesJudge: true,
   },
   {
@@ -139,8 +156,8 @@ const TASK_TYPES: Array<{
     tests: "Hallucination rates and safety boundaries.",
     goal: "Identify unsafe queries and answer truthfulness without hallucinating.",
     metrics: ["Exact Match", "Tokens/sec", "LLM Relevance"],
-    datasetHint: "EvalBench TruthfulQA (Subset)",
-    datasetLabel: "EvalBench TruthfulQA (Subset)",
+    datasetHint: "EvalBench TruthfulQA (MC v2)",
+    datasetLabel: "EvalBench TruthfulQA (MC v2)",
     usesJudge: true,
   },
   {
@@ -183,6 +200,7 @@ function formatDurationEstimate(seconds?: number | null): string {
 }
 
 export default function EvalWizard() {
+  const queryClient = useQueryClient();
   const [step, setStep] = useState(1);
   const [selectedModels, setSelectedModels] = useState<number[]>([]);
   const [selectedCloudModels, setSelectedCloudModels] = useState<string[]>([]);
@@ -190,7 +208,7 @@ export default function EvalWizard() {
   const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
   const [lastRunId, setLastRunId] = useState<number | null>(null);
   const [progress, setProgress] = useState<{ completed: number; total: number; percent: number; model?: string; status?: string } | null>(null);
-  const [sseError, setSseError] = useState<string | null>(null);
+  const [streamNotice, setStreamNotice] = useState<{ message: string; tone: "info" | "warning" | "error" } | null>(null);
   const [, navigate] = useLocation();
 
   const { data: models = [], isLoading: modelsLoading } = useModels();
@@ -198,7 +216,42 @@ export default function EvalWizard() {
   const { data: runs = [] } = useEvalRuns();
   const createRun = useCreateEvalRun();
   const { data: settingsRaw = [] } = useQuery<any[]>({ queryKey: ["/api/settings"] });
+  const { data: evalModelGroups = {} } = useQuery<Record<string, Array<{ id: string; label: string; capabilities: string[] }>>>({
+    queryKey: ["/api/settings/eval-models"],
+  });
   const judgeModel: string | undefined = (settingsRaw as any[]).find((s: any) => s.key === "judge_model")?.value;
+  const judgeEnabledSetting = (settingsRaw as any[]).find((s: any) => s.key === "judge_enabled")?.value;
+  const judgeEnabled = judgeEnabledSetting ? !["", "0", "false", "no", "off"].includes(String(judgeEnabledSetting).toLowerCase()) : Boolean(judgeModel);
+  const activeJudgeModel = judgeEnabled ? judgeModel : undefined;
+  const allowedEvalProviders = parseJsonSetting<string[]>(
+    (settingsRaw as any[]).find((s: any) => s.key === "allowed_eval_providers")?.value,
+    [],
+  );
+  const allowedEvalModels = parseJsonSetting<Record<string, string[]>>(
+    (settingsRaw as any[]).find((s: any) => s.key === "allowed_eval_models")?.value,
+    {},
+  );
+  const availableCloudModels = useMemo(() => {
+    return Object.entries(evalModelGroups ?? {}).flatMap(([provider, models]) =>
+      (models ?? []).map((model) => ({
+        id: model.id,
+        label: model.label,
+        provider,
+        capabilities: model.capabilities ?? ["text"],
+      }))
+    );
+  }, [evalModelGroups]);
+  const selectableCloudModels = useMemo(() => {
+    return availableCloudModels.filter((model) => {
+      if (model.id === activeJudgeModel) return false;
+      if (!allowedEvalProviders.includes(model.provider)) return false;
+      const allowedModelsForProvider = allowedEvalModels[model.provider] ?? [];
+      if (allowedModelsForProvider.length > 0 && !allowedModelsForProvider.includes(model.id)) return false;
+      const isEmbeddingCapable = model.capabilities.includes("embedding");
+      if (selectedTaskType === "embedding") return isEmbeddingCapable;
+      return !isEmbeddingCapable;
+    });
+  }, [availableCloudModels, activeJudgeModel, allowedEvalProviders, allowedEvalModels, selectedTaskType]);
 
   const filteredModels = (models as any[]).filter((model) => {
     const isEmbed = model.name?.toLowerCase().includes("embed");
@@ -260,8 +313,9 @@ export default function EvalWizard() {
     ? historicalEta?.secondsPerPair ?? FALLBACK_SECONDS_PER_PAIR[selectedTaskType]
     : null;
 
-  const estimatedPairs = selectedTaskType && datasetItemCount && selectedModels.length > 0
-    ? datasetItemCount * selectedModels.length
+  const totalSelectedModels = selectedModels.length + selectedCloudModels.length;
+  const estimatedPairs = selectedTaskType && datasetItemCount && totalSelectedModels > 0
+    ? datasetItemCount * totalSelectedModels
     : null;
   const estimatedDurationSeconds = selectedSecondsPerPair && estimatedPairs
     ? selectedSecondsPerPair * estimatedPairs
@@ -290,6 +344,11 @@ export default function EvalWizard() {
   };
 
   useEffect(() => {
+    if (!judgeModel) return;
+    setSelectedCloudModels((prev) => prev.filter((model) => model !== judgeModel));
+  }, [judgeModel]);
+
+  useEffect(() => {
     if (!selectedTaskType) return;
     if (!selectedDatasetId && datasetOptions.length > 0) {
       setSelectedDatasetId(datasetOptions[0].id);
@@ -304,19 +363,29 @@ export default function EvalWizard() {
       const event = JSON.parse(e.data);
       if (event.type === "progress") {
         setProgress({ completed: event.completed, total: event.total, percent: event.percent, model: event.model });
-      } else if (event.type === "error" || event.type === "warning") {
-        setSseError(event.message || event.error);
+      } else if (event.type === "error" || event.type === "warning" || event.type === "info") {
+        setStreamNotice({
+          message: event.message || event.error,
+          tone: event.type === "error" ? "error" : event.type === "warning" ? "warning" : "info",
+        });
       } else if (event.type === "done") {
         setProgress(prev => prev ? { ...prev, percent: 100, status: event.status } : { completed: 1, total: 1, percent: 100, status: event.status });
+        queryClient.invalidateQueries({ queryKey: ["/api/eval-runs"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/eval-runs/:id", lastRunId] });
+        queryClient.invalidateQueries({ queryKey: ["/api/eval-runs/:id/results", lastRunId] });
+        queryClient.invalidateQueries({ queryKey: ["/api/eval-runs/:id/stats", lastRunId] });
+        queryClient.invalidateQueries({ queryKey: ["/api/eval-results"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/models"] });
         es.close();
       }
     };
     es.onerror = () => {
+      setStreamNotice({ message: "Lost connection to the progress stream.", tone: "error" });
       es.close();
     };
 
     return () => es.close();
-  }, [step, lastRunId]);
+  }, [step, lastRunId, queryClient]);
 
   const handleRun = () => {
     if (!selectedTaskType) return;
@@ -330,7 +399,7 @@ export default function EvalWizard() {
       { onSuccess: (run: any) => {
           setLastRunId(run?.id ?? null);
           setProgress(null);
-          setSseError(null);
+          setStreamNotice(null);
           setStep(4);
         }
       }
@@ -541,38 +610,92 @@ export default function EvalWizard() {
             </div>
           )}
 
-          {judgeModel && (
+          <div className="mt-4 pt-4 border-t border-border space-y-3">
+          {selectedTask?.usesJudge ? (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Judge Model
+              </p>
+              <div className="mt-2 rounded-lg border border-border bg-muted/50 px-3 py-3 text-sm">
+                {activeJudgeModel ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium">{activeJudgeModel}</span>
+                    <Badge variant="secondary" className="text-xs">Used only for judging</Badge>
+                  </div>
+                ) : judgeEnabled ? (
+                  <span className="text-muted-foreground">No judge model configured in Settings. Judge metrics will be skipped.</span>
+                ) : (
+                  <span className="text-muted-foreground">LLM-as-Judge is off in Settings. Judge metrics will be skipped.</span>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          {selectableCloudModels.length > 0 && (
             <div className="mt-4 pt-4 border-t border-border">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                Cloud (via Judge Settings)
+                Frontier / Cloud Evaluatees
               </p>
-              <button
-                type="button"
-                onClick={() =>
-                  setSelectedCloudModels(prev =>
-                    prev.includes(judgeModel)
-                      ? prev.filter(m => m !== judgeModel)
-                      : [...prev, judgeModel]
-                  )
-                }
-                className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                  selectedCloudModels.includes(judgeModel)
-                    ? "border-primary bg-primary/10"
-                    : "border-border bg-card hover:border-primary/50"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm">{judgeModel}</span>
-                  <Badge variant="secondary" className="text-xs">Cloud</Badge>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between">
+                    <span>
+                      {selectedCloudModels.length > 0
+                        ? `${selectedCloudModels.length} frontier model${selectedCloudModels.length === 1 ? "" : "s"} selected`
+                        : "Select frontier models"}
+                    </span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-[320px]">
+                  <DropdownMenuLabel>Cloud evaluatees</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {selectableCloudModels.map((cloudModel) => (
+                    <DropdownMenuCheckboxItem
+                      key={cloudModel.id}
+                      checked={selectedCloudModels.includes(cloudModel.id)}
+                      onCheckedChange={(checked) =>
+                        setSelectedCloudModels((prev) =>
+                          checked
+                            ? [...prev, cloudModel.id]
+                            : prev.filter((model) => model !== cloudModel.id)
+                        )
+                      }
+                    >
+                      <div className="flex w-full items-center justify-between gap-3">
+                        <span>{cloudModel.label}</span>
+                        <Badge variant="secondary" className="text-[10px]">{cloudModel.provider}</Badge>
+                      </div>
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {selectedCloudModels.length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {selectedCloudModels.map((modelId) => {
+                    const match = selectableCloudModels.find((model) => model.id === modelId);
+                    return (
+                      <Badge key={modelId} variant="outline">
+                        {match?.label ?? modelId}
+                      </Badge>
+                    );
+                  })}
                 </div>
-                {selectedCloudModels.includes(judgeModel) && (
-                  <p className="text-xs text-amber-400 mt-1">
-                    ⚠ Using the same model as both evaluatee and judge may produce circular results.
-                  </p>
-                )}
-              </button>
+              ) : null}
             </div>
           )}
+
+          {selectedCloudModels.length === 0 && selectableCloudModels.length === 0 ? (
+            <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/40 px-3 py-3 text-xs text-muted-foreground">
+              No frontier models are enabled for this task yet. Configure them in Settings → Frontier Evaluation Allowlist.
+            </div>
+          ) : null}
+
+          {activeJudgeModel && selectedCloudModels.includes(activeJudgeModel) && (
+            <p className="text-xs text-amber-700">
+              The active judge model should stay separate from evaluated cloud models to avoid circular scoring.
+            </p>
+          )}
+          </div>
 
           <div className="flex justify-between">
             <Button variant="outline" onClick={() => setStep(1)}>&lt;- Back</Button>
@@ -631,7 +754,7 @@ export default function EvalWizard() {
               <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Workload</div>
               <div className="mt-2 text-2xl font-bold text-emerald-950">{estimatedPairs ?? "—"}</div>
               <div className="text-xs text-emerald-900/70 mt-1">
-                {estimatedPairs ? "model × item pairs across the run" : "Pick models and a dataset to size the run"}
+                {estimatedPairs ? "model × item pairs across the run. Each pair can write several metric rows." : "Pick models and a dataset to size the run"}
               </div>
             </div>
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
@@ -647,7 +770,7 @@ export default function EvalWizard() {
             <Activity className="w-5 h-5 text-violet-600 mt-0.5" />
             <div className="text-sm text-violet-900/70 space-y-1">
               <p>
-              This run will evaluate <span className="font-semibold">{selectedModels.length}</span> model{selectedModels.length !== 1 ? "s" : ""} on{" "}
+              This run will evaluate <span className="font-semibold">{totalSelectedModels}</span> model{totalSelectedModels !== 1 ? "s" : ""} on{" "}
               <span className="font-semibold">{selectedTask.label}</span>. Scores will be computed automatically and saved to your history.
               </p>
               {estimatedDurationSeconds ? (
@@ -714,8 +837,15 @@ export default function EvalWizard() {
                 </div>
               </div>
             )}
-            {sseError && (
-              <p className="text-xs text-rose-600 bg-rose-100 p-2 rounded">{sseError}</p>
+            {streamNotice && (
+              <p className={clsx(
+                "text-xs p-2 rounded",
+                streamNotice.tone === "error" && "text-rose-700 bg-rose-100",
+                streamNotice.tone === "warning" && "text-amber-700 bg-amber-100",
+                streamNotice.tone === "info" && "text-sky-700 bg-sky-100"
+              )}>
+                {streamNotice.message}
+              </p>
             )}
           </div>
 

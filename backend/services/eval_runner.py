@@ -20,6 +20,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import time
 from datetime import datetime
 from typing import AsyncIterator
 from sqlalchemy.orm import Session
@@ -30,7 +31,15 @@ from backend import models as db_models
 from backend.services import storage, ollama as ollama_svc
 from backend.scoring import rouge, bleu, meteor, exact_match, distinct, speed, embeddings, code_exec, bertscore, classification, semantic_sim, toxicity
 from backend.scoring import rag as rag_scoring
-from backend.scoring.llm_judge import evaluate_with_llm, get_judge_client
+from backend.scoring.llm_judge import (
+    evaluate_with_llm,
+    get_judge_client,
+    get_judge_model_name,
+    get_model_client,
+    judge_is_enabled,
+    _chat_completion_with_fallback,
+    _embedding_with_fallback,
+)
 from backend.database import SessionLocal
 import math
 
@@ -53,8 +62,17 @@ COMMON_SPEED_METRICS = [
     "output_tokens",
 ]
 
+CACHE_SPEED_KEYS = (
+    "eval_count",
+    "eval_duration",
+    "prompt_eval_count",
+    "load_duration",
+    "total_duration",
+    "logprobs",
+)
+
 TASK_METRICS: dict[str, list[str]] = {
-    "summarization": ["rouge1", "rouge2", "rougeL", "bertscore_f1", "meteor", "semantic_sim", *COMMON_SPEED_METRICS, "llm_coherence", "llm_relevance", "llm_faithfulness", "perplexity"],
+    "summarization": ["rouge1", "rouge2", "rougeL", "rougeLsum", "bertscore_f1", "meteor", "semantic_sim", *COMMON_SPEED_METRICS, "llm_coherence", "llm_relevance", "llm_faithfulness", "perplexity"],
     "qa":            ["exact_match", "f1", "semantic_sim", *COMMON_SPEED_METRICS, "llm_relevance", "llm_correctness", "llm_faithfulness", "perplexity"],
     "chat":          ["distinct1", "distinct2", "semantic_sim", *COMMON_SPEED_METRICS, "llm_fluency", "llm_coherence", "perplexity"],
     "translation":   ["bleu", "chrf", "meteor", "semantic_sim", *COMMON_SPEED_METRICS],
@@ -74,10 +92,10 @@ DEFAULT_DATASET_BY_TASK: dict[str, str] = {
     "translation": "EvalBench Translation v1",
     "code": "EvalBench HumanEval (Subset)",
     "reasoning": "EvalBench GSM8K (Subset)",
-    "knowledge": "EvalBench MMLU (Subset)",
+    "knowledge": "EvalBench MMLU (Expanded v2)",
     "embedding": "EvalBench Embeddings v1",
     "classification": "EvalBench Classification v1",
-    "safety": "EvalBench TruthfulQA (Subset)",
+    "safety": "EvalBench TruthfulQA (MC v2)",
     "rag": "EvalBench RAG v1",
 }
 
@@ -90,6 +108,8 @@ def _score(task_type: str, prediction: str, reference: str, ollama_resp: dict) -
     """
     scores: dict[str, float] = {}
     tt = task_type.lower()
+    prediction = prediction or ""
+    reference = reference or ""
 
     # — Summarization —
     if tt == "summarization":
@@ -125,10 +145,16 @@ def _score(task_type: str, prediction: str, reference: str, ollama_resp: dict) -
 
     # --- New Metrics (E2, E11, E12) ---
     if "semantic_sim" in TASK_METRICS.get(tt, []) and semantic_sim.is_available() and reference:
-        scores["semantic_sim"] = semantic_sim.compute_similarity(prediction, reference)
+        try:
+            scores["semantic_sim"] = semantic_sim.compute_similarity(prediction, reference)
+        except Exception as exc:
+            logger.warning(f"Semantic similarity computation failed: {exc}")
 
     if "toxicity" in TASK_METRICS.get(tt, []) and toxicity.is_available():
-        scores["toxicity"] = toxicity.compute_toxicity(prediction)
+        try:
+            scores["toxicity"] = toxicity.compute_toxicity(prediction)
+        except Exception as exc:
+            logger.warning(f"Toxicity computation failed: {exc}")
 
     if "perplexity" in TASK_METRICS.get(tt, []):
         lp_data = ollama_resp.get("logprobs")
@@ -148,14 +174,109 @@ def _score(task_type: str, prediction: str, reference: str, ollama_resp: dict) -
     # — Embedding — handled entirely in run_eval (requires vector calls)
 
     # Speed metrics available for all non-embedding tasks
-    if tt != "embedding" and ollama_resp:
-        scores.update(speed.compute(ollama_resp))                # tps, latency_ms, etc.
+    if tt != "embedding" and any(key in ollama_resp for key in CACHE_SPEED_KEYS):
+        try:
+            scores.update(speed.compute(ollama_resp))                # tps, latency_ms, etc.
+        except Exception as exc:
+            logger.warning(f"Speed metric computation failed: {exc}")
 
     return scores
 
 
+def _encode_cached_payload(result: dict) -> str:
+    payload = {
+        "response": result.get("response", ""),
+        "eval_count": result.get("eval_count"),
+        "eval_duration": result.get("eval_duration"),
+        "prompt_eval_count": result.get("prompt_eval_count"),
+        "load_duration": result.get("load_duration"),
+        "total_duration": result.get("total_duration"),
+        "logprobs": result.get("logprobs"),
+    }
+    return json.dumps(payload)
+
+
+def _decode_cached_payload(cached: db_models.ResponseCache) -> dict:
+    response_text = cached.response or ""
+    try:
+        payload = json.loads(response_text)
+        if isinstance(payload, dict) and "response" in payload:
+            return {
+                "response": payload.get("response", ""),
+                "eval_count": payload.get("eval_count"),
+                "eval_duration": payload.get("eval_duration"),
+                "prompt_eval_count": payload.get("prompt_eval_count"),
+                "load_duration": payload.get("load_duration"),
+                "total_duration": payload.get("total_duration"),
+                "logprobs": payload.get("logprobs"),
+            }
+    except Exception:
+        pass
+    return {
+        "response": response_text,
+        "eval_count": cached.eval_count,
+        "eval_duration": cached.eval_duration,
+    }
+
+
 def _get_llm_metrics_for_task(task_type: str) -> list[str]:
     return [m for m in TASK_METRICS.get(task_type.lower(), []) if m.startswith("llm_")]
+
+
+def _get_metrics_for_run(task_type: str, judge_available: bool) -> list[str]:
+    metrics = []
+    for metric_name in TASK_METRICS.get(task_type.lower(), []):
+        if metric_name.startswith("llm_") and not judge_available:
+            continue
+        if task_type.lower() == "rag" and metric_name in {"context_relevance", "faithfulness"} and not judge_available:
+            continue
+        metrics.append(metric_name)
+    return metrics
+
+
+def _persist_error_rows(
+    db: Session,
+    *,
+    run_id: int,
+    model_id: int,
+    task_type: str,
+    item_id: int,
+    message: str,
+    metrics: list[str] | None = None,
+) -> None:
+    for metric_name in metrics or TASK_METRICS.get(task_type.lower(), []):
+        db.add(
+            db_models.EvalResult(
+                run_id=run_id,
+                model_id=model_id,
+                metric_name=metric_name,
+                score=0.0,
+                error=True,
+                raw_output=message,
+                item_id=item_id,
+            )
+        )
+    db.commit()
+
+
+def _is_permanent_provider_error(message: str) -> bool:
+    text = (message or "").lower()
+    return any(
+        marker in text
+        for marker in (
+            "incorrect api key",
+            "invalid api key",
+            "api key not valid",
+            "authentication",
+            "unauthorized",
+            "forbidden",
+            "permission denied",
+            "quota",
+            "billing",
+            "exceeded your current quota",
+            "token was rejected",
+        )
+    )
 
 
 def get_or_create_queue(run_id: int) -> asyncio.Queue:
@@ -231,28 +352,9 @@ async def run_eval(run_id: int) -> None:
         task_type: str = config.get("taskType", "qa")
         dataset_id: int | None = config.get("datasetId")
         cloud_model_names: list[str] = config.get("cloudModels", [])
-
-        # RAG requires a judge model — fail fast if none is configured
-        if task_type == "rag":
-            _db = SessionLocal()
-            try:
-                _jc, _jm, _ja, _je = get_judge_client(_db)
-            finally:
-                _db.close()
-            if _je or (not _jc and not _ja):
-                await asyncio.wait_for(
-                    q.put({"type": "error", "message": "RAG evaluation requires a judge model. Configure one in Settings → LLM-as-Judge."}),
-                    timeout=5,
-                )
-                _db2 = SessionLocal()
-                try:
-                    _run = _db2.query(db_models.EvalRun).filter_by(id=run_id).first()
-                    if _run:
-                        _run.status = "failed"
-                        _db2.commit()
-                finally:
-                    _db2.close()
-                return
+        task_uses_judge = bool(_get_llm_metrics_for_task(task_type) or task_type == "rag")
+        judge_metrics_enabled = False
+        judge_skip_reason: str | None = None
 
         # ── update status ──
         start_time = datetime.utcnow()
@@ -262,6 +364,30 @@ async def run_eval(run_id: int) -> None:
         db.commit()
 
         await q.put({"type": "status", "status": "running", "done": False})
+
+        if task_uses_judge:
+            judge_session = SessionLocal()
+            try:
+                configured_judge_enabled = judge_is_enabled(judge_session)
+                configured_judge_model = get_judge_model_name(judge_session)
+                judge_client, judge_model_name, judge_anthropic, judge_error = get_judge_client(judge_session)
+            finally:
+                judge_session.close()
+
+            if configured_judge_enabled and configured_judge_model and judge_error:
+                judge_skip_reason = judge_error
+            elif configured_judge_enabled and configured_judge_model and (judge_client or judge_anthropic):
+                judge_metrics_enabled = True
+            elif configured_judge_enabled and configured_judge_model:
+                judge_skip_reason = f"Judge model '{configured_judge_model}' is not ready, so judge metrics will be skipped for this run."
+            else:
+                judge_skip_reason = "LLM-as-Judge is off or no judge model is selected, so judge metrics will be skipped for this run."
+
+            if judge_skip_reason:
+                logger.info(judge_skip_reason)
+                await q.put({"type": "info", "message": judge_skip_reason, "done": False})
+
+        active_task_metrics = _get_metrics_for_run(task_type, judge_metrics_enabled)
 
         # ── load models ──
         models = db.query(db_models.Model).filter(db_models.Model.id.in_(model_ids)).all()
@@ -286,7 +412,7 @@ async def run_eval(run_id: int) -> None:
         if not items:
             raise ValueError(f"No dataset items are available for task type '{task_type}'.")
 
-        total = len(models) * len(items)
+        total = (len(models) + len(cloud_model_names)) * len(items)
         completed = 0
         semaphore = asyncio.Semaphore(CONCURRENCY)
         run.config_json = {
@@ -296,6 +422,8 @@ async def run_eval(run_id: int) -> None:
             "errorCount": 0,
             "retryCount": 0,
             "cacheHits": 0,
+            "judgeSkipped": task_uses_judge and not judge_metrics_enabled,
+            "judgeSkipReason": judge_skip_reason,
         }
         db.commit()
 
@@ -309,13 +437,20 @@ async def run_eval(run_id: int) -> None:
                 "To enable: pip install bert-score"
             )
 
-        # BERTScore download warning — emit once before the loop, only if the model hasn't been cached yet
-        if task_type == "summarization" and bertscore.is_available() and not bertscore.is_ready():
-            await q.put({
-                "type": "warning",
-                "message": "BERTScore may download a large model on first use (~400MB). This is a one-time download.",
-                "done": False,
-            })
+        if task_type == "summarization":
+            bertscore_state = bertscore.readiness_state()
+            if bertscore_state == "download_required":
+                await q.put({
+                    "type": "warning",
+                    "message": "BERTScore may download a large model on first use (~400MB). This is a one-time download.",
+                    "done": False,
+                })
+            elif bertscore_state == "ready":
+                await q.put({
+                    "type": "info",
+                    "message": "BERTScore is already downloaded and ready for this run.",
+                    "done": False,
+                })
 
         # ── concurrent evaluation ──
         async def eval_pair(model: db_models.Model, item: db_models.GoldenItem) -> None:
@@ -371,12 +506,17 @@ async def run_eval(run_id: int) -> None:
                         cached = db_local.query(db_models.ResponseCache).filter_by(key=cache_key).first()
 
                         if cached:
+                            cached_payload = _decode_cached_payload(cached)
                             cache_hits += 1
                             result = {
                                 "ok": True,
-                                "response": cached.response,
-                                "eval_count": cached.eval_count,
-                                "eval_duration": cached.eval_duration,
+                                "response": cached_payload.get("response", ""),
+                                "eval_count": cached_payload.get("eval_count"),
+                                "eval_duration": cached_payload.get("eval_duration"),
+                                "prompt_eval_count": cached_payload.get("prompt_eval_count"),
+                                "load_duration": cached_payload.get("load_duration"),
+                                "total_duration": cached_payload.get("total_duration"),
+                                "logprobs": cached_payload.get("logprobs"),
                                 "retries": 0,
                                 "cache_hit": True,
                             }
@@ -386,7 +526,7 @@ async def run_eval(run_id: int) -> None:
                             if result.get("ok"):
                                 new_cache = db_models.ResponseCache(
                                     key=cache_key,
-                                    response=result.get("response", ""),
+                                    response=_encode_cached_payload(result),
                                     eval_count=result.get("eval_count"),
                                     eval_duration=result.get("eval_duration")
                                 )
@@ -396,8 +536,7 @@ async def run_eval(run_id: int) -> None:
                             # Inference failed — record an error for every expected metric
                             err_msg = result.get("error", "Inference failed")
                             pair_failures += 1
-                            all_metrics = TASK_METRICS.get(task_type.lower(), [])
-                            for metric_name in all_metrics:
+                            for metric_name in active_task_metrics:
                                 results_to_save.append(dict(
                                     run_id=run_id, model_id=model.id,
                                     metric_name=metric_name, score=0.0, error=True,
@@ -432,7 +571,7 @@ async def run_eval(run_id: int) -> None:
                                 ))
 
                             # LLM-as-Judge metrics
-                            llm_metrics = _get_llm_metrics_for_task(task_type)
+                            llm_metrics = _get_llm_metrics_for_task(task_type) if judge_metrics_enabled else []
                             for metric_name in llm_metrics:
                                 llm_score, rationale = await asyncio.to_thread(
                                     evaluate_with_llm, db_local, metric_name, item.input, prediction, item.context or ""
@@ -445,27 +584,24 @@ async def run_eval(run_id: int) -> None:
                                 ))
 
                             # RAG judge metrics (context_relevance + faithfulness)
-                            if task_type == "rag":
-                                db_s = SessionLocal()
-                                try:
-                                    j_client, j_model, j_anthropic, j_err = get_judge_client(db_s)
-                                finally:
-                                    db_s.close()
-                                if not j_err:
-                                    rag_scores = rag_scoring.compute_rag_metrics(
-                                        question=item.input,
-                                        context=item.context or "",
-                                        answer=prediction,
-                                        client=j_client,
-                                        anthropic_client=j_anthropic,
-                                        model=j_model or "",
-                                    )
-                                    for metric_name, score_value in rag_scores.items():
-                                        results_to_save.append(dict(
-                                            run_id=run_id, model_id=model.id,
-                                            metric_name=metric_name, score=float(score_value), error=False,
-                                            raw_output=prediction[:2000], item_id=item.id,
-                                        ))
+                            if task_type == "rag" and judge_metrics_enabled:
+                                rag_scores = rag_scoring.compute_rag_metrics_with_rationale(
+                                    question=item.input,
+                                    context=item.context or "",
+                                    answer=prediction,
+                                    client=judge_client,
+                                    anthropic_client=judge_anthropic,
+                                    model=judge_model_name or "",
+                                )
+                                for metric_name, payload in rag_scores.items():
+                                    results_to_save.append(dict(
+                                        run_id=run_id, model_id=model.id,
+                                        metric_name=metric_name,
+                                        score=float(payload.get("score", 0.0)),
+                                        error=False,
+                                        raw_output=f"{prediction[:1500]}\n\n--- Judge Rationale ---\n{payload.get('rationale', '')}",
+                                        item_id=item.id,
+                                    ))
 
                     # ── Bulk insert all results for this (model, item) pair — one commit ──
                     for r in results_to_save:
@@ -473,9 +609,23 @@ async def run_eval(run_id: int) -> None:
                     db_local.commit()
 
                 except Exception as e:
+                    db_local.rollback()
                     pair_failures += 1
-                    failure_messages.append(f"{model.name} / item {item.id}: {str(e)}")
-                    await q.put({"type": "error", "message": str(e), "done": False})
+                    error_message = str(e)
+                    failure_messages.append(f"{model.name} / item {item.id}: {error_message}")
+                    try:
+                        _persist_error_rows(
+                            db_local,
+                            run_id=run_id,
+                            model_id=model.id,
+                            task_type=task_type,
+                            item_id=item.id,
+                            message=error_message,
+                            metrics=active_task_metrics,
+                        )
+                    except Exception:
+                        db_local.rollback()
+                    await q.put({"type": "error", "message": error_message, "done": False})
                 finally:
                     db_local.close()
 
@@ -507,56 +657,189 @@ async def run_eval(run_id: int) -> None:
         tasks = [eval_pair(model, item) for model in models for item in items]
         await asyncio.gather(*tasks)
 
-        # ── Cloud model inference (via judge client) ──────────────────────────
+        # ── Cloud model inference (via configured OpenAI-compatible / Anthropic client) ──
         if cloud_model_names:
-            db_session = SessionLocal()
-            try:
-                judge_client, judge_model_name, anthropic_client, setup_error = get_judge_client(db_session)
-            finally:
-                db_session.close()
+            for cloud_model_name in cloud_model_names:
+                fatal_cloud_error: str | None = None
+                setup_session = SessionLocal()
+                try:
+                    cloud_client, invocation_model, cloud_anthropic, setup_error = get_model_client(setup_session, cloud_model_name)
+                    virtual_model = setup_session.query(db_models.Model).filter_by(name=cloud_model_name).first()
+                    if not virtual_model:
+                        virtual_model = db_models.Model(
+                            name=cloud_model_name,
+                            size_gb=0,
+                            family="cloud",
+                            params="unknown",
+                            quantization="none",
+                        )
+                        setup_session.add(virtual_model)
+                        setup_session.commit()
+                        setup_session.refresh(virtual_model)
+                    virtual_model_id = virtual_model.id
+                finally:
+                    setup_session.close()
 
-            if setup_error:
-                logger.warning(f"Cloud model inference skipped — judge not configured: {setup_error}")
-            elif not judge_client and not anthropic_client:
-                logger.warning("Cloud model inference skipped — no judge client available (check judge_model setting in Settings)")
-            else:
-                for cloud_model_name in cloud_model_names:
-                    db_session = SessionLocal()
-                    try:
-                        virtual_model = db_session.query(db_models.Model).filter_by(name=cloud_model_name).first()
-                        if not virtual_model:
-                            virtual_model = db_models.Model(
-                                name=cloud_model_name,
-                                size_gb=0,
-                                family="cloud",
-                                params="unknown",
-                                quantization="none",
-                            )
-                            db_session.add(virtual_model)
-                            db_session.commit()
-                            db_session.refresh(virtual_model)
-                        virtual_model_id = virtual_model.id
-                    finally:
-                        db_session.close()
-
+                if setup_error or (not cloud_client and not cloud_anthropic):
+                    pair_failures += len(items)
+                    failure_messages.append(f"{cloud_model_name}: {setup_error or 'No client available'}")
+                    logger.warning(f"Cloud model inference skipped for {cloud_model_name}: {setup_error or 'No client available'}")
                     for item in items:
+                        db_session = SessionLocal()
                         try:
-                            if anthropic_client:
-                                resp = anthropic_client.messages.create(
-                                    model=cloud_model_name,
+                            for metric_name in active_task_metrics:
+                                storage.save_eval_result(
+                                    db_session,
+                                    run.id,
+                                    virtual_model_id,
+                                    metric_name,
+                                    0.0,
+                                    raw_output=setup_error or "Cloud model client unavailable",
+                                    error=True,
+                                    item_id=item.id,
+                                )
+                        finally:
+                            db_session.close()
+                        completed += 1
+                        progress_db: Session = SessionLocal()
+                        try:
+                            progress_run = progress_db.query(db_models.EvalRun).filter_by(id=run_id).first()
+                            if progress_run and not is_terminal_status(progress_run.status):
+                                progress_config = dict(progress_run.config_json or {})
+                                progress_config["completedPairs"] = completed
+                                progress_config["errorCount"] = pair_failures
+                                progress_config["retryCount"] = retry_count
+                                progress_config["cacheHits"] = cache_hits
+                                progress_run.config_json = progress_config
+                                progress_db.commit()
+                        finally:
+                            progress_db.close()
+                        pct = round(completed / total * 100) if total else 100
+                        await q.put({
+                            "type": "progress",
+                            "completed": completed,
+                            "total": total,
+                            "percent": pct,
+                            "model": cloud_model_name,
+                            "done": False,
+                        })
+                    continue
+
+                for item in items:
+                    if fatal_cloud_error:
+                        pair_failures += 1
+                        db_session = SessionLocal()
+                        try:
+                            _persist_error_rows(
+                                db_session,
+                                run_id=run.id,
+                                model_id=virtual_model_id,
+                                task_type=task_type,
+                                item_id=item.id,
+                                message=fatal_cloud_error,
+                                metrics=active_task_metrics,
+                            )
+                        finally:
+                            db_session.close()
+                        completed += 1
+                        progress_db: Session = SessionLocal()
+                        try:
+                            progress_run = progress_db.query(db_models.EvalRun).filter_by(id=run_id).first()
+                            if progress_run and not is_terminal_status(progress_run.status):
+                                progress_config = dict(progress_run.config_json or {})
+                                progress_config["completedPairs"] = completed
+                                progress_config["errorCount"] = pair_failures
+                                progress_config["retryCount"] = retry_count
+                                progress_config["cacheHits"] = cache_hits
+                                progress_run.config_json = progress_config
+                                progress_db.commit()
+                        finally:
+                            progress_db.close()
+                        pct = round(completed / total * 100) if total else 100
+                        await q.put({
+                            "type": "progress",
+                            "completed": completed,
+                            "total": total,
+                            "percent": pct,
+                            "model": cloud_model_name,
+                            "done": False,
+                        })
+                        continue
+                    try:
+                        if task_type == "embedding":
+                            if cloud_anthropic:
+                                raise RuntimeError("Anthropic models do not expose an embeddings API for EvalBench.")
+
+                            context = json.loads(item.context or "{}") if item.context else {}
+                            candidates = context.get("candidates", [])
+                            answer_index = context.get("answer_index", 0)
+                            query_resp = _embedding_with_fallback(
+                                cloud_client,
+                                model=invocation_model or cloud_model_name,
+                                input_text=item.input,
+                            )
+                            query_vec = query_resp.data[0].embedding if getattr(query_resp, "data", None) else []
+
+                            candidate_vecs = []
+                            for candidate in candidates:
+                                candidate_resp = _embedding_with_fallback(
+                                    cloud_client,
+                                    model=invocation_model or cloud_model_name,
+                                    input_text=candidate,
+                                )
+                                candidate_vecs.append(candidate_resp.data[0].embedding if getattr(candidate_resp, "data", None) else [])
+
+                            item_scores = embeddings.compute_embedding_metrics(query_vec, candidate_vecs, answer_index)
+                            ranked, sims = embeddings.rank_by_similarity(query_vec, candidate_vecs)
+                            top_idx = ranked[0] if ranked else None
+                            top_match = candidates[top_idx] if top_idx is not None and top_idx < len(candidates) else None
+                            raw_output = json.dumps({
+                                "top_match": top_match,
+                                "top_similarity": sims[top_idx] if top_idx is not None else None,
+                                "ranked_indices": ranked,
+                            })
+
+                            db_session = SessionLocal()
+                            try:
+                                for metric_name, score_val in item_scores.items():
+                                    storage.save_eval_result(
+                                        db_session,
+                                        run.id,
+                                        virtual_model_id,
+                                        metric_name,
+                                        float(score_val),
+                                        raw_output=raw_output[:2000],
+                                        item_id=item.id,
+                                    )
+                            finally:
+                                db_session.close()
+                        else:
+                            started_at = time.perf_counter()
+                            if cloud_anthropic:
+                                resp = cloud_anthropic.messages.create(
+                                    model=invocation_model or cloud_model_name,
                                     max_tokens=512,
                                     messages=[{"role": "user", "content": item.input}],
                                 )
                                 prediction = resp.content[0].text.strip()
                             else:
-                                resp = judge_client.chat.completions.create(
-                                    model=cloud_model_name,
+                                resp = _chat_completion_with_fallback(
+                                    client=cloud_client,
+                                    model=invocation_model or cloud_model_name,
                                     messages=[{"role": "user", "content": item.input}],
-                                    max_tokens=512,
+                                    temperature=0.7,
+                                    max_output_tokens=512,
                                 )
                                 prediction = resp.choices[0].message.content.strip()
+                            elapsed_seconds = time.perf_counter() - started_at
 
-                            scores = _score(task_type, prediction, item.expected_output or "", {})
+                            try:
+                                scores = _score(task_type, prediction, item.expected_output or "", {})
+                            except Exception as exc:
+                                logger.warning(f"Cloud scoring fallback triggered for {cloud_model_name} item {item.id}: {exc}")
+                                scores = {}
+                            scores.update(speed.compute_api_usage(resp, elapsed_seconds))
+                            llm_metrics = _get_llm_metrics_for_task(task_type) if judge_metrics_enabled else []
                             db_session = SessionLocal()
                             try:
                                 for metric_name, score_val in scores.items():
@@ -566,10 +849,93 @@ async def run_eval(run_id: int) -> None:
                                         raw_output=prediction[:2000],
                                         item_id=item.id,
                                     )
+                                for metric_name in llm_metrics:
+                                    llm_score, rationale = evaluate_with_llm(
+                                        db_session,
+                                        metric_name,
+                                        item.input,
+                                        prediction,
+                                        item.context or "",
+                                    )
+                                    storage.save_eval_result(
+                                        db_session, run.id, virtual_model_id,
+                                        metric_name, float(llm_score),
+                                        raw_output=f"{prediction[:1500]}\n\n--- Judge Rationale ---\n{rationale}",
+                                        item_id=item.id,
+                                    )
+                                if task_type == "rag" and judge_metrics_enabled:
+                                    rag_scores = rag_scoring.compute_rag_metrics_with_rationale(
+                                        question=item.input,
+                                        context=item.context or "",
+                                        answer=prediction,
+                                        client=judge_client,
+                                        anthropic_client=judge_anthropic,
+                                        model=judge_model_name or "",
+                                    )
+                                    for metric_name, payload in rag_scores.items():
+                                        storage.save_eval_result(
+                                            db_session,
+                                            run.id,
+                                            virtual_model_id,
+                                            metric_name,
+                                            float(payload.get("score", 0.0)),
+                                            raw_output=f"{prediction[:1500]}\n\n--- Judge Rationale ---\n{payload.get('rationale', '')}",
+                                            item_id=item.id,
+                                        )
                             finally:
                                 db_session.close()
-                        except Exception as e:
-                            logger.warning(f"Cloud model inference failed for item {item.id}: {e}")
+                    except Exception as e:
+                        pair_failures += 1
+                        error_message = str(e)
+                        failure_messages.append(f"{cloud_model_name} / item {item.id}: {error_message}")
+                        logger.warning(f"Cloud model inference failed for item {item.id}: {error_message}")
+                        db_session = SessionLocal()
+                        try:
+                            _persist_error_rows(
+                                db_session,
+                                run_id=run.id,
+                                model_id=virtual_model_id,
+                                task_type=task_type,
+                                item_id=item.id,
+                                message=error_message,
+                                metrics=active_task_metrics,
+                            )
+                        finally:
+                            db_session.close()
+                        if _is_permanent_provider_error(error_message):
+                            fatal_cloud_error = error_message
+                            failure_messages.append(
+                                f"{cloud_model_name}: stopping remaining items after provider rejection"
+                            )
+                            await q.put({
+                                "type": "warning",
+                                "message": f"{cloud_model_name} was rejected by the provider. Remaining items for that model were skipped.",
+                                "done": False,
+                            })
+                    finally:
+                        completed += 1
+                        progress_db: Session = SessionLocal()
+                        try:
+                            progress_run = progress_db.query(db_models.EvalRun).filter_by(id=run_id).first()
+                            if progress_run and not is_terminal_status(progress_run.status):
+                                progress_config = dict(progress_run.config_json or {})
+                                progress_config["completedPairs"] = completed
+                                progress_config["errorCount"] = pair_failures
+                                progress_config["retryCount"] = retry_count
+                                progress_config["cacheHits"] = cache_hits
+                                progress_run.config_json = progress_config
+                                progress_db.commit()
+                        finally:
+                            progress_db.close()
+                        pct = round(completed / total * 100) if total else 100
+                        await q.put({
+                            "type": "progress",
+                            "completed": completed,
+                            "total": total,
+                            "percent": pct,
+                            "model": cloud_model_name,
+                            "done": False,
+                        })
 
         db.refresh(run)
         duration_seconds = (datetime.utcnow() - (start_time or datetime.utcnow())).total_seconds()
@@ -579,6 +945,8 @@ async def run_eval(run_id: int) -> None:
         updated_config["completedPairs"] = completed
         updated_config["retryCount"] = retry_count
         updated_config["cacheHits"] = cache_hits
+        updated_config["successfulPairs"] = max(0, completed - pair_failures)
+        updated_config["completedWithErrors"] = pair_failures > 0 and completed > pair_failures
         if pair_failures:
             updated_config["errorCount"] = pair_failures
             updated_config["errors"] = failure_messages[:10]
@@ -586,7 +954,7 @@ async def run_eval(run_id: int) -> None:
         if run.status == "cancel_requested":
             run.status = "cancelled"
         else:
-            run.status = "failed" if pair_failures else "completed"
+            run.status = "completed" if completed > pair_failures else "failed"
         db.commit()
         await q.put({
             "type": "done",

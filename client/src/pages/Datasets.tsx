@@ -2,6 +2,17 @@ import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { useLocation } from "wouter";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
@@ -14,6 +25,7 @@ import {
   Plus,
   Sparkles,
   Table2,
+  Trash2,
   Upload,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -28,6 +40,7 @@ import { useEvalRuns } from "@/hooks/use-eval";
 import { useModels } from "@/hooks/use-models";
 import {
   useCreateDataset,
+  useDeleteDataset,
   useDataset,
   useDatasets,
   useImportDataset,
@@ -252,6 +265,18 @@ function detectTemplateFromSource(source: string | null | undefined): TemplateId
   return (match?.[1] as TemplateId | undefined) ?? "custom";
 }
 
+function isUserDataset(source: string | null | undefined): boolean {
+  const cleaned = String(source ?? "").toLowerCase();
+  return cleaned.startsWith("manual") || cleaned.startsWith("import") || cleaned.startsWith("upload") || cleaned.startsWith("template:");
+}
+
+function datasetKind(source: string | null | undefined): "built-in" | "custom" | "imported" {
+  const cleaned = String(source ?? "").toLowerCase();
+  if (cleaned.startsWith("import") || cleaned.startsWith("upload")) return "imported";
+  if (cleaned.startsWith("manual") || cleaned.startsWith("template:")) return "custom";
+  return "built-in";
+}
+
 type ValidationIssue = {
   severity: "error" | "warning";
   message: string;
@@ -370,6 +395,7 @@ export default function Datasets() {
   const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
   const { data: selectedDataset } = useDataset(selectedDatasetId);
   const createDataset = useCreateDataset();
+  const deleteDataset = useDeleteDataset();
   const previewImport = usePreviewDatasetImport();
   const importDataset = useImportDataset();
   const { toast } = useToast();
@@ -416,6 +442,8 @@ export default function Datasets() {
     });
     return map;
   }, [datasets]);
+  const selectedDatasetKind = datasetKind(selectedDataset?.source);
+  const selectedDatasetIsUser = isUserDataset(selectedDataset?.source);
 
   const filteredDatasets = useMemo(() => {
     const query = datasetSearch.trim().toLowerCase();
@@ -687,7 +715,7 @@ export default function Datasets() {
             <div className="text-xs uppercase tracking-wider text-muted-foreground">Dataset Registry</div>
             <div className="text-3xl font-extrabold mt-2">{datasets.length}</div>
             <div className="text-sm text-muted-foreground mt-1">
-              Built-in and user-authored versions ready for Eval Wizard.
+              Built-in, custom, and imported versions ready for Eval Wizard.
             </div>
           </CardContent>
         </Card>
@@ -1129,6 +1157,13 @@ export default function Datasets() {
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="text-xl font-bold">{selectedDataset.name}</div>
                     <Badge variant="secondary">v{selectedDataset.schemaVersion ?? 1}</Badge>
+                    <Badge variant={selectedDatasetKind === "built-in" ? "outline" : "secondary"}>
+                      {selectedDatasetKind === "built-in"
+                        ? "Built-in"
+                        : selectedDatasetKind === "imported"
+                          ? "Imported"
+                          : "Custom"}
+                    </Badge>
                     {(selectedDataset.schemaVersion ?? 1) === latestVersionByName.get(selectedDataset.name) ? (
                       <Badge variant="outline">Latest</Badge>
                     ) : null}
@@ -1145,6 +1180,50 @@ export default function Datasets() {
                     <CopyPlus className="w-4 h-4 mr-2" />
                     Load Into Builder
                   </Button>
+                  {selectedDatasetIsUser ? (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="outline" size="sm" className="text-rose-700 border-rose-200 hover:bg-rose-50">
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete Dataset
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete {selectedDataset.name}?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            {datasetUsage.length > 0
+                              ? "This dataset has already been used in eval runs, so deleting it now would weaken run history. EvalBench keeps it locked."
+                              : "This removes the custom dataset and its items from your local registry. Built-in datasets stay untouched."}
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => {
+                              if (!selectedDataset || datasetUsage.length > 0) return;
+                              deleteDataset.mutate(selectedDataset.id, {
+                                onSuccess: () => {
+                                  setSelectedDatasetId(null);
+                                },
+                                onError: (error) => {
+                                  toast({
+                                    title: "Could not delete dataset",
+                                    description: error instanceof Error ? error.message : "Unknown error",
+                                    variant: "destructive",
+                                  });
+                                },
+                              });
+                            }}
+                            disabled={datasetUsage.length > 0 || deleteDataset.isPending}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+                          >
+                            {datasetUsage.length > 0 ? "Used In Runs" : deleteDataset.isPending ? "Deleting..." : "Delete Dataset"}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  ) : null}
                 </div>
 
                 <div className="space-y-3">
@@ -1266,6 +1345,13 @@ export default function Datasets() {
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       <span>{dataset.name}</span>
+                      <Badge variant={datasetKind(dataset.source) === "built-in" ? "outline" : "secondary"}>
+                        {datasetKind(dataset.source) === "built-in"
+                          ? "Built-in"
+                          : datasetKind(dataset.source) === "imported"
+                            ? "Imported"
+                            : "Custom"}
+                      </Badge>
                       {(dataset.schemaVersion ?? 1) === latestVersionByName.get(dataset.name) ? (
                         <Badge variant="outline">Latest</Badge>
                       ) : null}

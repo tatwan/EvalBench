@@ -1,6 +1,7 @@
 import { useAllEvalResults, useEvalRuns } from "@/hooks/use-eval";
 import { useModels } from "@/hooks/use-models";
 import { useDatasets } from "@/hooks/use-datasets";
+import { MetricTooltip } from "@/components/ui/MetricTooltip";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -37,8 +38,8 @@ function formatScore(value?: number | null): string {
 }
 
 export default function RunHistory() {
-  const { data: runs = [], isLoading: runsLoading, refetch, isRefetching } = useEvalRuns();
-  const { data: results = [], isLoading: resultsLoading } = useAllEvalResults();
+  const { data: runs = [], isLoading: runsLoading, refetch } = useEvalRuns();
+  const { data: results = [], isLoading: resultsLoading, refetch: refetchResults } = useAllEvalResults();
   const { data: models = [] } = useModels();
   const { data: datasets = [] } = useDatasets();
   const [taskFilter, setTaskFilter] = useState("all");
@@ -46,8 +47,10 @@ export default function RunHistory() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [savedViews, setSavedViews] = useState<Array<{ name: string; task: string; model: string; status: string }>>([]);
   const [selectedView, setSelectedView] = useState<string>("");
+  const [manualRefreshing, setManualRefreshing] = useState(false);
 
   const modelMap = Object.fromEntries((models as any[]).map(m => [m.id, m]));
+  const modelIdByName = Object.fromEntries((models as any[]).map(m => [m.name, m.id]));
   const dsMap = Object.fromEntries((datasets as any[]).map(d => [d.id, d]));
 
   useEffect(() => {
@@ -89,17 +92,32 @@ export default function RunHistory() {
 
   const statusOptions = ["pending", "running", "cancel_requested", "cancelled", "completed", "failed"];
 
+  const describeConfiguredModels = (config: any) => {
+    const localModelIds = Array.isArray(config?.modelIds) ? config.modelIds : [];
+    const cloudModels = Array.isArray(config?.cloudModels) ? config.cloudModels : [];
+    return {
+      localModelIds,
+      cloudModels,
+      total: localModelIds.length + cloudModels.length,
+      summary: cloudModels.length > 0
+        ? `${localModelIds.length} local + ${cloudModels.length} comparison`
+        : `${localModelIds.length} Models`,
+    };
+  };
+
   const filteredRuns = useMemo(() => {
     return (runs as any[]).filter((run) => {
       const config = run.configJson || {};
+      const selectedModel = modelMap[Number(modelFilter)];
       const matchesTask = taskFilter === "all" || config.taskType === taskFilter;
       const matchesStatus = statusFilter === "all" || run.status === statusFilter;
       const matchesModel =
         modelFilter === "all" ||
-        (config.modelIds ?? []).includes(Number(modelFilter));
+        (config.modelIds ?? []).includes(Number(modelFilter)) ||
+        (!!selectedModel && (config.cloudModels ?? []).includes(selectedModel.name));
       return matchesTask && matchesStatus && matchesModel;
     });
-  }, [runs, taskFilter, statusFilter, modelFilter]);
+  }, [runs, taskFilter, statusFilter, modelFilter, modelMap]);
 
   // Sort runs newest first by ID
   const sortedRuns = [...filteredRuns].sort((a: any, b: any) => b.id - a.id);
@@ -117,6 +135,42 @@ export default function RunHistory() {
     return grouped;
   }, [results]);
 
+  const progressByRunAndModel = useMemo(() => {
+    const progress = new Map<number, Map<number, Set<number>>>();
+    (results as any[]).forEach((result) => {
+      if (!result.itemId) return;
+      const byModel = progress.get(result.runId) ?? new Map<number, Set<number>>();
+      const itemIds = byModel.get(result.modelId) ?? new Set<number>();
+      itemIds.add(result.itemId);
+      byModel.set(result.modelId, itemIds);
+      progress.set(result.runId, byModel);
+    });
+    return progress;
+  }, [results]);
+
+  const handleManualRefresh = async () => {
+    setManualRefreshing(true);
+    try {
+      await Promise.all([refetch(), refetchResults()]);
+    } finally {
+      setManualRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    const hasActiveRuns = (runs as any[]).some((run) =>
+      ["pending", "running", "cancel_requested"].includes(run.status)
+    );
+    if (!hasActiveRuns) return;
+
+    const intervalId = window.setInterval(() => {
+      refetch();
+      refetchResults();
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, [runs, refetch, refetchResults]);
+
   if (runsLoading || resultsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -131,9 +185,12 @@ export default function RunHistory() {
         <div>
           <h1 className="text-3xl font-bold text-gradient">Run History</h1>
           <p className="text-foreground/80 mt-2">View all your past evaluations.</p>
+          <p className="text-xs text-muted-foreground mt-2">
+            A pair means one model on one dataset item. Stored scores are metric rows written for each pair.
+          </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isRefetching}>
-          <RefreshCw className={clsx("w-4 h-4 mr-2", isRefetching && "animate-spin")} />
+        <Button variant="outline" size="sm" onClick={handleManualRefresh}>
+          <RefreshCw className={clsx("w-4 h-4 mr-2", manualRefreshing && "animate-spin")} />
           Refresh
         </Button>
       </div>
@@ -240,7 +297,12 @@ export default function RunHistory() {
                 <th className="text-left px-6 py-4 font-semibold text-foreground/85">Task Type</th>
                 <th className="text-left px-6 py-4 font-semibold text-foreground/85">Dataset</th>
                 <th className="text-left px-6 py-4 font-semibold text-foreground/85">Models Evaluated</th>
-                <th className="text-left px-4 py-4 font-semibold text-foreground/85">Score Preview</th>
+                <th className="text-left px-4 py-4 font-semibold text-foreground/85">
+                  <span className="inline-flex items-center gap-1">
+                    Score Preview
+                    <MetricTooltip description="Preview cards show the average across successful non-speed metric rows only. A pair is model × item; multiple metric rows can be stored per pair." />
+                  </span>
+                </th>
                 <th className="text-left px-4 py-4 font-semibold text-foreground/85">Status</th>
                 <th className="text-left px-4 py-4 font-semibold text-foreground/85">Reliability</th>
                 <th className="text-right px-4 py-4 font-semibold text-foreground/85"></th>
@@ -249,7 +311,7 @@ export default function RunHistory() {
             <tbody className="divide-y divide-border">
               {sortedRuns.map((run: any) => {
                 const config = run.configJson || {};
-                const modelIds = config.modelIds || [];
+                const { localModelIds, cloudModels, total, summary } = describeConfiguredModels(config);
                 const datasetName = config.datasetId ? dsMap[config.datasetId]?.name : "None (Ad-hoc)";
                 const durationText = typeof config.durationSeconds === "number"
                   ? formatDuration(config.durationSeconds)
@@ -260,6 +322,9 @@ export default function RunHistory() {
                 const avgScore = scorePreview && scorePreview.scores.length > 0
                   ? scorePreview.scores.reduce((sum, score) => sum + score, 0) / scorePreview.scores.length
                   : null;
+                const expectedItemsPerModel =
+                  config.datasetItemCount ??
+                  (total > 0 && typeof config.totalPairs === "number" ? Math.round(config.totalPairs / total) : null);
                 
                 return (
                   <tr key={run.id} className="hover:bg-muted/50 transition-colors group">
@@ -284,17 +349,57 @@ export default function RunHistory() {
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-1.5 text-xs text-foreground/80 mb-1">
                           <Cpu className="w-3.5 h-3.5" />
-                          <span>{modelIds.length} Models</span>
+                          <span>{summary}</span>
                         </div>
                         <div className="flex flex-wrap gap-1">
-                          {modelIds.slice(0, 3).map((mid: number) => (
-                            <span key={mid} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-foreground/90 truncate max-w-[100px]" title={modelMap[mid]?.name}>
-                              {modelMap[mid]?.name ?? `Model ${mid}`}
-                            </span>
+                          {localModelIds.slice(0, 3).map((mid: number) => (
+                            (() => {
+                              const completedItems = progressByRunAndModel.get(run.id)?.get(mid)?.size ?? 0;
+                              const done = expectedItemsPerModel !== null && completedItems >= expectedItemsPerModel;
+                              const active = completedItems > 0 && !done;
+                              return (
+                                <span
+                                  key={mid}
+                                  className={clsx(
+                                    "text-[10px] px-1.5 py-0.5 rounded truncate max-w-[110px]",
+                                    done ? "bg-emerald-100 text-emerald-800" :
+                                    active ? "bg-amber-100 text-amber-800" :
+                                    "bg-muted text-foreground/90"
+                                  )}
+                                  title={modelMap[mid]?.name}
+                                >
+                                  {modelMap[mid]?.name ?? `Model ${mid}`}
+                                  {expectedItemsPerModel ? ` ${Math.min(completedItems, expectedItemsPerModel)}/${expectedItemsPerModel}` : ""}
+                                </span>
+                              );
+                            })()
                           ))}
-                          {modelIds.length > 3 && (
+                          {cloudModels.slice(0, 2).map((name: string) => (
+                            (() => {
+                              const modelId = modelIdByName[name];
+                              const completedItems = modelId ? (progressByRunAndModel.get(run.id)?.get(modelId)?.size ?? 0) : 0;
+                              const done = expectedItemsPerModel !== null && completedItems >= expectedItemsPerModel;
+                              const active = completedItems > 0 && !done;
+                              return (
+                                <span
+                                  key={name}
+                                  className={clsx(
+                                    "text-[10px] px-1.5 py-0.5 rounded truncate max-w-[130px]",
+                                    done ? "bg-emerald-100 text-emerald-800" :
+                                    active ? "bg-amber-100 text-amber-800" :
+                                    "bg-sky-100 text-sky-800"
+                                  )}
+                                  title={name}
+                                >
+                                  {name}
+                                  {expectedItemsPerModel ? ` ${Math.min(completedItems, expectedItemsPerModel)}/${expectedItemsPerModel}` : ""}
+                                </span>
+                              );
+                            })()
+                          ))}
+                          {total > 5 && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-foreground/80">
-                              +{modelIds.length - 3} more
+                              +{total - 5} more
                             </span>
                           )}
                         </div>
@@ -305,7 +410,10 @@ export default function RunHistory() {
                         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 min-w-[150px]">
                           <div className="text-sm font-semibold text-emerald-800">{formatScore(avgScore)}</div>
                           <div className="text-[11px] text-emerald-700/80">
-                            {scorePreview?.metrics.size ?? 0} metrics · {scorePreview?.scores.length ?? 0} scores
+                            {scorePreview?.metrics.size ?? 0} metric types · {scorePreview?.scores.length ?? 0} successful quality rows
+                          </div>
+                          <div className="text-[10px] text-emerald-700/70 mt-1">
+                            Pair totals live in Run Details.
                           </div>
                         </div>
                       ) : (
@@ -330,6 +438,9 @@ export default function RunHistory() {
                         {run.status === "completed" && <CheckCircle2 className="w-3 h-3 inline mr-1" />}
                         {run.status}
                       </span>
+                      {run.configJson?.completedWithErrors ? (
+                        <div className="text-[10px] text-amber-700 mt-1">Completed with some failed pairs</div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex flex-wrap gap-2 text-[10px]">

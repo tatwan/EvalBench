@@ -2,7 +2,6 @@ import { Sidebar } from "./Sidebar";
 import { motion } from "framer-motion";
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Search } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
 export function AppLayout({ children }: { children: ReactNode }) {
@@ -35,13 +34,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <span className="text-foreground font-semibold">{label}</span>
           </div>
           <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
-              <Search className="h-4 w-4" />
-              <span>Search...</span>
-              <kbd className="ml-2 rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                Cmd+K
-              </kbd>
-            </div>
             <Link href="/evaluate">
               <Button size="sm" className="gap-2">+ New Eval</Button>
             </Link>

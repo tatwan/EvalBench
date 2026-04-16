@@ -38,6 +38,8 @@ export const EvalRunConfigSchema = z.object({
   retryCount: z.number().nullable().optional(),
   cacheHits: z.number().nullable().optional(),
   durationSeconds: z.number().nullable().optional(),
+  judgeModel: z.string().nullable().optional(),
+  judgeProvider: z.string().nullable().optional(),
   cancelRequested: z.boolean().nullable().optional(),
   errors: z.array(z.string()).nullable().optional(),
 }).passthrough();
@@ -60,6 +62,8 @@ export const EvalResultSchema = z.object({
   itemId: z.number().nullable().optional(),
   input: z.string().nullable().optional(),
   expectedOutput: z.string().nullable().optional(),
+  context: z.string().nullable().optional(),
+  modelName: z.string().nullable().optional(),
 });
 
 export const EvalStatSchema = z.object({
@@ -253,6 +257,18 @@ export const api = {
         404: errorSchemas.notFound,
       }
     },
+    delete: {
+      method: 'DELETE' as const,
+      path: '/api/datasets/:id' as const,
+      responses: {
+        200: z.object({
+          id: z.number(),
+          name: z.string(),
+        }),
+        400: errorSchemas.validation,
+        404: errorSchemas.notFound,
+      }
+    },
     create: {
       method: 'POST' as const,
       path: '/api/datasets' as const,
@@ -300,6 +316,17 @@ export const api = {
       method: 'GET' as const,
       path: '/api/ollama/status' as const,
       responses: { 200: OllamaStatusSchema }
+    },
+    start: {
+      method: 'POST' as const,
+      path: '/api/ollama/start' as const,
+      responses: {
+        200: z.object({
+          ok: z.boolean(),
+          message: z.string(),
+          running: z.boolean(),
+        })
+      }
     }
   },
   arena: {

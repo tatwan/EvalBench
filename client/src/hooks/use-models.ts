@@ -55,3 +55,38 @@ export function useOllamaStatus() {
     staleTime: 8_000,
   });
 }
+
+export function useStartOllama() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async () => {
+      const res = await fetch(api.ollama.start.path, {
+        method: api.ollama.start.method,
+        credentials: "include",
+      });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(payload?.detail || payload?.message || "Failed to start Ollama");
+      }
+      return api.ollama.start.responses[200].parse(payload);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [api.ollama.status.path] });
+      queryClient.invalidateQueries({ queryKey: [api.models.list.path] });
+      toast({
+        title: data.running ? "Ollama starting up" : "Ollama still offline",
+        description: data.message,
+        variant: data.running ? "default" : "destructive",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Couldn't start Ollama",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+}

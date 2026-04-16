@@ -3,7 +3,7 @@ import { useModels } from "@/hooks/use-models";
 import { useEvalRuns, useAllEvalResults } from "@/hooks/use-eval";
 import { useDatasets } from "@/hooks/use-datasets";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/Badge";
 import { Swords, AlignLeft, Hexagon } from "lucide-react";
 import { computeCI, pairedTTest } from "@/lib/stats";
@@ -20,6 +20,35 @@ const SPEED_METRICS = new Set([
 ]);
 
 const isLowerBetter = (metric: string) => metric.includes("latency") || metric === "perplexity";
+
+const metricLabel = (metric: string) => {
+  const map: Record<string, string> = {
+    semantic_sim: "Semantic Sim",
+    cosine_sim: "Cosine Sim",
+    recall_at_1: "Recall@1",
+    recall_at_3: "Recall@3",
+    exact_match: "Exact Match",
+    distinct1: "Distinct-1",
+    distinct2: "Distinct-2",
+    pass_at_1: "Pass@1",
+    bertscore_f1: "BERTScore F1",
+    rougeL: "ROUGE-L",
+    rougeLsum: "ROUGE-Lsum",
+    llm_relevance: "Judge Relevance",
+    llm_correctness: "Judge Correctness",
+    llm_coherence: "Judge Coherence",
+    llm_fluency: "Judge Fluency",
+    llm_faithfulness: "Judge Faithfulness",
+    context_relevance: "Judge Context Relevance",
+    faithfulness: "Judge Faithfulness",
+    tokens_per_second: "Tokens/sec",
+    total_latency_s: "Latency (s)",
+    load_latency_s: "Load Time (s)",
+    prompt_tokens: "Prompt Tokens",
+    output_tokens: "Output Tokens",
+  };
+  return map[metric] ?? metric.replace(/_/g, " ");
+};
 
 const formatMetricValue = (metric: string, value: number) => {
   if (metric.includes("tokens_per_second")) return `${value.toFixed(1)} t/s`;
@@ -48,6 +77,29 @@ export default function CompareModels() {
   const [taskFilter, setTaskFilter] = useState<string>("all");
   const [contextFilter, setContextFilter] = useState<string>("all");
 
+  const datasetMap = useMemo(
+    () => Object.fromEntries((datasets as any[]).map((d) => [d.id, d.name])),
+    [datasets]
+  );
+
+  const localModels = useMemo(
+    () => (models as any[]).filter((model) => model.family !== "cloud"),
+    [models]
+  );
+  const frontierModels = useMemo(
+    () => (models as any[]).filter((model) => model.family === "cloud"),
+    [models]
+  );
+  const runModelIds = useMemo(() => {
+    const map = new Map<number, Set<number>>();
+    (results as any[]).forEach((result) => {
+      const ids = map.get(result.runId) ?? new Set<number>();
+      ids.add(result.modelId);
+      map.set(result.runId, ids);
+    });
+    return map;
+  }, [results]);
+
   if (modelsLoading || resultsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -56,21 +108,16 @@ export default function CompareModels() {
     );
   }
 
-  const datasetMap = useMemo(
-    () => Object.fromEntries((datasets as any[]).map((d) => [d.id, d.name])),
-    [datasets]
-  );
-
   const sharedRuns = useMemo(() => {
     const modelAId = Number(modelA);
     const modelBId = Number(modelB);
     if (!modelAId || !modelBId) return [];
     return (runs as any[]).filter((run) => {
-      const ids = run.configJson?.modelIds ?? [];
+      const ids = runModelIds.get(run.id) ?? new Set<number>();
       const matchesTask = taskFilter === "all" || run.configJson?.taskType === taskFilter;
-      return run.status === "completed" && matchesTask && ids.includes(modelAId) && ids.includes(modelBId);
+      return run.status === "completed" && matchesTask && ids.has(modelAId) && ids.has(modelBId);
     });
-  }, [runs, modelA, modelB, taskFilter]);
+  }, [runs, modelA, modelB, taskFilter, runModelIds]);
 
   const availableTasks = useMemo(() => {
     const sourceRuns = modelA && modelB ? sharedRuns : (runs as any[]);
@@ -182,7 +229,7 @@ export default function CompareModels() {
       .filter(m => !SPEED_METRICS.has(m) && !m.includes("latency") && !m.includes("tokens"))
       .map(m => {
         return {
-          subject: m.replace(/_/g, " "),
+          subject: metricLabel(m),
           [(models as any[]).find(model => model.id.toString() === modelA)?.name || "Model A"]: statsA.metrics[m]?.mean || 0,
           [(models as any[]).find(model => model.id.toString() === modelB)?.name || "Model B"]: statsB.metrics[m]?.mean || 0,
         };
@@ -209,9 +256,23 @@ export default function CompareModels() {
                   <SelectValue placeholder="Select Challenger 1" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(models as any[]).map(m => (
-                    <SelectItem key={m.id} value={m.id.toString()}>{m.name}</SelectItem>
-                  ))}
+                  <SelectGroup>
+                    <SelectLabel>Local Models</SelectLabel>
+                    {localModels.map((m: any) => (
+                      <SelectItem key={m.id} value={m.id.toString()}>{m.name}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                  {frontierModels.length > 0 ? (
+                    <>
+                      <SelectSeparator />
+                      <SelectGroup>
+                        <SelectLabel>Frontier Models</SelectLabel>
+                        {frontierModels.map((m: any) => (
+                          <SelectItem key={m.id} value={m.id.toString()}>{m.name}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </>
+                  ) : null}
                 </SelectContent>
               </Select>
             </div>
@@ -223,9 +284,23 @@ export default function CompareModels() {
                   <SelectValue placeholder="Select Challenger 2" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(models as any[]).map(m => (
-                    <SelectItem key={m.id} value={m.id.toString()} disabled={m.id.toString() === modelA}>{m.name}</SelectItem>
-                  ))}
+                  <SelectGroup>
+                    <SelectLabel>Local Models</SelectLabel>
+                    {localModels.map((m: any) => (
+                      <SelectItem key={m.id} value={m.id.toString()} disabled={m.id.toString() === modelA}>{m.name}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                  {frontierModels.length > 0 ? (
+                    <>
+                      <SelectSeparator />
+                      <SelectGroup>
+                        <SelectLabel>Frontier Models</SelectLabel>
+                        {frontierModels.map((m: any) => (
+                          <SelectItem key={m.id} value={m.id.toString()} disabled={m.id.toString() === modelA}>{m.name}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </>
+                  ) : null}
                 </SelectContent>
               </Select>
             </div>
@@ -375,7 +450,7 @@ export default function CompareModels() {
                         return (
                           <div key={metric} className="flex items-center justify-between">
                             <span className="text-sm text-muted-foreground flex items-center gap-2">
-                              {metric.replace(/_/g, " ")}
+                              {metricLabel(metric)}
                               {significanceMap[metric]?.significant === false && (
                                 <Badge variant="secondary" className="h-[18px] text-[10px] px-1.5 font-normal bg-muted text-muted-foreground border-border/50">Tie</Badge>
                               )}
@@ -454,7 +529,7 @@ export default function CompareModels() {
                         return (
                           <div key={metric} className="flex items-center justify-between">
                             <span className="text-sm text-muted-foreground flex items-center gap-2">
-                              {metric.replace(/_/g, " ")}
+                              {metricLabel(metric)}
                               {significanceMap[metric]?.significant === false && (
                                 <Badge variant="secondary" className="h-[18px] text-[10px] px-1.5 font-normal bg-muted text-muted-foreground border-border/50">Tie</Badge>
                               )}

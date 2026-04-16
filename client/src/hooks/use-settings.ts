@@ -58,6 +58,8 @@ export function useUpdateSetting() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/judge-models"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/eval-models"] });
     },
   });
 }
@@ -87,4 +89,3 @@ export function useWipeData() {
     },
   });
 }
-

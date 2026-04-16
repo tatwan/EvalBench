@@ -72,53 +72,142 @@ Justification: <rationale>
 Score: <int>"""
 }
 
-def get_judge_client(db: Session) -> Tuple[Optional[Any], Optional[str], Optional[Any], Optional[str]]:
-    """Return the judge client, selected model, optional Anthropic client, and any setup error."""
-    raw_settings = {s.key: s.value for s in db.query(Setting).all()}
+FALSEY_SETTING_VALUES = {"", "0", "false", "no", "off"}
 
-    # Decrypt any encrypted API key values before use
+
+def _chat_completion_with_fallback(client: Any, *, model: str, messages: list[dict], temperature: float, max_output_tokens: int):
+    try:
+        return client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_output_tokens,
+        )
+    except Exception as exc:
+        error_text = str(exc)
+        if "max_completion_tokens" not in error_text and "unsupported_parameter" not in error_text:
+            raise
+        return client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_completion_tokens=max_output_tokens,
+        )
+
+
+def _embedding_with_fallback(client: Any, *, model: str, input_text: str):
+    return client.embeddings.create(
+        model=model,
+        input=input_text,
+    )
+
+def _provider_for_model(model_name: str | None) -> tuple[str | None, str | None]:
+    if not model_name:
+        return None, None
+    if model_name.startswith("groq-"):
+        return "groq", model_name.removeprefix("groq-")
+    if model_name.startswith(("gpt-", "o1", "o3", "o4", "chatgpt-", "text-embedding-")):
+        return "openai", model_name
+    if model_name.startswith("claude-"):
+        return "anthropic", model_name
+    if model_name.startswith("gemini-"):
+        return "gemini", model_name
+    if model_name.startswith("grok-"):
+        return "grok", model_name
+    return "ollama", model_name
+
+
+def _decrypted_settings(db: Session) -> dict[str, str]:
+    raw_settings = {s.key: s.value for s in db.query(Setting).all()}
     settings: dict[str, str] = {}
     for k, v in raw_settings.items():
         settings[k] = decrypt_value(v or "") if is_sensitive(k) else (v or "")
+    return settings
 
-    judge_model = settings.get("judge_model")
-    if not judge_model:
+
+def _setting_enabled(value: str | None, default: bool = True) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() not in FALSEY_SETTING_VALUES
+
+
+def judge_is_enabled(db: Session) -> bool:
+    settings = _decrypted_settings(db)
+    return _setting_enabled(settings.get("judge_enabled"), default=True)
+
+
+def get_judge_model_name(db: Session) -> str | None:
+    settings = _decrypted_settings(db)
+    judge_model = (settings.get("judge_model") or "").strip()
+    return judge_model or None
+
+
+def get_model_client(db: Session, model_name: str | None) -> Tuple[Optional[Any], Optional[str], Optional[Any], Optional[str]]:
+    """Return a provider client for the requested model id plus the invocation model name."""
+    if not model_name:
         return None, None, None, None
 
-    # Default to Local Ollama OpenAI-compatible endpoint
+    settings = _decrypted_settings(db)
+    provider, invocation_model = _provider_for_model(model_name)
+    if not provider or not invocation_model:
+        return None, None, None, "Model provider could not be determined."
+
     base_url = settings.get("ollama_host", "http://localhost:11434") + "/v1"
     api_key = settings.get("openai_api_key", "ollama")
 
-    if judge_model.startswith("gpt-"):
+    if provider == "openai":
         base_url = "https://api.openai.com/v1"
         api_key = settings.get("openai_api_key", "")
-    elif judge_model.startswith("gemini-"):
+    elif provider == "gemini":
         base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
         api_key = settings.get("gemini_api_key", "")
-    elif judge_model.startswith("grok-"):
-        # xAI Grok
+    elif provider == "grok":
         base_url = "https://api.x.ai/v1"
         api_key = settings.get("grok_api_key", "")
-    elif judge_model.startswith("groq-") or settings.get("groq_api_key"):
-        # Groq fast inference
+    elif provider == "groq":
         base_url = "https://api.groq.com/openai/v1"
         api_key = settings.get("groq_api_key", "")
-    elif judge_model.startswith("claude-"):
+    elif provider == "anthropic":
         api_key = settings.get("anthropic_api_key", "")
         try:
             import anthropic
         except ImportError:
-            return None, judge_model, None, "Anthropic SDK is not installed. Install dependencies before using Claude as the judge."
+            return None, invocation_model, None, "Anthropic SDK is not installed. Install dependencies before using Claude models."
         anthropic_client = anthropic.Anthropic(api_key=api_key)
-        return None, judge_model, anthropic_client, None
+        return None, invocation_model, anthropic_client, None
 
     try:
         from openai import OpenAI
     except ImportError:
-        return None, judge_model, None, "OpenAI-compatible SDK is not installed. Install dependencies before using judge models."
+        return None, invocation_model, None, "OpenAI-compatible SDK is not installed. Install dependencies before using cloud models."
 
     client = OpenAI(base_url=base_url, api_key=api_key)
-    return client, judge_model, None, None
+    return client, invocation_model, None, None
+
+
+def get_judge_client(db: Session) -> Tuple[Optional[Any], Optional[str], Optional[Any], Optional[str]]:
+    """Return the judge client, invocation model name, optional Anthropic client, and any setup error."""
+    settings = _decrypted_settings(db)
+    if not _setting_enabled(settings.get("judge_enabled"), default=True):
+        return None, None, None, None
+
+    judge_model = (settings.get("judge_model") or "").strip()
+    if not judge_model:
+        return None, None, None, None
+
+    provider, invocation_model = _provider_for_model(judge_model)
+    provider_key_map = {
+        "openai": "openai_api_key",
+        "anthropic": "anthropic_api_key",
+        "gemini": "gemini_api_key",
+        "groq": "groq_api_key",
+        "grok": "grok_api_key",
+    }
+    provider_key = provider_key_map.get(provider or "")
+    if provider_key and not (settings.get(provider_key) or "").strip():
+        return None, invocation_model, None, None
+
+    return get_model_client(db, judge_model)
 
 def evaluate_with_llm(db: Session, metric_name: str, input_text: str, output_text: str, context_text: str = "") -> Tuple[float, str]:
     """
@@ -149,14 +238,15 @@ def evaluate_with_llm(db: Session, metric_name: str, input_text: str, output_tex
             )
             reply = response.content[0].text.strip()
         else:
-            response = client.chat.completions.create(
+            response = _chat_completion_with_fallback(
+                client,
                 model=model,
                 messages=[
                     {"role": "system", "content": "You are a strict and objective evaluator."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.0,
-                max_tokens=150,
+                max_output_tokens=150,
             )
             reply = response.choices[0].message.content.strip()
         

@@ -3,7 +3,8 @@ import { Activity, LayoutDashboard, Cpu, Swords, Settings, Database, Trophy, His
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import type { ElementType } from "react";
-import { useModels, useOllamaStatus } from "@/hooks/use-models";
+import { Button } from "@/components/ui/Button";
+import { useModels, useOllamaStatus, useStartOllama } from "@/hooks/use-models";
 import { useEvalRuns } from "@/hooks/use-eval";
 
 function cn(...inputs: ClassValue[]) {
@@ -15,7 +16,6 @@ type NavItem = {
   label: string;
   icon: ElementType;
   badge?: string | number;
-  isNew?: boolean;
   match?: (path: string) => boolean;
 };
 
@@ -24,13 +24,14 @@ export function Sidebar() {
   const { data: models = [] } = useModels();
   const { data: runs = [] } = useEvalRuns();
   const { data: ollamaStatus } = useOllamaStatus();
+  const startOllama = useStartOllama();
 
   const sections: { label: string; items: NavItem[] }[] = [
     {
       label: "Evaluate",
       items: [
         { href: "/", label: "Dashboard", icon: LayoutDashboard },
-        { href: "/evaluate", label: "Eval Wizard", icon: Activity, isNew: true, match: (path) => path.startsWith("/evaluate") },
+        { href: "/evaluate", label: "Eval Wizard", icon: Activity, match: (path) => path.startsWith("/evaluate") },
         { href: "/history", label: "Run History", icon: History, badge: runs.length },
       ],
     },
@@ -65,7 +66,7 @@ export function Sidebar() {
         </div>
         <div>
           <div className="font-extrabold text-lg tracking-tight text-foreground">EvalBench</div>
-          <div className="text-[11px] text-foreground/70">v0.4 - Local LLM Eval</div>
+          <div className="text-[11px] text-foreground/70">v1.0.0 - Local LLM Eval</div>
         </div>
       </div>
 
@@ -91,10 +92,7 @@ export function Sidebar() {
                     >
                       <Icon className="w-4.5 h-4.5" />
                       <span className="flex-1">{item.label}</span>
-                      {item.isNew && (
-                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-violet-600 text-white">NEW</span>
-                      )}
-                      {item.badge !== undefined && !item.isNew && (
+                      {item.badge !== undefined && (
                         <span className="text-[11px] font-mono text-foreground/60">{item.badge}</span>
                       )}
                     </div>
@@ -118,6 +116,18 @@ export function Sidebar() {
             </div>
           </div>
         </div>
+        {!ollamaStatus?.running ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mb-3 w-full"
+            onClick={() => startOllama.mutate()}
+            disabled={startOllama.isPending}
+          >
+            {startOllama.isPending ? "Starting Ollama..." : "Start Ollama"}
+          </Button>
+        ) : null}
         <Link href="/settings" className="block">
           <div
             className={cn(

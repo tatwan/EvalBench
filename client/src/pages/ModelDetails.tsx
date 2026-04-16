@@ -18,6 +18,7 @@ const SPEED_METRICS = new Set([
   "load_latency_s",
   "prompt_tokens",
   "output_tokens",
+  "perplexity",
 ]);
 
 function formatScore(value?: number) {
@@ -51,10 +52,11 @@ export default function ModelDetails() {
   const datasetMap = useMemo(() => Object.fromEntries((datasets as any[]).map((d) => [d.id, d])), [datasets]);
 
   const modelRuns = useMemo(() => {
+    const resultRunIds = new Set((results as any[]).filter((r) => r.modelId === modelId).map((r) => r.runId));
     return (runs as any[])
-      .filter((r) => (r.configJson?.modelIds ?? []).includes(modelId))
+      .filter((r) => (r.configJson?.modelIds ?? []).includes(modelId) || resultRunIds.has(r.id))
       .sort((a, b) => new Date(b.timestamp ?? 0).getTime() - new Date(a.timestamp ?? 0).getTime());
-  }, [runs, modelId]);
+  }, [runs, results, modelId]);
 
   const modelResults = useMemo(() => {
     return (results as any[]).filter((r) => r.modelId === modelId);
@@ -63,6 +65,32 @@ export default function ModelDetails() {
   const qualityResults = useMemo(() => {
     return modelResults.filter((r) => !r.error && !SPEED_METRICS.has(r.metricName));
   }, [modelResults]);
+
+  const taskSummary = useMemo(() => {
+    const byTask = new Map<string, { total: number; count: number; best: number }>();
+    qualityResults.forEach((result) => {
+      const run = modelRuns.find((candidate) => candidate.id === result.runId);
+      const task = run?.configJson?.taskType;
+      if (!task) return;
+      const entry = byTask.get(task) ?? { total: 0, count: 0, best: Number.NEGATIVE_INFINITY };
+      const score = Number(result.score);
+      entry.total += score;
+      entry.count += 1;
+      entry.best = Math.max(entry.best, score);
+      byTask.set(task, entry);
+    });
+
+    const ranked = Array.from(byTask.entries()).map(([task, data]) => ({
+      task,
+      average: data.total / data.count,
+      best: data.best,
+    }));
+    ranked.sort((a, b) => b.average - a.average);
+    return {
+      strongestTask: ranked[0]?.task ?? null,
+      bestTask: [...ranked].sort((a, b) => b.best - a.best)[0]?.task ?? null,
+    };
+  }, [modelRuns, qualityResults]);
 
   const avgScore = useMemo(() => {
     if (!qualityResults.length) return null;
@@ -182,10 +210,10 @@ export default function ModelDetails() {
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          { label: "Total Runs", value: modelRuns.length, icon: Activity, tone: "bg-amber-100 text-amber-600" },
-          { label: "Avg Score", value: avgScore !== null ? formatScore(avgScore) : "—", icon: BarChart3, tone: "bg-emerald-100 text-emerald-600" },
-          { label: "Best Score", value: bestScore !== null ? formatScore(bestScore) : "—", icon: CheckCircle2, tone: "bg-violet-100 text-violet-600" },
-          { label: "Avg Speed", value: avgTps !== null ? `${avgTps.toFixed(1)} t/s` : "—", icon: Clock, tone: "bg-sky-100 text-sky-600" },
+          { label: "Total Runs", value: modelRuns.length, detail: `${taskSet.length || 0} task families`, icon: Activity, tone: "bg-amber-100 text-amber-600" },
+          { label: "Avg Score", value: avgScore !== null ? formatScore(avgScore) : "—", detail: taskSummary.strongestTask ? `Strongest in ${taskSummary.strongestTask}` : "No task context yet", icon: BarChart3, tone: "bg-emerald-100 text-emerald-600" },
+          { label: "Best Score", value: bestScore !== null ? formatScore(bestScore) : "—", detail: taskSummary.bestTask ? `Best single result in ${taskSummary.bestTask}` : "No task context yet", icon: CheckCircle2, tone: "bg-violet-100 text-violet-600" },
+          { label: "Avg Speed", value: avgTps !== null ? `${avgTps.toFixed(1)} t/s` : "—", detail: avgLatency !== null ? `Avg latency ${avgLatency.toFixed(2)}s` : "Latency unavailable", icon: Clock, tone: "bg-sky-100 text-sky-600" },
         ].map((stat) => {
           const Icon = stat.icon;
           return (
@@ -197,6 +225,7 @@ export default function ModelDetails() {
                 <div>
                   <div className="text-2xl font-extrabold text-foreground">{stat.value}</div>
                   <div className="text-xs font-medium text-muted-foreground">{stat.label}</div>
+                  <div className="text-[11px] text-muted-foreground mt-1">{stat.detail}</div>
                 </div>
               </div>
             </Card>

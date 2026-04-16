@@ -27,14 +27,24 @@ ARENA_PROMPTS = [
 async def get_matchup(
     db: Session = Depends(get_db),
     prompt: Optional[str] = Query(None, description="Custom prompt to use. If omitted, a random built-in prompt is selected."),
+    model_a_id: Optional[int] = Query(None, description="Optional fixed model A for a manual matchup."),
+    model_b_id: Optional[int] = Query(None, description="Optional fixed model B for a manual matchup."),
 ):
     import random
     import asyncio
-    pair = storage.get_random_model_pair(db)
+    if (model_a_id is None) != (model_b_id is None):
+        raise HTTPException(
+            status_code=400,
+            detail="Manual Arena mode requires both Model A and Model B.",
+        )
+    if model_a_id is not None and model_b_id is not None:
+        pair = storage.get_model_pair_by_ids(db, model_a_id, model_b_id)
+    else:
+        pair = storage.get_random_model_pair(db)
     if not pair:
         raise HTTPException(
             status_code=400,
-            detail="Need at least 2 models. Run model discovery first.",
+            detail="Need two distinct non-embedding models. Run model discovery first.",
         )
     model_a, model_b = pair
     prompt = (prompt or "").strip() or random.choice(ARENA_PROMPTS)

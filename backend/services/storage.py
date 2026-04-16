@@ -1,7 +1,6 @@
-import random
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from backend import models as db_models
 
 
@@ -54,12 +53,38 @@ def upsert_models_from_ollama(db: Session, ollama_models: list[dict]) -> list[db
 
 def get_random_model_pair(db: Session) -> tuple[db_models.Model, db_models.Model] | None:
     models = db.query(db_models.Model).filter(
-        ~db_models.Model.name.ilike("%embed%")
-    ).all()
+        ~db_models.Model.name.ilike("%embed%"),
+        or_(db_models.Model.family.is_(None), db_models.Model.family != "cloud"),
+    ).order_by(func.random()).limit(2).all()
     if len(models) < 2:
         return None
-    pair = random.sample(models, 2)
-    return pair[0], pair[1]
+    return models[0], models[1]
+
+
+def get_model_pair_by_ids(
+    db: Session,
+    model_a_id: int,
+    model_b_id: int,
+) -> tuple[db_models.Model, db_models.Model] | None:
+    if model_a_id == model_b_id:
+        return None
+    models = (
+        db.query(db_models.Model)
+        .filter(db_models.Model.id.in_([model_a_id, model_b_id]))
+        .all()
+    )
+    if len(models) != 2:
+        return None
+    model_map = {model.id: model for model in models}
+    model_a = model_map.get(model_a_id)
+    model_b = model_map.get(model_b_id)
+    if not model_a or not model_b:
+        return None
+    if model_a.family == "cloud" or model_b.family == "cloud":
+        return None
+    if "embed" in model_a.name.lower() or "embed" in model_b.name.lower():
+        return None
+    return model_a, model_b
 
 
 def record_arena_battle(
@@ -169,6 +194,7 @@ def save_eval_result(
     metric_name: str,
     score: float,
     raw_output: str | None = None,
+    error: bool = False,
     item_id: int | None = None,
 ) -> db_models.EvalResult:
     result = db_models.EvalResult(
@@ -176,6 +202,7 @@ def save_eval_result(
         model_id=model_id,
         metric_name=metric_name,
         score=score,
+        error=error,
         raw_output=raw_output,
         item_id=item_id,
     )
@@ -260,4 +287,25 @@ def create_dataset(
 
     db.commit()
     db.refresh(dataset)
+    return dataset
+
+
+def dataset_has_results(db: Session, dataset_id: int) -> bool:
+    return (
+        db.query(db_models.EvalResult.id)
+        .join(db_models.GoldenItem, db_models.EvalResult.item_id == db_models.GoldenItem.id)
+        .filter(db_models.GoldenItem.dataset_id == dataset_id)
+        .first()
+        is not None
+    )
+
+
+def delete_dataset(db: Session, dataset_id: int) -> db_models.GoldenDataset | None:
+    dataset = get_dataset(db, dataset_id)
+    if not dataset:
+        return None
+
+    db.query(db_models.GoldenItem).filter_by(dataset_id=dataset_id).delete()
+    db.delete(dataset)
+    db.commit()
     return dataset

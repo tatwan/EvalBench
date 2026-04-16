@@ -63,6 +63,8 @@ class EvalRunConfig(CamelModel):
     retry_count: Optional[int] = Field(default=None, ge=0)
     cache_hits: Optional[int] = Field(default=None, ge=0)
     duration_seconds: Optional[float] = Field(default=None, ge=0)
+    judge_model: Optional[str] = None
+    judge_provider: Optional[str] = None
     cancel_requested: Optional[bool] = None
     errors: list[str] = Field(default_factory=list)
 

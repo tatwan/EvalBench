@@ -25,6 +25,8 @@ export function useEvalRun(id: number) {
       return api.evalRuns.get.responses[200].parse(await res.json());
     },
     enabled: !!id,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 }
 
@@ -81,8 +83,18 @@ export function useCreateEvalRun() {
       if (!res.ok) throw new Error("Failed to start evaluation");
       return api.evalRuns.create.responses[201].parse(await res.json());
     },
-    onSuccess: () => {
+    onSuccess: (run) => {
+      queryClient.setQueryData([api.evalRuns.list.path], (existing: unknown) => {
+        const current = Array.isArray(existing) ? existing as Array<Record<string, unknown>> : [];
+        const withoutNewRun = current.filter((item) => item.id !== run.id);
+        return [run, ...withoutNewRun];
+      });
       queryClient.invalidateQueries({ queryKey: [api.evalRuns.list.path] });
+      queryClient.refetchQueries({ queryKey: [api.evalRuns.list.path], type: "active" });
+      queryClient.invalidateQueries({ queryKey: [api.evalRuns.get.path, run.id] });
+      queryClient.invalidateQueries({ queryKey: [api.evalRuns.results.path, run.id] });
+      queryClient.invalidateQueries({ queryKey: [api.evalRuns.stats.path, run.id] });
+      queryClient.invalidateQueries({ queryKey: [api.evalResults.list.path] });
       toast({
         title: "Evaluation Started",
         description: "Your models are now being benchmarked.",

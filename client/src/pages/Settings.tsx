@@ -11,6 +11,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,8 +31,29 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Settings as SettingsIcon, Save, Server, Scale, Key, Loader2, FlaskConical, AlertOctagon } from "lucide-react";
+import { Settings as SettingsIcon, Save, Server, Scale, Key, Loader2, FlaskConical, AlertOctagon, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+
+type EvalProvider = "openai" | "anthropic" | "gemini" | "groq" | "grok";
+
+const EVAL_PROVIDERS: Array<{ id: EvalProvider; label: string }> = [
+  { id: "openai", label: "OpenAI" },
+  { id: "anthropic", label: "Anthropic" },
+  { id: "gemini", label: "Gemini" },
+  { id: "groq", label: "Groq" },
+  { id: "grok", label: "xAI Grok" },
+];
+
+const JUDGE_NONE = "__judge_none__";
+
+function parseJsonSetting<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 export default function Settings() {
   const { data: settings = [], isLoading: settingsLoading } = useSettings();
@@ -37,36 +67,61 @@ export default function Settings() {
     anthropic: Array<{id: string; label: string}>;
     gemini: Array<{id: string; label: string}>;
     groq: Array<{id: string; label: string}>;
+    grok: Array<{id: string; label: string}>;
   }>({
     queryKey: ["/api/settings/judge-models"],
     staleTime: 5 * 60 * 1000, // cache for 5 minutes
   });
+  const { data: evalModels } = useQuery<Record<EvalProvider, Array<{ id: string; label: string; capabilities: string[] }>>>({
+    queryKey: ["/api/settings/eval-models"],
+    staleTime: 5 * 60 * 1000,
+  });
 
   const [ollamaHost, setOllamaHost] = useState("http://localhost:11434");
-  const [judgeModel, setJudgeModel] = useState("");
+  const [judgeEnabled, setJudgeEnabled] = useState(false);
+  const [judgeModel, setJudgeModel] = useState(JUDGE_NONE);
   const [openAiKey, setOpenAiKey] = useState("");
   const [anthropicKey, setAnthropicKey] = useState("");
   const [geminiKey, setGeminiKey] = useState("");
   const [groqKey, setGroqKey] = useState("");
   const [grokKey, setGrokKey] = useState("");
+  const [allowedEvalProviders, setAllowedEvalProviders] = useState<EvalProvider[]>(EVAL_PROVIDERS.map((provider) => provider.id));
+  const [allowedEvalModels, setAllowedEvalModels] = useState<Record<string, string[]>>({});
   const [testingTarget, setTestingTarget] = useState<SettingConnectionTarget | null>(null);
 
   // Sync state when DB loads
   useEffect(() => {
     if (settings.length > 0) {
+      const storedJudgeModel = settings.find(s => s.key === "judge_model")?.value || "";
+      const storedJudgeEnabled = settings.find(s => s.key === "judge_enabled")?.value;
       setOllamaHost(settings.find(s => s.key === "ollama_host")?.value || "http://localhost:11434");
-      setJudgeModel(settings.find(s => s.key === "judge_model")?.value || "");
+      setJudgeEnabled(storedJudgeEnabled ? !["", "0", "false", "no", "off"].includes(storedJudgeEnabled.toLowerCase()) : Boolean(storedJudgeModel));
+      setJudgeModel(storedJudgeModel || JUDGE_NONE);
       setOpenAiKey(settings.find(s => s.key === "openai_api_key")?.value || "");
       setAnthropicKey(settings.find(s => s.key === "anthropic_api_key")?.value || "");
       setGeminiKey(settings.find(s => s.key === "gemini_api_key")?.value || "");
       setGroqKey(settings.find(s => s.key === "groq_api_key")?.value || "");
       setGrokKey(settings.find(s => s.key === "grok_api_key")?.value || "");
+      setAllowedEvalProviders(
+        parseJsonSetting<EvalProvider[]>(
+          settings.find((s) => s.key === "allowed_eval_providers")?.value,
+          [],
+        )
+      );
+      setAllowedEvalModels(
+        parseJsonSetting<Record<string, string[]>>(
+          settings.find((s) => s.key === "allowed_eval_models")?.value,
+          {},
+        )
+      );
     }
   }, [settings]);
 
+  const activeJudgeModel = judgeEnabled && judgeModel !== JUDGE_NONE ? judgeModel : "";
+
   const connectionPayload = {
     ollamaHost,
-    judgeModel,
+    judgeModel: activeJudgeModel,
     openaiApiKey: openAiKey,
     anthropicApiKey: anthropicKey,
     geminiApiKey: geminiKey,
@@ -100,12 +155,15 @@ export default function Settings() {
   const handleSave = async () => {
     try {
       if (ollamaHost) await updateSetting.mutateAsync({ key: "ollama_host", value: ollamaHost });
-      if (judgeModel) await updateSetting.mutateAsync({ key: "judge_model", value: judgeModel });
+      await updateSetting.mutateAsync({ key: "judge_enabled", value: judgeEnabled ? "true" : "false" });
+      await updateSetting.mutateAsync({ key: "judge_model", value: judgeModel === JUDGE_NONE ? "" : judgeModel });
       if (openAiKey !== undefined) await updateSetting.mutateAsync({ key: "openai_api_key", value: openAiKey });
       if (anthropicKey !== undefined) await updateSetting.mutateAsync({ key: "anthropic_api_key", value: anthropicKey });
       if (geminiKey !== undefined) await updateSetting.mutateAsync({ key: "gemini_api_key", value: geminiKey });
       if (groqKey !== undefined) await updateSetting.mutateAsync({ key: "groq_api_key", value: groqKey });
       if (grokKey !== undefined) await updateSetting.mutateAsync({ key: "grok_api_key", value: grokKey });
+      await updateSetting.mutateAsync({ key: "allowed_eval_providers", value: JSON.stringify(allowedEvalProviders) });
+      await updateSetting.mutateAsync({ key: "allowed_eval_models", value: JSON.stringify(allowedEvalModels) });
 
       toast({ title: "Settings saved successfully", variant: "default" });
     } catch (e: any) {
@@ -122,7 +180,7 @@ export default function Settings() {
     }
   };
 
-  const renderTestButton = (target: SettingConnectionTarget, label = "Test") => {
+  const renderTestButton = (target: SettingConnectionTarget, label = "Test", disabled = false) => {
     const isTesting = testingTarget === target && testConnection.isPending;
     return (
       <Button
@@ -130,13 +188,34 @@ export default function Settings() {
         variant="outline"
         size="sm"
         className="shrink-0 gap-2"
-        disabled={testConnection.isPending}
+        disabled={testConnection.isPending || disabled}
         onClick={() => handleTestConnection(target)}
       >
         {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FlaskConical className="w-4 h-4" />}
         {isTesting ? "Testing..." : label}
       </Button>
     );
+  };
+
+  const toggleAllowedProvider = (provider: EvalProvider) => {
+    setAllowedEvalProviders((prev) =>
+      prev.includes(provider)
+        ? prev.filter((item) => item !== provider)
+        : [...prev, provider]
+    );
+  };
+
+  const toggleAllowedModel = (provider: EvalProvider, modelId: string, checked: boolean) => {
+    setAllowedEvalModels((prev) => {
+      const current = prev[provider] ?? [];
+      const next = checked
+        ? [...current, modelId]
+        : current.filter((item) => item !== modelId);
+      return {
+        ...prev,
+        [provider]: Array.from(new Set(next)),
+      };
+    });
   };
 
   if (settingsLoading) {
@@ -181,26 +260,38 @@ export default function Settings() {
         <Card className="border-border bg-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Scale className="w-5 h-5 text-purple-400" /> LLM-as-Judge</CardTitle>
-            <CardDescription>Select the model that acts as the evaluator for subjective scoring (G-Eval).</CardDescription>
+            <CardDescription>Turn subjective judge scoring on only when you want it. When it is off, EvalBench skips judge metrics for every run.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3">
+              <div className="space-y-1">
+                <div className="text-sm font-medium">Enable LLM-as-Judge</div>
+                <p className="text-xs text-muted-foreground">Summarization, QA-style, and RAG judge metrics are skipped when this is off.</p>
+              </div>
+              <Switch checked={judgeEnabled} onCheckedChange={setJudgeEnabled} />
+            </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Judge Model</label>
-              <Select value={judgeModel} onValueChange={setJudgeModel}>
+              <Select value={judgeModel} onValueChange={setJudgeModel} disabled={!judgeEnabled}>
                 <SelectTrigger className="w-full bg-muted">
                   <SelectValue placeholder="Select a judge model" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
+                    <SelectLabel>Judge Mode</SelectLabel>
+                    <SelectItem value={JUDGE_NONE}>No judge selected</SelectItem>
+                  </SelectGroup>
+                  <SelectSeparator />
+                  <SelectGroup>
                     <SelectLabel>OpenAI</SelectLabel>
                     {(liveModels?.openai && liveModels.openai.length > 0
                       ? liveModels.openai
                       : [
-                          { id: "gpt-4o", label: "GPT-4o" },
-                          { id: "gpt-4o-mini", label: "GPT-4o mini" },
-                          { id: "gpt-4.1", label: "GPT-4.1" },
-                          { id: "gpt-4.1-mini", label: "GPT-4.1 mini" },
-                          { id: "o3-mini", label: "o3-mini (Reasoning)" },
+                          { id: "gpt-5.4", label: "GPT-5.4" },
+                          { id: "gpt-5.4-mini", label: "GPT-5.4 mini" },
+                          { id: "gpt-5.4-nano", label: "GPT-5.4 nano" },
+                          { id: "o4-mini", label: "o4-mini" },
+                          { id: "o3", label: "o3" },
                         ]
                     ).map(m => (
                       <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
@@ -226,8 +317,8 @@ export default function Settings() {
                     {(liveModels?.gemini && liveModels.gemini.length > 0
                       ? liveModels.gemini
                       : [
-                          { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-                          { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+                          { id: "gemini-3.1-pro", label: "Gemini 3.1 Pro" },
+                          { id: "gemini-3.1-flash", label: "Gemini 3.1 Flash" },
                         ]
                     ).map(m => (
                       <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
@@ -247,14 +338,126 @@ export default function Settings() {
                       <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
                     ))}
                   </SelectGroup>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectLabel>xAI Grok</SelectLabel>
+                    {(liveModels?.grok && liveModels.grok.length > 0
+                      ? liveModels.grok
+                      : [
+                          { id: "grok-4", label: "Grok 4" },
+                          { id: "grok-3", label: "Grok 3" },
+                        ]
+                    ).map(m => (
+                      <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                {liveModels ? "Showing live models from your configured providers." : "Configure API keys above to see live model lists from each provider."}
+                {!judgeEnabled
+                  ? "Judge scoring is currently off."
+                  : liveModels
+                    ? "Showing live models from your configured providers."
+                    : "Configure API keys above to see live model lists from each provider."}
               </p>
             </div>
             <div className="flex justify-end">
-              {renderTestButton("judge", "Test Judge Setup")}
+              {renderTestButton("judge", "Test Judge Setup", !judgeEnabled || !activeJudgeModel)}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border bg-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Check className="w-5 h-5 text-emerald-500" /> Frontier Evaluation Allowlist</CardTitle>
+            <CardDescription>Choose which cloud vendors and specific models can appear as evaluated frontier models in the Eval Wizard.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Allowed Providers</label>
+              <div className="flex flex-wrap gap-2">
+                {EVAL_PROVIDERS.map((provider) => {
+                  const enabled = allowedEvalProviders.includes(provider.id);
+                  return (
+                    <Button
+                      key={provider.id}
+                      type="button"
+                      variant={enabled ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => toggleAllowedProvider(provider.id)}
+                    >
+                      {provider.label}
+                    </Button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Disabled providers stay hidden in the Eval Wizard. The active judge model is always excluded from eval selection even if it is allowed here.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-sm font-medium">Allowed Models By Provider</label>
+              {EVAL_PROVIDERS.map((provider) => {
+                const models = evalModels?.[provider.id] ?? [];
+                const enabled = allowedEvalProviders.includes(provider.id);
+                const selected = allowedEvalModels[provider.id] ?? [];
+                return (
+                  <div key={provider.id} className="rounded-lg border border-border p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-medium">{provider.label}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {selected.length > 0
+                            ? `${selected.length} model${selected.length === 1 ? "" : "s"} explicitly allowed`
+                            : "No specific model filter saved — all models from this enabled provider will be shown."}
+                        </div>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button type="button" variant="outline" size="sm" disabled={!enabled || models.length === 0}>
+                            {models.length === 0 ? "No live models" : "Choose Models"}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-[340px]">
+                          <DropdownMenuLabel>{provider.label}</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          {models.map((model) => (
+                            <DropdownMenuCheckboxItem
+                              key={model.id}
+                              checked={selected.includes(model.id)}
+                              onCheckedChange={(checked) => toggleAllowedModel(provider.id, model.id, Boolean(checked))}
+                            >
+                              <div className="flex w-full items-center justify-between gap-3">
+                                <span>{model.label}</span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  {model.capabilities.join(" / ")}
+                                </span>
+                              </div>
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    {selected.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {selected.map((modelId) => (
+                          <Button
+                            key={modelId}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => toggleAllowedModel(provider.id, modelId, false)}
+                          >
+                            {models.find((model) => model.id === modelId)?.label ?? modelId}
+                          </Button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
@@ -355,7 +558,7 @@ export default function Settings() {
               <div className="space-y-1 mb-4 sm:mb-0">
                 <h4 className="font-medium text-red-500">Reset Evaluation Data</h4>
                 <p className="text-sm text-muted-foreground mr-4">
-                  Permanently delete all captured SQL statistics, evaluation runs, battle ratings, and generated metrics to start from a clean slate. Models and Datasets will <b>not</b> be deleted.
+                  Permanently delete all captured SQL statistics, evaluation runs, battle ratings, and generated metrics to start from a clean slate. Models and Datasets will <b>not</b> be deleted, and new run IDs will start fresh again.
                 </p>
               </div>
               <AlertDialog>
@@ -369,7 +572,7 @@ export default function Settings() {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This action cannot be undone. This will permanently delete all captured evaluation outputs, leaderboard rankings, and response caching from the SQLite database. Your imported datasets and pulled models will remain intact.
+                      This action cannot be undone. This will permanently delete all captured evaluation outputs, leaderboard rankings, and response caching from the SQLite database. Your imported datasets and pulled models will remain intact, and new run IDs will restart from a fresh state.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>

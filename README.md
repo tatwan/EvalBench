@@ -7,7 +7,7 @@
 [![Runs](https://img.shields.io/badge/Run-History%20%2B%20Details-purple)](./README.md)
 [![License](https://img.shields.io/badge/License-MIT-black)](./README.md)
 
-**Status**: v0.9 - Trusted Eval Runs + Smarter Wizard UX (typed run config, grounded ETA, fair compare, cancellation, reliability analytics, dataset UX)
+**Status**: v1.0.0 - Local-first eval workbench with trusted runs, optional judge scoring, frontier comparison, and dataset tooling
 
 ---
 
@@ -78,7 +78,7 @@ EvalBench uses a **local-first** architecture optimized for privacy and speed. I
 We use established Python libraries (`rouge-score`, `sacrebleu`, `nltk`) to compute metrics like ROUGE, BLEU, Exact Match, Token F1, and Distinct-1/2 locally against Ground-Truth Golden Datasets. Datasets are seeded from inline subsets at startup (no external downloads).
 
 ### 2. LLM-as-Judge (Optional)
-For subjective generation tasks, EvalBench can optionally use a configured judge model to score outputs on criteria such as coherence, fluency, and relevance, returning both a score and rationale. Judge providers are loaded lazily so optional SDKs do not block the core app.
+For subjective generation tasks, EvalBench can optionally use a configured judge model to score outputs on criteria such as coherence, fluency, and relevance, returning both a score and rationale. Judge providers are loaded lazily so optional SDKs do not block the core app, and judge scoring can be turned off entirely from Settings when you want objective-only runs.
 
 ### 3. Statistical Rigor And Reliability
 EvalBench computes mean scores and margin of error where supported, and now separates quality from reliability by tracking failed pairs, retries, cache hits, cancellation state, and success rate for each run.
@@ -87,18 +87,18 @@ EvalBench computes mean scores and margin of error where supported, and now sepa
 
 ## Features
 
-- **Model Discovery**: Auto-detects local Ollama models.
+- **Model Discovery**: Auto-detects local Ollama models, keeps the main Models view local-first, and separates comparison/frontier models into their own section.
 - **Task-Aware Wizard**: Select a Task Type (Knowledge, Chat, Code) and EvalBench automatically suggests the correct metrics (Exact Match vs ROUGE vs LLM Judge) and standard benchmark dataset (MMLU vs TruthfulQA).
 - **Typed Eval Run Config**: Run metadata now follows a shared typed contract across backend and frontend, reducing config drift and making run state safer to reason about.
 - **Grounded Wizard ETA**: The wizard estimates runtime from dataset size, selected models, and historical per-pair duration when available, instead of static copy.
-- **Dataset Builder & Registry**: Create golden datasets manually, import CSV/JSON, version datasets by name, use task-aware templates, and inspect dataset usage history.
+- **Dataset Builder & Registry**: Create golden datasets manually, import CSV/JSON, version datasets by name, use task-aware templates, clearly mark custom/imported datasets, inspect dataset usage history, and delete unused user-authored datasets safely.
 - **Trusted Run Lifecycle**: Runs support cancellation, honest failed/cancelled states, retry-aware Ollama calls, and reliability counters such as retries, failed pairs, cache hits, and success rate.
 - **Capability Signatures**: Multi-dimensional Radar charts to visualize model strengths and weaknesses.
 - **Fair Head-to-Head Compare**: Compare two models only on shared completed run contexts, with task/dataset scoping to avoid misleading apples-to-oranges comparisons.
 - **Arena Mode**: Pairwise blind testing where you explicitly start a battle, vote, then reveal which model was which before moving to the next matchup.
 - **Educational Layer**: The `Learn` tab links to the interactive Metric Decision Tree used in the app.
 - **Run History & Details**: Track runs over time, compare per-model metrics, inspect example outputs side-by-side, review run reliability alongside quality, and scan quick score previews without leaving the history table.
-- **Settings Verification**: Test Ollama connectivity, judge readiness, and cloud API-key setup directly from the Settings form before saving.
+- **Settings Verification**: Test Ollama connectivity, judge readiness, and cloud API-key setup directly from the Settings form before saving, with the option to start Ollama when it is offline.
 - **Danger Zone / Wipe Data**: Quickly flush all captured evaluation stats, battle ratings, and cached responses from the SQL database—without losing configured datasets or local models—directly from Settings.
 
 ---

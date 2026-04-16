@@ -3,13 +3,23 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 
-export function useArenaMatchup(prompt?: string, enabled = true) {
-  const url = prompt
-    ? `${api.arena.getMatchup.path}?prompt=${encodeURIComponent(prompt)}`
+export function useArenaMatchup(
+  prompt?: string,
+  enabled = true,
+  modelAId?: number | null,
+  modelBId?: number | null,
+) {
+  const params = new URLSearchParams();
+  if (prompt) params.set("prompt", prompt);
+  if (modelAId) params.set("model_a_id", String(modelAId));
+  if (modelBId) params.set("model_b_id", String(modelBId));
+  const query = params.toString();
+  const url = query
+    ? `${api.arena.getMatchup.path}?${query}`
     : api.arena.getMatchup.path;
 
   return useQuery({
-    queryKey: [api.arena.getMatchup.path, prompt ?? ""],
+    queryKey: [api.arena.getMatchup.path, prompt ?? "", modelAId ?? null, modelBId ?? null],
     queryFn: async () => {
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) {

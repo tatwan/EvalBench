@@ -12,8 +12,37 @@ from backend.scoring.stats import calculate_confidence_interval
 from backend.services import storage
 from backend.services.eval_runner import run_eval, stream_progress
 from backend.schemas import EvalRunOut, EvalRunCreate, EvalRunConfig
+from backend import models as db_models
 
 router = APIRouter(prefix="/api/eval-runs", tags=["eval-runs"])
+
+
+def _provider_for_judge_model(judge_model: str | None) -> str | None:
+    if not judge_model:
+        return None
+    if judge_model.startswith(("gpt-", "o1", "o3", "o4", "chatgpt-", "text-embedding-")):
+        return "openai"
+    if judge_model.startswith("claude-"):
+        return "anthropic"
+    if judge_model.startswith("gemini-"):
+        return "gemini"
+    if judge_model.startswith("grok-"):
+        return "grok"
+    if judge_model.startswith("groq-"):
+        return "groq"
+    return "ollama"
+
+
+def _get_judge_snapshot(db: Session) -> tuple[str | None, str | None]:
+    judge_enabled_setting = db.query(db_models.Setting).filter(db_models.Setting.key == "judge_enabled").first()
+    judge_enabled = True
+    if judge_enabled_setting and judge_enabled_setting.value is not None:
+        judge_enabled = judge_enabled_setting.value.strip().lower() not in {"", "0", "false", "no", "off"}
+    if not judge_enabled:
+        return None, None
+    judge_setting = db.query(db_models.Setting).filter(db_models.Setting.key == "judge_model").first()
+    judge_model = judge_setting.value.strip() if judge_setting and judge_setting.value else None
+    return judge_model, _provider_for_judge_model(judge_model)
 
 
 @router.get("", response_model=list[EvalRunOut])
@@ -39,6 +68,8 @@ async def create_eval_run(
         if dataset_item_count == 0:
             raise HTTPException(status_code=400, detail="Selected dataset contains no items")
 
+    judge_model, judge_provider = _get_judge_snapshot(db)
+
     config = EvalRunConfig(
         model_ids=payload.model_ids,
         cloud_models=payload.cloud_models,
@@ -46,6 +77,8 @@ async def create_eval_run(
         dataset_id=payload.dataset_id,
         dataset_item_count=dataset_item_count,
         benchmark_keys=payload.benchmark_keys or [payload.task_type],
+        judge_model=judge_model,
+        judge_provider=judge_provider,
     ).model_dump(by_alias=True, exclude_none=True)
     run = storage.create_eval_run(db, config)
     # Launch the runner as an independent task so long-running evals do not
@@ -143,8 +176,9 @@ def cancel_eval_run(run_id: int, db: Session = Depends(get_db)):
 def get_eval_results(run_id: int, db: Session = Depends(get_db)):
     from backend import models as db_models
     results_with_items = (
-        db.query(db_models.EvalResult, db_models.GoldenItem)
+        db.query(db_models.EvalResult, db_models.GoldenItem, db_models.Model)
         .outerjoin(db_models.GoldenItem, db_models.EvalResult.item_id == db_models.GoldenItem.id)
+        .outerjoin(db_models.Model, db_models.EvalResult.model_id == db_models.Model.id)
         .filter(db_models.EvalResult.run_id == run_id)
         .all()
     )
@@ -160,8 +194,10 @@ def get_eval_results(run_id: int, db: Session = Depends(get_db)):
             "itemId": r.item_id,
             "input": i.input if i else None,
             "expectedOutput": i.expected_output if i else None,
+            "context": i.context if i else None,
+            "modelName": m.name if m else None,
         }
-        for (r, i) in results_with_items
+        for (r, i, m) in results_with_items
     ]
 
 

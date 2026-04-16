@@ -1,23 +1,37 @@
 import { useParams, useLocation } from "wouter";
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCancelEvalRun, useEvalRun, useEvalResults, useEvalStats } from "@/hooks/use-eval";
 import { useModels } from "@/hooks/use-models";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { MetricTooltip } from "@/components/ui/MetricTooltip";
 import { Activity, Cpu, ArrowLeft, CheckCircle2, Loader2, ShieldAlert, RotateCcw, Database, Download } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
 import { clsx } from "clsx";
 import { AlertTriangle } from "lucide-react";
 
 // Metrics where higher is NOT better (lower latency = better)
-const LOWER_IS_BETTER = new Set(["total_latency_s", "load_latency_s"]);
+const LOWER_IS_BETTER = new Set(["total_latency_s", "load_latency_s", "perplexity"]);
+const QUALITY_EXCLUDED_METRICS = new Set([
+  "tokens_per_second",
+  "total_latency_s",
+  "load_latency_s",
+  "prompt_tokens",
+  "output_tokens",
+  "perplexity",
+]);
+const JUDGE_METRICS = new Set([
+  "llm_coherence",
+  "llm_relevance",
+  "llm_fluency",
+  "llm_faithfulness",
+  "llm_correctness",
+  "context_relevance",
+  "faithfulness",
+]);
+const TASKS_WITH_JUDGE = new Set(["summarization", "qa", "chat", "knowledge", "safety", "rag"]);
 const SCORE_PRECISION: Record<string, number> = {
   tokens_per_second: 1,
   total_latency_s: 2,
@@ -26,12 +40,12 @@ const SCORE_PRECISION: Record<string, number> = {
   output_tokens: 0,
   bleu: 1,
   chrf: 1,
+  perplexity: 2,
 };
 
 function formatScore(name: string, value: number): string {
   const prec = SCORE_PRECISION[name] ?? 3;
-// Percentage-like scores (0-1 range)
-  if (!["bleu", "chrf", "tokens_per_second", "total_latency_s", "load_latency_s", "prompt_tokens", "output_tokens"].includes(name)) {
+  if (!["bleu", "chrf", "tokens_per_second", "total_latency_s", "load_latency_s", "prompt_tokens", "output_tokens", "perplexity"].includes(name)) {
     return `${(value * 100).toFixed(1)}%`;
   }
   return value.toFixed(prec);
@@ -39,41 +53,111 @@ function formatScore(name: string, value: number): string {
 
 function metricLabel(name: string): string {
   const MAP: Record<string, string> = {
-    rouge1: "ROUGE-1", rouge2: "ROUGE-2", rougeL: "ROUGE-L",
+    rouge1: "ROUGE-1", rouge2: "ROUGE-2", rougeL: "ROUGE-L", rougeLsum: "ROUGE-Lsum",
     meteor: "METEOR", bleu: "BLEU", chrf: "chrF",
     exact_match: "Exact Match", f1: "Token F1",
     distinct1: "Distinct-1", distinct2: "Distinct-2",
     pass_at_1: "Pass@1", pass_at_10: "Pass@10",
     tokens_per_second: "Tokens/sec", total_latency_s: "Latency (s)",
     load_latency_s: "Load Time (s)", prompt_tokens: "Prompt Tokens",
-    output_tokens: "Output Tokens",
+    output_tokens: "Output Tokens", perplexity: "Perplexity",
     cosine_sim: "Cosine Sim", recall_at_1: "Recall@1", recall_at_3: "Recall@3", mrr: "MRR",
+    semantic_sim: "Semantic Sim",
     bertscore_f1: "BERTScore F1",
-    llm_coherence: "LLM Coherence", llm_relevance: "LLM Relevance", 
-    llm_fluency: "LLM Fluency",
+    llm_coherence: "Judge Coherence",
+    llm_relevance: "Judge Relevance",
+    llm_fluency: "Judge Fluency",
+    llm_faithfulness: "Judge Faithfulness",
+    llm_correctness: "Judge Correctness",
+    context_relevance: "Judge Context Relevance",
+    faithfulness: "Judge Faithfulness",
   };
   return MAP[name] ?? name;
 }
 
+function highlightedMetricsForTask(taskType: string, metricScores: Record<string, number>) {
+  const preferredByTask: Record<string, string[]> = {
+    summarization: ["rougeLsum", "bertscore_f1", "llm_coherence", "llm_relevance"],
+    qa: ["llm_correctness", "llm_relevance", "semantic_sim", "f1"],
+    reasoning: ["llm_correctness", "f1", "exact_match"],
+    knowledge: ["llm_correctness", "llm_relevance", "exact_match"],
+    safety: ["llm_relevance", "exact_match"],
+    chat: ["llm_coherence", "llm_fluency", "distinct1"],
+    translation: ["bleu", "chrf", "meteor"],
+    code: ["pass_at_1", "rouge1", "distinct1"],
+    embedding: ["cosine_sim", "recall_at_1", "mrr"],
+    classification: ["exact_match"],
+    rag: ["context_relevance", "faithfulness"],
+  };
+  const ordered = preferredByTask[taskType] ?? Object.keys(metricScores);
+  return ordered
+    .filter((metric) => metricScores[metric] !== undefined)
+    .slice(0, 4)
+    .map((metric) => ({ metric, score: metricScores[metric] }));
+}
+
 // We no longer manually group results here, we use the backend's /stats endpoint
+
+function splitJudgeOutput(rawOutput?: string | null) {
+  const content = rawOutput ?? "";
+  const marker = "\n\n--- Judge Rationale ---\n";
+  if (!content.includes(marker)) {
+    return { generation: content, rationale: null };
+  }
+  const [generation, rationale] = content.split(marker, 2);
+  return { generation, rationale };
+}
 
 function getExamplesPerModel(results: any[]) {
   // filter out speed metrics for scoring
   const qualityResults = results.filter(r => 
     !r.error &&
-    !["tokens_per_second", "total_latency_s", "load_latency_s", "prompt_tokens", "output_tokens"].includes(r.metricName)
+    !QUALITY_EXCLUDED_METRICS.has(r.metricName)
   );
 
-  const modelItemScores: Record<number, Record<number, { scoreSum: number, count: number, input: string, expectedOutput: string, rawOutput: string }>> = {};
+  const modelItemScores: Record<number, Record<number, {
+    scoreSum: number,
+    count: number,
+    input: string,
+    expectedOutput: string,
+    context: string | null,
+    actualOutput: string,
+    metricScores: Record<string, number>,
+    judgeRationales: Array<{ metricName: string; rationale: string }>,
+  }>> = {};
 
   for (const r of qualityResults) {
     if (!r.itemId) continue;
     if (!modelItemScores[r.modelId]) modelItemScores[r.modelId] = {};
     if (!modelItemScores[r.modelId][r.itemId]) {
-      modelItemScores[r.modelId][r.itemId] = { scoreSum: 0, count: 0, input: r.input, expectedOutput: r.expectedOutput, rawOutput: r.rawOutput };
+      const split = splitJudgeOutput(r.rawOutput);
+      modelItemScores[r.modelId][r.itemId] = {
+        scoreSum: 0,
+        count: 0,
+        input: r.input,
+        expectedOutput: r.expectedOutput,
+        context: r.context ?? null,
+        actualOutput: JUDGE_METRICS.has(r.metricName) ? split.generation : (r.rawOutput ?? ""),
+        metricScores: {},
+        judgeRationales: [],
+      };
     }
     modelItemScores[r.modelId][r.itemId].scoreSum += r.score;
     modelItemScores[r.modelId][r.itemId].count += 1;
+    modelItemScores[r.modelId][r.itemId].metricScores[r.metricName] = r.score;
+    const split = splitJudgeOutput(r.rawOutput);
+    if (!JUDGE_METRICS.has(r.metricName) && split.generation) {
+      modelItemScores[r.modelId][r.itemId].actualOutput = split.generation;
+    }
+    if (JUDGE_METRICS.has(r.metricName) && split.rationale) {
+      modelItemScores[r.modelId][r.itemId].judgeRationales.push({
+        metricName: r.metricName,
+        rationale: split.rationale,
+      });
+      if (!modelItemScores[r.modelId][r.itemId].actualOutput) {
+        modelItemScores[r.modelId][r.itemId].actualOutput = split.generation;
+      }
+    }
   }
 
   const examples: Record<number, { best?: any, worst?: any }> = {};
@@ -82,9 +166,13 @@ function getExamplesPerModel(results: any[]) {
     const scoredItems = Object.entries(items).map(([itemId, data]: [string, any]) => ({
       itemId: Number(itemId),
       avgScore: data.scoreSum / data.count,
+      metricCount: data.count,
       input: data.input,
       expected: data.expectedOutput,
-      actual: data.rawOutput
+      context: data.context,
+      actual: data.actualOutput,
+      metricScores: data.metricScores,
+      judgeRationales: data.judgeRationales,
     }));
 
     scoredItems.sort((a, b) => b.avgScore - a.avgScore);
@@ -100,7 +188,33 @@ function getExamplesPerModel(results: any[]) {
   return examples;
 }
 
+function parseCodeTests(context?: string | null): string | null {
+  if (!context) return null;
+  try {
+    const parsed = JSON.parse(context);
+    return typeof parsed?.tests === "string" ? parsed.tests : null;
+  } catch {
+    return null;
+  }
+}
+
+function exampleReferenceLabel(taskType: string): string {
+  return taskType === "code" ? "Unit Tests" : "Reference Answer";
+}
+
+function exampleReferenceContent(taskType: string, example: any): string {
+  if (taskType === "code") {
+    return parseCodeTests(example.context) ?? example.expected ?? "No tests captured.";
+  }
+  return example.expected ?? "";
+}
+
+function examplePrimaryInputLabel(taskType: string): string {
+  return taskType === "code" ? "Problem" : "Prompt Input";
+}
+
 export default function RunDetails() {
+  const queryClient = useQueryClient();
   const params = useParams<{ id: string }>();
   const runId = parseInt(params.id ?? "0", 10);
   const [, navigate] = useLocation();
@@ -113,7 +227,7 @@ export default function RunDetails() {
 
   // SSE progress
   const [progress, setProgress] = useState<{ completed: number; total: number; percent: number } | null>(null);
-  const [sseError, setSseError] = useState<string | null>(null);
+  const [streamNotice, setStreamNotice] = useState<{ message: string; tone: "info" | "warning" | "error" } | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
@@ -125,11 +239,20 @@ export default function RunDetails() {
       if (event.type === "progress") {
         setProgress({ completed: event.completed, total: event.total, percent: event.percent });
       }
-      if (event.type === "warning") {
-        setSseError(event.message);
+      if (event.type === "warning" || event.type === "info" || event.type === "error") {
+        setStreamNotice({
+          message: event.message || event.error,
+          tone: event.type === "error" ? "error" : event.type === "warning" ? "warning" : "info",
+        });
       }
       if (event.done) {
         es.close();
+        queryClient.invalidateQueries({ queryKey: ["/api/eval-runs"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/eval-runs/:id", runId] });
+        queryClient.invalidateQueries({ queryKey: ["/api/eval-runs/:id/results", runId] });
+        queryClient.invalidateQueries({ queryKey: ["/api/eval-runs/:id/stats", runId] });
+        queryClient.invalidateQueries({ queryKey: ["/api/eval-results"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/models"] });
         refetchRun();
         refetchResults();
         refetchStats();
@@ -137,11 +260,11 @@ export default function RunDetails() {
       }
     };
     es.onerror = () => {
-      setSseError("Lost connection to progress stream.");
+      setStreamNotice({ message: "Lost connection to progress stream.", tone: "error" });
       es.close();
     };
     return () => es.close();
-  }, [run?.status, runId]);
+  }, [run?.status, runId, queryClient, refetchRun, refetchResults, refetchStats]);
 
   if (runLoading) {
     return (
@@ -166,23 +289,46 @@ export default function RunDetails() {
   }
 
   const modelMap = Object.fromEntries((models as any[]).map((m: any) => [m.id, m]));
+  const resultModelNames = Object.fromEntries(
+    (results as any[])
+      .filter((r: any) => r.modelName)
+      .map((r: any) => [r.modelId, r.modelName])
+  );
   const config = run.configJson as any ?? {};
   const taskType = config.taskType ?? "-";
+  const taskUsesJudge = TASKS_WITH_JUDGE.has(taskType);
+  const configuredLocalModelIds = Array.isArray(config.modelIds) ? config.modelIds : [];
+  const configuredCloudModels = Array.isArray(config.cloudModels) ? config.cloudModels : [];
+  const configuredModelCount = configuredLocalModelIds.length + configuredCloudModels.length;
+  const judgeModel = config.judgeModel ?? null;
+  const judgeProvider = config.judgeProvider ?? null;
   const totalPairs = typeof config.totalPairs === "number" ? config.totalPairs : null;
   const completedPairs = typeof config.completedPairs === "number" ? config.completedPairs : null;
   const errorCount = typeof config.errorCount === "number" ? config.errorCount : 0;
   const retryCount = typeof config.retryCount === "number" ? config.retryCount : 0;
   const cacheHits = typeof config.cacheHits === "number" ? config.cacheHits : 0;
+  const completedWithErrors = Boolean(config.completedWithErrors);
   const successRate = totalPairs && totalPairs > 0 ? Math.max(0, (totalPairs - errorCount) / totalPairs) : null;
+  const runLooksFinished = totalPairs !== null && completedPairs !== null && totalPairs > 0 && completedPairs >= totalPairs;
+  const displayStatus =
+    run.status === "running" && runLooksFinished
+      ? "completed"
+      : run.status;
   const allMetrics = Array.from(new Set([
     ...(stats as any[]).map((s: any) => s.metricName),
     ...(results as any[]).filter((r) => r.error).map((r) => r.metricName),
   ]));
+  const orderedMetrics = [
+    ...allMetrics.filter((metric) => !JUDGE_METRICS.has(metric) && !QUALITY_EXCLUDED_METRICS.has(metric)),
+    ...allMetrics.filter((metric) => JUDGE_METRICS.has(metric)),
+    ...allMetrics.filter((metric) => QUALITY_EXCLUDED_METRICS.has(metric)),
+  ];
   const modelIds = Object.keys(grouped).map(Number);
   const examples = getExamplesPerModel(results as any[]);
+  const metricRowsPerPair = totalPairs && totalPairs > 0 ? (results as any[]).length / totalPairs : null;
 
   const bestByMetric: Record<string, number> = {};
-  allMetrics.forEach((metric) => {
+  orderedMetrics.forEach((metric) => {
     const values = modelIds
       .map((mid) => grouped[mid]?.[metric]?.mean)
       .filter((v): v is number => typeof v === "number");
@@ -212,10 +358,10 @@ export default function RunDetails() {
   };
 
   const exportCsv = () => {
-    const headers = ["Model", ...allMetrics.map(metricLabel)];
+    const headers = ["Model", ...orderedMetrics.map(metricLabel)];
     const rows = modelIds.map((mid) => {
-      const modelName = modelMap[mid]?.name ?? `Model ${mid}`;
-      const values = allMetrics.map((metric) => {
+      const modelName = modelMap[mid]?.name ?? resultModelNames[mid] ?? `Model ${mid}`;
+      const values = orderedMetrics.map((metric) => {
         const stat = grouped[mid]?.[metric];
         return stat ? formatStat(metric, stat) : "";
       });
@@ -225,11 +371,11 @@ export default function RunDetails() {
   };
 
   const exportMarkdown = () => {
-    const headers = ["Model", ...allMetrics.map(metricLabel)];
+    const headers = ["Model", ...orderedMetrics.map(metricLabel)];
     const separator = headers.map(() => "---");
     const rows = modelIds.map((mid) => {
-      const modelName = modelMap[mid]?.name ?? `Model ${mid}`;
-      const values = allMetrics.map((metric) => {
+      const modelName = modelMap[mid]?.name ?? resultModelNames[mid] ?? `Model ${mid}`;
+      const values = orderedMetrics.map((metric) => {
         const stat = grouped[mid]?.[metric];
         return stat ? formatStat(metric, stat) : "-";
       });
@@ -241,6 +387,13 @@ export default function RunDetails() {
       ...rows.map((r) => `| ${r} |`),
     ].join("\n");
     downloadFile(`evalbench-run-${run.id}.md`, md, "text/markdown");
+  };
+
+  const exportJson = async () => {
+    const response = await fetch(`/api/eval-runs/${run.id}/export?format=json`, { credentials: "include" });
+    if (!response.ok) throw new Error("Failed to export JSON");
+    const data = await response.json();
+    downloadFile(`evalbench-run-${run.id}.json`, JSON.stringify(data, null, 2), "application/json");
   };
 
   return (
@@ -256,16 +409,24 @@ export default function RunDetails() {
             <p className="text-muted-foreground text-sm mt-1">
               {run.timestamp ? format(new Date(run.timestamp), "PPpp") : "Unknown time"} - Task: <span className="capitalize font-medium text-foreground">{taskType}</span>
             </p>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {taskUsesJudge && judgeModel ? (
+                <>
+                  <Badge variant="secondary">Judge: {judgeModel}</Badge>
+                  {judgeProvider ? <Badge variant="outline" className="capitalize">{judgeProvider}</Badge> : null}
+                </>
+              ) : null}
+            </div>
           </div>
           <span className={clsx(
             "text-sm px-3 py-1 rounded-full font-semibold",
-            run.status === "completed" ? "bg-emerald-500/20 text-emerald-400" :
-            run.status === "running" || run.status === "cancel_requested" ? "bg-amber-100 text-amber-700" :
-            run.status === "cancelled" ? "bg-slate-200 text-slate-700" :
+            displayStatus === "completed" ? "bg-emerald-500/20 text-emerald-400" :
+            displayStatus === "running" || displayStatus === "cancel_requested" ? "bg-amber-100 text-amber-700" :
+            displayStatus === "cancelled" ? "bg-slate-200 text-slate-700" :
             "bg-muted text-muted-foreground"
           )}>
-            {run.status === "running" || run.status === "cancel_requested" ? <Loader2 className="w-3 h-3 mr-1 animate-spin inline" /> : null}
-            {run.status}
+            {displayStatus === "running" || displayStatus === "cancel_requested" ? <Loader2 className="w-3 h-3 mr-1 animate-spin inline" /> : null}
+            {displayStatus}
           </span>
         </div>
         <div className="flex gap-2">
@@ -274,33 +435,17 @@ export default function RunDetails() {
               Cancel Run
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={exportCsv}>Export CSV</Button>
-          <Button variant="outline" size="sm" onClick={exportMarkdown}>Export Markdown</Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2">
-                <Download className="w-4 h-4" />
-                Export
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={() => window.open(`/api/eval-runs/${run.id}/export?format=json`, "_blank")}
-              >
-                Export as JSON
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => window.open(`/api/eval-runs/${run.id}/export?format=csv`, "_blank")}
-              >
-                Export as CSV
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button variant="outline" size="sm" onClick={exportCsv}>Export Scores CSV</Button>
+          <Button variant="outline" size="sm" onClick={exportMarkdown}>Export Scores Markdown</Button>
+          <Button variant="outline" size="sm" onClick={() => void exportJson()} className="gap-2">
+            <Download className="w-4 h-4" />
+            Export Run JSON
+          </Button>
         </div>
       </div>
 
       {/* Live progress bar */}
-      {(run.status === "running" || run.status === "cancel_requested") && (
+      {((run.status === "running" || run.status === "cancel_requested") && !runLooksFinished) && (
         <Card className="border-amber-200 bg-amber-50">
           <CardContent className="p-5">
             <div className="flex items-center justify-between mb-2">
@@ -319,7 +464,16 @@ export default function RunDetails() {
                 style={{ width: `${progress?.percent ?? 0}%` }}
               />
             </div>
-            {sseError && <p className="text-xs text-red-400 mt-2">{sseError}</p>}
+            {streamNotice && (
+              <p className={clsx(
+                "text-xs mt-2",
+                streamNotice.tone === "error" && "text-rose-700",
+                streamNotice.tone === "warning" && "text-amber-700",
+                streamNotice.tone === "info" && "text-sky-700"
+              )}>
+                {streamNotice.message}
+              </p>
+            )}
           </CardContent>
         </Card>
       )}
@@ -331,7 +485,12 @@ export default function RunDetails() {
             <Cpu className="w-5 h-5 text-primary" />
             <div>
               <p className="text-xs text-muted-foreground">Models</p>
-              <p className="text-2xl font-bold">{modelIds.length}</p>
+              <p className="text-2xl font-bold">{configuredModelCount || modelIds.length}</p>
+              {configuredCloudModels.length > 0 ? (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {configuredLocalModelIds.length} local + {configuredCloudModels.length} comparison
+                </p>
+              ) : null}
             </div>
           </CardContent>
         </Card>
@@ -339,7 +498,7 @@ export default function RunDetails() {
           <CardContent className="p-5 flex items-center gap-3">
             <Activity className="w-5 h-5 text-emerald-400" />
             <div>
-              <p className="text-xs text-foreground/80">Metrics</p>
+              <p className="text-xs text-foreground/80">Metric Types</p>
               <p className="text-2xl font-bold text-foreground">{allMetrics.length}</p>
             </div>
           </CardContent>
@@ -348,7 +507,7 @@ export default function RunDetails() {
           <CardContent className="p-5 flex items-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-purple-400" />
             <div>
-              <p className="text-xs text-foreground/80">Results</p>
+              <p className="text-xs text-foreground/80">Stored Rows</p>
               <p className="text-2xl font-bold text-foreground">{(results as any[]).length}</p>
             </div>
           </CardContent>
@@ -375,14 +534,18 @@ export default function RunDetails() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Reliability</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            Reliability
+            <MetricTooltip description="Pairs are model × item units of work. Each pair can write multiple metric rows, so stored rows will usually exceed pair counts." />
+          </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <p className="text-xs text-muted-foreground">Completed Pairs</p>
             <p className="text-lg font-semibold">
               {completedPairs ?? 0}{totalPairs ? ` / ${totalPairs}` : ""}
             </p>
+            <p className="text-xs text-muted-foreground mt-1">One pair = one model on one dataset item.</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Success Rate</p>
@@ -396,9 +559,17 @@ export default function RunDetails() {
             </p>
           </div>
           <div>
+            <p className="text-xs text-muted-foreground">Row Density</p>
+            <p className="text-sm text-muted-foreground">
+              {metricRowsPerPair ? `${metricRowsPerPair.toFixed(1)} stored rows per pair on average.` : "Row density appears after results are written."}
+            </p>
+          </div>
+          <div>
             <p className="text-xs text-muted-foreground">Status Notes</p>
             <p className="text-sm text-muted-foreground">
-              {errorCount > 0
+              {completedWithErrors
+                ? "This run completed, but failed pairs are excluded from aggregated score stats."
+                : errorCount > 0
                 ? "Failed pairs are excluded from aggregated score stats."
                 : "No failed pairs were recorded for this run."}
             </p>
@@ -407,7 +578,7 @@ export default function RunDetails() {
       </Card>
 
       {/* Results table */}
-      {allMetrics.length === 0 ? (
+      {orderedMetrics.length === 0 ? (
         <Card>
           <CardContent className="py-16 text-center text-foreground/70">
             {run.status === "running" || run.status === "cancel_requested"
@@ -425,9 +596,14 @@ export default function RunDetails() {
               <thead>
                 <tr className="border-b border-border bg-muted">
                   <th className="text-left px-6 py-3 font-semibold text-foreground/90">Model</th>
-                  {allMetrics.map(m => (
+                  {orderedMetrics.map(m => (
                     <th key={m} className="text-right px-5 py-3 font-semibold text-foreground/90 whitespace-nowrap">
-                      {metricLabel(m)}
+                      <div className="flex flex-col items-end">
+                        <span>{metricLabel(m)}</span>
+                        {JUDGE_METRICS.has(m) ? (
+                          <span className="text-[10px] font-normal text-amber-700">Judge</span>
+                        ) : null}
+                      </div>
                     </th>
                   ))}
                 </tr>
@@ -443,7 +619,7 @@ export default function RunDetails() {
                           <span>{model?.name ?? `Model ${mid}`}</span>
                         </div>
                       </td>
-                      {allMetrics.map(metric => {
+                      {orderedMetrics.map(metric => {
                         const stat = grouped[mid]?.[metric];
                         const lowerIsBetter = LOWER_IS_BETTER.has(metric);
                         if (!stat) {
@@ -520,13 +696,14 @@ export default function RunDetails() {
                taskType === "embedding" ? "Embed the query and rank candidates by semantic similarity." :
                taskType === "code" ? "Write or explain the code for the given problem." :
                taskType === "reasoning" ? "Think step-by-step and solve the logic puzzle." :
+               taskType === "rag" ? "Answer the question using the retrieved context, then judge context relevance and faithfulness." :
                "Process the input according to the evaluation task instructions."}
             </p>
           </div>
 
           {modelIds.map(mid => {
              const ex = examples[mid];
-             const modelName = modelMap[mid]?.name ?? `Model ${mid}`;
+             const modelName = modelMap[mid]?.name ?? resultModelNames[mid] ?? `Model ${mid}`;
              if (!ex) return null;
              return (
                <Card key={mid} className="overflow-hidden">
@@ -541,17 +718,32 @@ export default function RunDetails() {
                        <h3 className="text-emerald-700 font-bold mb-4 flex items-center gap-2">
                           <CheckCircle2 className="w-5 h-5"/> Highest Scoring Output (Average Quality Score: {formatScore("quality", ex.best.avgScore)})
                        </h3>
+                       <p className="text-xs text-muted-foreground mb-4">
+                         Average quality score across {ex.best.metricCount} successful non-speed metric rows for this example.
+                       </p>
+                       <div className="mb-4 flex flex-wrap gap-2">
+                         {highlightedMetricsForTask(taskType, ex.best.metricScores).map(({ metric, score }) => (
+                           <Badge key={metric} variant="secondary" className="font-mono text-xs">
+                             {metricLabel(metric)} {formatScore(metric, score)}
+                           </Badge>
+                         ))}
+                       </div>
                        <div className="grid grid-cols-5 gap-6">
                          <div className="col-span-2 space-y-2">
-                          <p className="text-xs text-muted-foreground uppercase w-full tracking-widest font-semibold text-center border-b border-border pb-2">Prompt Input</p>
+                          <p className="text-xs text-muted-foreground uppercase w-full tracking-widest font-semibold text-center border-b border-border pb-2">{examplePrimaryInputLabel(taskType)}</p>
                            <div className="p-2 text-sm text-muted-foreground whitespace-pre-wrap font-mono h-[250px] overflow-y-auto">{ex.best.input}</div>
                          </div>
                          <div className="col-span-3 space-y-2">
                           <p className="text-xs text-muted-foreground uppercase w-full tracking-widest font-semibold text-center border-b border-border pb-2">Comparison</p>
+                          {taskType === "code" ? (
+                            <p className="text-xs text-muted-foreground">
+                              `Pass@1` is the main coding signal here: EvalBench executes the generated code against the dataset tests below. The short reference note is only a human hint, not the main grading target.
+                            </p>
+                          ) : null}
                            <div className="grid grid-rows-2 h-[250px] gap-4">
                              <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl overflow-y-auto text-sm text-foreground whitespace-pre-wrap">
-                               <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-2 block">Golden Truth</span>
-                               {ex.best.expected}
+                               <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-2 block">{exampleReferenceLabel(taskType)}</span>
+                               {exampleReferenceContent(taskType, ex.best)}
                              </div>
                              <div className="bg-primary/10 border border-primary/20 p-4 rounded-xl overflow-y-auto text-sm whitespace-pre-wrap">
                                <span className="text-[10px] font-bold text-primary uppercase tracking-wider mb-2 block">Model Generation</span>
@@ -560,6 +752,19 @@ export default function RunDetails() {
                            </div>
                          </div>
                        </div>
+                       {ex.best.judgeRationales?.length ? (
+                         <div className="mt-6 space-y-3">
+                           <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold">Judge Rationale</p>
+                           {ex.best.judgeRationales.map((entry: any) => (
+                             <div key={entry.metricName} className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950/80">
+                               <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700 mb-2">
+                                 {metricLabel(entry.metricName)}
+                               </div>
+                               <div className="whitespace-pre-wrap">{entry.rationale}</div>
+                             </div>
+                           ))}
+                         </div>
+                       ) : null}
                      </div>
                    )}
                    {ex.worst && ex.worst.itemId !== ex.best?.itemId && (
@@ -567,17 +772,32 @@ export default function RunDetails() {
                        <h3 className="text-rose-700 font-bold mb-4 flex items-center gap-2">
                           <AlertTriangle className="w-5 h-5"/> Lowest Scoring Output (Average Quality Score: {formatScore("quality", ex.worst.avgScore)})
                        </h3>
+                       <p className="text-xs text-muted-foreground mb-4">
+                         Average quality score across {ex.worst.metricCount} successful non-speed metric rows for this example.
+                       </p>
+                       <div className="mb-4 flex flex-wrap gap-2">
+                         {highlightedMetricsForTask(taskType, ex.worst.metricScores).map(({ metric, score }) => (
+                           <Badge key={metric} variant="secondary" className="font-mono text-xs">
+                             {metricLabel(metric)} {formatScore(metric, score)}
+                           </Badge>
+                         ))}
+                       </div>
                        <div className="grid grid-cols-5 gap-6">
                          <div className="col-span-2 space-y-2">
-                          <p className="text-xs text-muted-foreground w-full uppercase tracking-widest font-semibold text-center border-b border-border pb-2">Prompt Input</p>
+                          <p className="text-xs text-muted-foreground w-full uppercase tracking-widest font-semibold text-center border-b border-border pb-2">{examplePrimaryInputLabel(taskType)}</p>
                            <div className="p-2 text-sm text-muted-foreground whitespace-pre-wrap font-mono h-[250px] overflow-y-auto">{ex.worst.input}</div>
                          </div>
                          <div className="col-span-3 space-y-2">
                           <p className="text-xs text-muted-foreground w-full uppercase tracking-widest font-semibold text-center border-b border-border pb-2">Comparison</p>
+                          {taskType === "code" ? (
+                            <p className="text-xs text-muted-foreground">
+                              `Pass@1` is the main coding signal here: EvalBench executes the generated code against the dataset tests below. The short reference note is only a human hint, not the main grading target.
+                            </p>
+                          ) : null}
                            <div className="grid grid-rows-2 h-[250px] gap-4">
                              <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl overflow-y-auto text-sm text-foreground whitespace-pre-wrap">
-                               <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-2 block">Golden Truth</span>
-                               {ex.worst.expected}
+                               <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-2 block">{exampleReferenceLabel(taskType)}</span>
+                               {exampleReferenceContent(taskType, ex.worst)}
                              </div>
                              <div className="bg-primary/10 border border-primary/20 p-4 rounded-xl overflow-y-auto text-sm whitespace-pre-wrap">
                                <span className="text-[10px] font-bold text-primary uppercase tracking-wider mb-2 block">Model Generation</span>
@@ -586,6 +806,19 @@ export default function RunDetails() {
                            </div>
                          </div>
                        </div>
+                       {ex.worst.judgeRationales?.length ? (
+                         <div className="mt-6 space-y-3">
+                           <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold">Judge Rationale</p>
+                           {ex.worst.judgeRationales.map((entry: any) => (
+                             <div key={entry.metricName} className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950/80">
+                               <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700 mb-2">
+                                 {metricLabel(entry.metricName)}
+                               </div>
+                               <div className="whitespace-pre-wrap">{entry.rationale}</div>
+                             </div>
+                           ))}
+                         </div>
+                       ) : null}
                      </div>
                    )}
                  </CardContent>
