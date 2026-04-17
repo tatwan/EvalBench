@@ -18,7 +18,9 @@ const METRIC_LIBRARY: Record<string, { description: string; tag?: string; tagCla
   "Recall@1": { description: "Whether the correct item is ranked first." },
   "Recall@3": { description: "Whether the correct item appears in top 3." },
   "MRR": { description: "Mean reciprocal rank of the correct item." },
-  "Pass@1": { description: "Fraction of samples that pass tests on the first try." },
+  "NDCG": { description: "Discounted ranking quality that rewards placing the correct item near the top even when it is not first." },
+  "Pass@1": { description: "Fraction of samples whose first generated solution passes the unit tests." },
+  "Pass@3": { description: "Fraction of samples where at least one of the first three generated solutions passes the unit tests." },
 };
 
 const METRIC_CATEGORIES = [
@@ -51,7 +53,7 @@ const METRIC_CATEGORIES = [
     label: "Knowledge / MMLU",
     icon: BookOpen,
     tone: "bg-amber-100 text-amber-700",
-    subtitle: "Best for: academic knowledge and domain tests",
+    subtitle: "Best for: academic knowledge, benchmark recall, and commonsense tests",
     metrics: ["Exact Match", "Token F1", "ROUGE-1", "ROUGE-2", "ROUGE-L", "LLM Relevance"],
   },
   {
@@ -60,7 +62,7 @@ const METRIC_CATEGORIES = [
     icon: Network,
     tone: "bg-sky-100 text-sky-700",
     subtitle: "Best for: semantic search and ranking",
-    metrics: ["Cosine Sim", "Recall@1", "Recall@3", "MRR"],
+    metrics: ["Cosine Sim", "Recall@1", "Recall@3", "MRR", "NDCG"],
   },
   {
     id: "code",
@@ -68,7 +70,7 @@ const METRIC_CATEGORIES = [
     icon: Code2,
     tone: "bg-rose-100 text-rose-700",
     subtitle: "Best for: correctness on executable tests",
-    metrics: ["Pass@1", "ROUGE-1", "ROUGE-2", "ROUGE-L", "Distinct-1", "Distinct-2"],
+    metrics: ["Pass@1", "Pass@3", "ROUGE-1", "ROUGE-2", "ROUGE-L", "Distinct-1", "Distinct-2"],
   },
   {
     id: "reasoning",

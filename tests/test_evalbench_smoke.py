@@ -1,6 +1,7 @@
 from backend import models as db_models
 from backend.scoring import exact_match, rouge, meteor, rag, speed, bertscore
 from backend.scoring.llm_judge import evaluate_with_llm
+from backend.services import dataset_seeder
 from backend.services import storage
 
 
@@ -103,6 +104,103 @@ def test_create_dataset_increments_schema_version(client):
     assert first.json()["schemaVersion"] == 1
     assert second.json()["schemaVersion"] == 2
     assert second.json()["itemCount"] == 1
+
+
+def test_create_dataset_from_built_in_source_becomes_manual_derived(client):
+    response = client.post(
+        "/api/datasets",
+        json={
+            "name": "Derived From Built-in",
+            "source": "curated-inline",
+            "items": [
+                {
+                    "input": "Question",
+                    "expectedOutput": "Answer",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["source"] == "manual:derived"
+
+
+def test_legacy_derived_builtin_name_is_normalized_in_dataset_list_and_detail(client, db):
+    dataset = db_models.GoldenDataset(
+        name="EvalBench MMLU (Subset)",
+        source="curated-inline",
+        schema_version=2,
+    )
+    db.add(dataset)
+    db.flush()
+    db.add(
+        db_models.GoldenItem(
+            dataset_id=dataset.id,
+            input="Question",
+            expected_output="Answer",
+        )
+    )
+    db.commit()
+    db.refresh(dataset)
+
+    listing = client.get("/api/datasets")
+    detail = client.get(f"/api/datasets/{dataset.id}")
+
+    assert listing.status_code == 200
+    listed = next(row for row in listing.json() if row["id"] == dataset.id)
+    assert listed["source"] == "manual:derived"
+
+    assert detail.status_code == 200
+    assert detail.json()["source"] == "manual:derived"
+
+
+def test_legacy_custom_named_dataset_with_curated_inline_source_is_deletable(client, db):
+    dataset = db_models.GoldenDataset(
+        name="EvalBench MMLU (Subset) Tarek Atwan",
+        source="curated-inline",
+        schema_version=1,
+    )
+    db.add(dataset)
+    db.flush()
+    db.add(
+        db_models.GoldenItem(
+            dataset_id=dataset.id,
+            input="Question",
+            expected_output="Answer",
+        )
+    )
+    db.commit()
+    db.refresh(dataset)
+
+    response = client.delete(f"/api/datasets/{dataset.id}")
+
+    assert response.status_code == 200
+    assert db.query(db_models.GoldenDataset).filter_by(id=dataset.id).first() is None
+
+
+def test_seeded_builtin_dataset_stays_protected_from_delete(client, db):
+    dataset = db_models.GoldenDataset(
+        name="EvalBench MMLU (Subset)",
+        source="curated-inline",
+        schema_version=1,
+    )
+    db.add(dataset)
+    db.flush()
+    db.add(
+        db_models.GoldenItem(
+            dataset_id=dataset.id,
+            input="Question",
+            expected_output="Answer",
+        )
+    )
+    db.commit()
+    db.refresh(dataset)
+
+    response = client.delete(f"/api/datasets/{dataset.id}")
+
+    assert response.status_code == 400
+    assert "built-in datasets cannot be deleted" in response.json()["detail"].lower()
 
 
 def test_preview_and_import_csv_dataset(client):
@@ -232,6 +330,20 @@ def test_settings_connection_test_requires_judge_model(client):
     assert "judge model" in payload["message"].lower()
 
 
+def test_wipe_data_removes_cloud_models_but_keeps_local_models(client, db):
+    local_model = db_models.Model(name="llama-local", family="llama")
+    cloud_model = db_models.Model(name="gpt-5.4-mini", family="cloud")
+    db.add_all([local_model, cloud_model])
+    db.commit()
+
+    response = client.post("/api/settings/wipe-data")
+
+    assert response.status_code == 200
+    remaining_models = db.query(db_models.Model).order_by(db_models.Model.name.asc()).all()
+    assert "llama-local" in [model.name for model in remaining_models]
+    assert all(model.family != "cloud" for model in remaining_models)
+
+
 def test_settings_connection_test_validates_openai_key_format(client):
     response = client.post(
         "/api/settings/test-connection",
@@ -258,6 +370,42 @@ def test_settings_connection_test_accepts_unsaved_openai_override(client):
     settings = client.get("/api/settings")
     assert settings.status_code == 200
     assert settings.json() == []
+
+
+def test_seed_built_in_datasets_includes_expanded_gsm8k(db):
+    dataset_seeder.seed_if_empty(db)
+
+    dataset = db.query(db_models.GoldenDataset).filter_by(name="EvalBench GSM8K (Expanded v2)").first()
+
+    assert dataset is not None
+    assert dataset.schema_version == 2
+    item_count = db.query(db_models.GoldenItem).filter_by(dataset_id=dataset.id).count()
+    assert item_count == len(dataset_seeder.GSM8K_EXPANDED_ITEMS)
+    assert item_count >= 20
+
+
+def test_seed_built_in_datasets_includes_winogrande_subset(db):
+    dataset_seeder.seed_if_empty(db)
+
+    dataset = db.query(db_models.GoldenDataset).filter_by(name="EvalBench WinoGrande (Subset)").first()
+
+    assert dataset is not None
+    assert dataset.schema_version == 1
+    item_count = db.query(db_models.GoldenItem).filter_by(dataset_id=dataset.id).count()
+    assert item_count == len(dataset_seeder.WINOGRANDE_ITEMS)
+    assert item_count >= 20
+
+
+def test_seed_built_in_datasets_includes_expanded_humaneval(db):
+    dataset_seeder.seed_if_empty(db)
+
+    dataset = db.query(db_models.GoldenDataset).filter_by(name="EvalBench HumanEval (Expanded v2)").first()
+
+    assert dataset is not None
+    assert dataset.schema_version == 2
+    item_count = db.query(db_models.GoldenItem).filter_by(dataset_id=dataset.id).count()
+    assert item_count == len(dataset_seeder.HUMANEVAL_EXPANDED_ITEMS)
+    assert item_count >= 10
 
 
 def test_create_eval_run_populates_typed_config_metadata(client, db):

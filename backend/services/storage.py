@@ -13,13 +13,16 @@ BUILT_IN_DATASET_BASELINES: dict[str, int] = {
     "EvalBench BoolQ (Subset)": 1,
     "EvalBench CommonsenseQA (Subset)": 1,
     "EvalBench GSM8K (Subset)": 1,
+    "EvalBench GSM8K (Expanded v2)": 2,
     "EvalBench TruthfulQA (Subset)": 1,
     "EvalBench TruthfulQA (MC v2)": 2,
     "EvalBench Embeddings v1": 1,
     "EvalBench HumanEval (Subset)": 1,
+    "EvalBench HumanEval (Expanded v2)": 2,
     "EvalBench Classification v1": 1,
     "EvalBench Translation v1": 1,
     "EvalBench RAG v1": 1,
+    "EvalBench WinoGrande (Subset)": 1,
 }
 
 

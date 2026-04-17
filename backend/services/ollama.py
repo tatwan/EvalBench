@@ -102,14 +102,18 @@ async def _post_with_retry(path: str, payload: dict[str, Any], timeout: float) -
     }
 
 
-async def generate(model: str, prompt: str) -> dict[str, Any]:
+async def generate(model: str, prompt: str, temperature: float | None = None) -> dict[str, Any]:
+    options: dict[str, Any] = {"logprobs": True}
+    if temperature is not None:
+        options["temperature"] = temperature
+
     result = await _post_with_retry(
         "/api/generate",
         {
             "model": model, 
             "prompt": prompt, 
             "stream": False,
-            "options": {"logprobs": True},  # Try standard options dictionary
+            "options": options,             # Try standard options dictionary
             "logprobs": True                # Newer direct root key param
         },
         timeout=120.0,

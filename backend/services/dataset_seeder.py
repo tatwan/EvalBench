@@ -519,6 +519,30 @@ COMMONSENSEQA_ITEMS = [
     {"input": "Where would you go to get your hair cut?\nA) A bakery\nB) A barbershop\nC) A pharmacy\nD) A gas station\nE) A hardware store", "expected_output": "B", "tags": ["commonsenseqa"]},
 ]
 
+# ─── WinoGrande-style Dataset (Subset) ───────────────────
+WINOGRANDE_ITEMS = [
+    {"input": "Sentence: Tom threw the ball to Jim because he was open.\nQuestion: Who was open, Tom or Jim?\nAnswer with one name only.", "expected_output": "Jim", "tags": ["winogrande", "commonsense"], "difficulty": "medium"},
+    {"input": "Sentence: Sarah thanked Maya because she had helped with the project.\nQuestion: Who helped with the project, Sarah or Maya?\nAnswer with one name only.", "expected_output": "Maya", "tags": ["winogrande", "commonsense"], "difficulty": "medium"},
+    {"input": "Sentence: The trophy would not fit in the suitcase because it was too small.\nQuestion: What was too small, the trophy or the suitcase?\nAnswer with one phrase only.", "expected_output": "the suitcase", "tags": ["winogrande", "commonsense"], "difficulty": "hard"},
+    {"input": "Sentence: Daniel called Eric because he had missed the meeting.\nQuestion: Who missed the meeting, Daniel or Eric?\nAnswer with one name only.", "expected_output": "Eric", "tags": ["winogrande", "commonsense"], "difficulty": "medium"},
+    {"input": "Sentence: Olivia handed the keys to Priya because she was leaving early.\nQuestion: Who was leaving early, Olivia or Priya?\nAnswer with one name only.", "expected_output": "Olivia", "tags": ["winogrande", "commonsense"], "difficulty": "medium"},
+    {"input": "Sentence: The plant sat near the window because it needed more sunlight.\nQuestion: What needed more sunlight, the plant or the window?\nAnswer with one phrase only.", "expected_output": "the plant", "tags": ["winogrande", "commonsense"], "difficulty": "easy"},
+    {"input": "Sentence: Marcus comforted Ben because he was upset after the loss.\nQuestion: Who was upset, Marcus or Ben?\nAnswer with one name only.", "expected_output": "Ben", "tags": ["winogrande", "commonsense"], "difficulty": "medium"},
+    {"input": "Sentence: Elena loaned the charger to Ava because hers was at home.\nQuestion: Whose charger was at home, Elena's or Ava's?\nAnswer with one phrase only.", "expected_output": "Ava's", "tags": ["winogrande", "commonsense"], "difficulty": "medium"},
+    {"input": "Sentence: The laptop overheated on the blanket because it blocked the vents.\nQuestion: What blocked the vents, the laptop or the blanket?\nAnswer with one phrase only.", "expected_output": "the blanket", "tags": ["winogrande", "commonsense"], "difficulty": "medium"},
+    {"input": "Sentence: Noah apologized to Liam because he had broken the vase.\nQuestion: Who broke the vase, Noah or Liam?\nAnswer with one name only.", "expected_output": "Noah", "tags": ["winogrande", "commonsense"], "difficulty": "medium"},
+    {"input": "Sentence: The ice cream melted in the car because it was too warm.\nQuestion: What was too warm, the ice cream or the car?\nAnswer with one phrase only.", "expected_output": "the car", "tags": ["winogrande", "commonsense"], "difficulty": "easy"},
+    {"input": "Sentence: Claire moved the lamp next to the sofa so it could light the corner.\nQuestion: What could light the corner, the lamp or the sofa?\nAnswer with one phrase only.", "expected_output": "the lamp", "tags": ["winogrande", "commonsense"], "difficulty": "easy"},
+    {"input": "Sentence: Victor replaced the battery in the remote because it had stopped working.\nQuestion: What had stopped working, Victor or the remote?\nAnswer with one phrase only.", "expected_output": "the remote", "tags": ["winogrande", "commonsense"], "difficulty": "easy"},
+    {"input": "Sentence: Hannah covered the seedlings with a sheet because they were delicate.\nQuestion: What was delicate, Hannah or the seedlings?\nAnswer with one phrase only.", "expected_output": "the seedlings", "tags": ["winogrande", "commonsense"], "difficulty": "easy"},
+    {"input": "Sentence: Jacob lent Amir his notes because he had been sick.\nQuestion: Who had been sick, Jacob or Amir?\nAnswer with one name only.", "expected_output": "Amir", "tags": ["winogrande", "commonsense"], "difficulty": "medium"},
+    {"input": "Sentence: The painting hung above the fireplace because it was the focal point of the room.\nQuestion: What was the focal point, the painting or the fireplace?\nAnswer with one phrase only.", "expected_output": "the fireplace", "tags": ["winogrande", "commonsense"], "difficulty": "hard"},
+    {"input": "Sentence: Sophia read the recipe to Emma while she chopped the onions.\nQuestion: Who chopped the onions, Sophia or Emma?\nAnswer with one name only.", "expected_output": "Emma", "tags": ["winogrande", "commonsense"], "difficulty": "hard"},
+    {"input": "Sentence: The museum postponed the exhibit because it was still being restored.\nQuestion: What was still being restored, the museum or the exhibit?\nAnswer with one phrase only.", "expected_output": "the exhibit", "tags": ["winogrande", "commonsense"], "difficulty": "medium"},
+    {"input": "Sentence: Leo stacked the boxes on the cart because it could hold more weight.\nQuestion: What could hold more weight, the boxes or the cart?\nAnswer with one phrase only.", "expected_output": "the cart", "tags": ["winogrande", "commonsense"], "difficulty": "medium"},
+    {"input": "Sentence: Isabel called Nora from the airport when she reached the gate.\nQuestion: Who reached the gate, Isabel or Nora?\nAnswer with one name only.", "expected_output": "Isabel", "tags": ["winogrande", "commonsense"], "difficulty": "medium"},
+]
+
 # ─── RAG Dataset ─────────────────────────────────────────
 RAG_ITEMS = [
     {"input": "What is the capital of France?", "context": "France is a country in Western Europe. Its capital and largest city is Paris, known for the Eiffel Tower and the Louvre museum.", "expected_output": "Paris", "tags": ["rag", "geography"]},
@@ -545,6 +569,19 @@ GSM8K_ITEMS = [
     {"input": "Q: Mark has a garden measuring 10 meters by 12 meters. He wants to fence the entire perimeter twice. How many meters of fencing does he need?", "expected_output": "88", "tags": ["math", "reasoning"], "difficulty": "easy"},
     {"input": "Q: A local charity receives donations. On Monday they got $400. On Tuesday they got twice as much as Monday. On Wednesday they got half of what they got on Tuesday. What is the total received across the 3 days?", "expected_output": "1600", "tags": ["math", "reasoning"], "difficulty": "medium"},
     {"input": "Q: Sam buys 3 shirts for $15 each and 2 pairs of pants for $25 each. If he has a 10% off coupon for his entire purchase, how much does he spend?", "expected_output": "85.5", "tags": ["math", "reasoning"], "difficulty": "hard"},
+]
+
+GSM8K_EXPANDED_ITEMS = GSM8K_ITEMS + [
+    {"input": "Q: A school has 6 classrooms with 24 students each. On Friday, 18 students are absent. How many students are present?", "expected_output": "126", "tags": ["math", "reasoning"], "difficulty": "easy"},
+    {"input": "Q: Mina buys 4 notebooks at $3 each and 2 pens at $1.50 each. She pays with $20. How much change does she get?", "expected_output": "5", "tags": ["math", "reasoning"], "difficulty": "easy"},
+    {"input": "Q: A train has 8 cars with 45 seats each. If 315 seats are filled, how many seats are empty?", "expected_output": "45", "tags": ["math", "reasoning"], "difficulty": "easy"},
+    {"input": "Q: Luis reads 18 pages per day for 5 days, then 12 pages on Saturday. How many pages does he read in total?", "expected_output": "102", "tags": ["math", "reasoning"], "difficulty": "easy"},
+    {"input": "Q: A recipe uses 3 cups of flour per cake. How many more cups of flour are needed to bake 7 cakes if you already have 5 cups?", "expected_output": "16", "tags": ["math", "reasoning"], "difficulty": "medium"},
+    {"input": "Q: Tickets cost $8 for adults and $5 for children. A family buys 2 adult tickets and 3 child tickets. What is the total cost?", "expected_output": "31", "tags": ["math", "reasoning"], "difficulty": "easy"},
+    {"input": "Q: Nora had 96 stickers. She gave one-quarter of them to her brother and then 18 more to a friend. How many stickers does she have left?", "expected_output": "54", "tags": ["math", "reasoning"], "difficulty": "medium"},
+    {"input": "Q: A tank holds 120 liters. It is three-fifths full, and then 18 liters are added. How many liters are in the tank now?", "expected_output": "90", "tags": ["math", "reasoning"], "difficulty": "medium"},
+    {"input": "Q: A runner jogs 2.5 miles each morning for 6 days. How many miles does the runner jog in total?", "expected_output": "15", "tags": ["math", "reasoning"], "difficulty": "easy"},
+    {"input": "Q: A store has 240 apples. It sells 35% of them. How many apples remain?", "expected_output": "156", "tags": ["math", "reasoning"], "difficulty": "medium"},
 ]
 
 # ─── TruthfulQA Dataset (Subset - Safety/Hallucinations) ─────────────────────────
@@ -693,7 +730,7 @@ CLASSIFICATION_ITEMS = [
 HUMANEVAL_ITEMS = [
     {
         "input": "Write a function `add(a, b)` that returns the sum of two integers.",
-        "expected_output": "Return a + b.",
+        "expected_output": "Define add(a, b) and return the integer sum of the two inputs.",
         "context": json.dumps({
             "tests": (
                 "assert add(1, 2) == 3\n"
@@ -706,7 +743,7 @@ HUMANEVAL_ITEMS = [
     },
     {
         "input": "Write a function `is_palindrome(s)` that returns True if the string is a palindrome.",
-        "expected_output": "Return True if s reads the same forwards and backwards.",
+        "expected_output": "Define is_palindrome(s) and return True only when the string reads the same forwards and backwards.",
         "context": json.dumps({
             "tests": (
                 "assert is_palindrome('racecar') is True\n"
@@ -719,7 +756,7 @@ HUMANEVAL_ITEMS = [
     },
     {
         "input": "Write a function `factorial(n)` that returns n! for n >= 0.",
-        "expected_output": "Return factorial of n.",
+        "expected_output": "Define factorial(n) and compute the product from 1 through n, with factorial(0) equal to 1.",
         "context": json.dumps({
             "tests": (
                 "assert factorial(0) == 1\n"
@@ -729,6 +766,127 @@ HUMANEVAL_ITEMS = [
         }),
         "tags": ["code", "humaneval"],
         "difficulty": "medium",
+    },
+]
+
+HUMANEVAL_EXPANDED_ITEMS = HUMANEVAL_ITEMS + [
+    {
+        "input": "Write a function `reverse_words(text)` that returns the words in the string in reverse order, separated by single spaces.",
+        "expected_output": "Define reverse_words(text) and reverse the word order while keeping words separated by one space.",
+        "context": json.dumps({
+            "tests": (
+                "assert reverse_words('one two three') == 'three two one'\n"
+                "assert reverse_words('hello') == 'hello'\n"
+                "assert reverse_words('a bb ccc') == 'ccc bb a'\n"
+            )
+        }),
+        "tags": ["code", "humaneval"],
+        "difficulty": "easy",
+    },
+    {
+        "input": "Write a function `count_vowels(text)` that returns the number of vowels (a, e, i, o, u) in the string, ignoring case.",
+        "expected_output": "Define count_vowels(text) and count all vowels regardless of uppercase or lowercase letters.",
+        "context": json.dumps({
+            "tests": (
+                "assert count_vowels('EvalBench') == 3\n"
+                "assert count_vowels('sky') == 0\n"
+                "assert count_vowels('AEIOU') == 5\n"
+            )
+        }),
+        "tags": ["code", "humaneval"],
+        "difficulty": "easy",
+    },
+    {
+        "input": "Write a function `fibonacci(n)` that returns the nth Fibonacci number, where fibonacci(0) = 0 and fibonacci(1) = 1.",
+        "expected_output": "Define fibonacci(n) using the standard sequence with base cases 0 and 1.",
+        "context": json.dumps({
+            "tests": (
+                "assert fibonacci(0) == 0\n"
+                "assert fibonacci(1) == 1\n"
+                "assert fibonacci(7) == 13\n"
+            )
+        }),
+        "tags": ["code", "humaneval"],
+        "difficulty": "medium",
+    },
+    {
+        "input": "Write a function `clamp(value, low, high)` that keeps value inside the inclusive range [low, high].",
+        "expected_output": "Define clamp(value, low, high) and return low when value is too small, high when value is too large, otherwise value.",
+        "context": json.dumps({
+            "tests": (
+                "assert clamp(5, 1, 10) == 5\n"
+                "assert clamp(-3, 0, 9) == 0\n"
+                "assert clamp(14, 0, 9) == 9\n"
+            )
+        }),
+        "tags": ["code", "humaneval"],
+        "difficulty": "easy",
+    },
+    {
+        "input": "Write a function `merge_sorted_lists(left, right)` that merges two sorted integer lists into one sorted list.",
+        "expected_output": "Define merge_sorted_lists(left, right) and return a single sorted list containing every element from both inputs.",
+        "context": json.dumps({
+            "tests": (
+                "assert merge_sorted_lists([1, 3, 5], [2, 4, 6]) == [1, 2, 3, 4, 5, 6]\n"
+                "assert merge_sorted_lists([], [1, 2]) == [1, 2]\n"
+                "assert merge_sorted_lists([1, 2], []) == [1, 2]\n"
+            )
+        }),
+        "tags": ["code", "humaneval"],
+        "difficulty": "medium",
+    },
+    {
+        "input": "Write a function `is_prime(n)` that returns True if n is a prime number and False otherwise.",
+        "expected_output": "Define is_prime(n) and return True only for integers greater than 1 that have no positive divisors other than 1 and themselves.",
+        "context": json.dumps({
+            "tests": (
+                "assert is_prime(2) is True\n"
+                "assert is_prime(17) is True\n"
+                "assert is_prime(21) is False\n"
+                "assert is_prime(1) is False\n"
+            )
+        }),
+        "tags": ["code", "humaneval"],
+        "difficulty": "medium",
+    },
+    {
+        "input": "Write a function `unique_sorted(items)` that returns a sorted list containing each distinct value from items exactly once.",
+        "expected_output": "Define unique_sorted(items) and return the unique values in ascending order.",
+        "context": json.dumps({
+            "tests": (
+                "assert unique_sorted([3, 1, 2, 3, 2]) == [1, 2, 3]\n"
+                "assert unique_sorted([]) == []\n"
+                "assert unique_sorted([5, 5, 5]) == [5]\n"
+            )
+        }),
+        "tags": ["code", "humaneval"],
+        "difficulty": "easy",
+    },
+    {
+        "input": "Write a function `flatten_once(items)` that flattens a list of lists by one level.",
+        "expected_output": "Define flatten_once(items) and concatenate the immediate child lists into one flat list.",
+        "context": json.dumps({
+            "tests": (
+                "assert flatten_once([[1, 2], [3], []]) == [1, 2, 3]\n"
+                "assert flatten_once([['a'], ['b', 'c']]) == ['a', 'b', 'c']\n"
+                "assert flatten_once([]) == []\n"
+            )
+        }),
+        "tags": ["code", "humaneval"],
+        "difficulty": "medium",
+    },
+    {
+        "input": "Write a function `count_words(text)` that returns the number of whitespace-separated words in the string.",
+        "expected_output": "Define count_words(text) and count words separated by whitespace, ignoring leading and trailing spaces.",
+        "context": json.dumps({
+            "tests": (
+                "assert count_words('one two three') == 3\n"
+                "assert count_words('  spaced   out words  ') == 3\n"
+                "assert count_words('') == 0\n"
+            )
+        }),
+        "tags": ["code", "humaneval"],
+        "difficulty": "easy",
     },
 ]
 
@@ -863,6 +1021,20 @@ def seed_if_empty(db: Session) -> None:
                 context=item.get("context"), tags=item["tags"], difficulty=item.get("difficulty", "medium")
             ))
 
+    if "EvalBench WinoGrande (Subset)" not in existing_names:
+        winogrande_ds = db_models.GoldenDataset(
+            name="EvalBench WinoGrande (Subset)",
+            source="curated-inline",
+            schema_version=1,
+        )
+        db.add(winogrande_ds)
+        db.flush()
+        for item in WINOGRANDE_ITEMS:
+            db.add(db_models.GoldenItem(
+                dataset_id=winogrande_ds.id, input=item["input"], expected_output=item["expected_output"],
+                context=item.get("context"), tags=item["tags"], difficulty=item.get("difficulty", "medium")
+            ))
+
     # ── GSM8K dataset ──
     if "EvalBench GSM8K (Subset)" not in existing_names:
         gsm8k_ds = db_models.GoldenDataset(
@@ -875,6 +1047,20 @@ def seed_if_empty(db: Session) -> None:
         for item in GSM8K_ITEMS:
             db.add(db_models.GoldenItem(
                 dataset_id=gsm8k_ds.id, input=item["input"], expected_output=item["expected_output"],
+                context=item.get("context"), tags=item["tags"], difficulty=item["difficulty"]
+            ))
+
+    if "EvalBench GSM8K (Expanded v2)" not in existing_names:
+        gsm8k_expanded_ds = db_models.GoldenDataset(
+            name="EvalBench GSM8K (Expanded v2)",
+            source="curated-inline",
+            schema_version=2,
+        )
+        db.add(gsm8k_expanded_ds)
+        db.flush()
+        for item in GSM8K_EXPANDED_ITEMS:
+            db.add(db_models.GoldenItem(
+                dataset_id=gsm8k_expanded_ds.id, input=item["input"], expected_output=item["expected_output"],
                 context=item.get("context"), tags=item["tags"], difficulty=item["difficulty"]
             ))
 
@@ -938,6 +1124,24 @@ def seed_if_empty(db: Session) -> None:
         for item in HUMANEVAL_ITEMS:
             db.add(db_models.GoldenItem(
                 dataset_id=code_ds.id,
+                input=item["input"],
+                expected_output=item["expected_output"],
+                context=item.get("context"),
+                tags=item["tags"],
+                difficulty=item["difficulty"],
+            ))
+
+    if "EvalBench HumanEval (Expanded v2)" not in existing_names:
+        code_v2_ds = db_models.GoldenDataset(
+            name="EvalBench HumanEval (Expanded v2)",
+            source="curated-inline",
+            schema_version=2,
+        )
+        db.add(code_v2_ds)
+        db.flush()
+        for item in HUMANEVAL_EXPANDED_ITEMS:
+            db.add(db_models.GoldenItem(
+                dataset_id=code_v2_ds.id,
                 input=item["input"],
                 expected_output=item["expected_output"],
                 context=item.get("context"),

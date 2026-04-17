@@ -124,6 +124,15 @@ export default function ModelDetails() {
     return modelResults.find((r) => !r.error && r.rawOutput)?.rawOutput ?? null;
   }, [modelResults]);
 
+  const recentOutputResult = useMemo(() => {
+    return modelResults.find((r) => !r.error && r.rawOutput) ?? null;
+  }, [modelResults]);
+
+  const recentOutputRun = useMemo(() => {
+    if (!recentOutputResult) return null;
+    return modelRuns.find((run) => run.id === recentOutputResult.runId) ?? null;
+  }, [recentOutputResult, modelRuns]);
+
   const taskSet = useMemo(() => {
     const tasks = new Set<string>();
     modelRuns.forEach((r) => {
@@ -243,13 +252,13 @@ export default function ModelDetails() {
         <div className="text-sm font-semibold text-foreground">How To Read This Model Page</div>
         <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-muted-foreground">
           <div>
-            Avg Score blends successful non-speed quality metrics across this model's recorded runs.
+            Avg Score blends successful non-speed quality metrics across this model's recorded runs. It is useful for broad trend reading, not for comparing unrelated tasks head-to-head.
           </div>
           <div>
             Best Score is the strongest single quality result, so compare it within similar task types.
           </div>
           <div>
-            Speed stays separate because fast inference should not inflate or depress quality summaries.
+            Speed stays separate because fast inference should not inflate or depress quality summaries. History rows may still include partial-failure runs, so open a run when you need pair-level detail.
           </div>
         </div>
       </Card>
@@ -258,7 +267,7 @@ export default function ModelDetails() {
         <Card className="p-0 overflow-hidden">
           <CardHeader className="border-b border-border">
             <CardTitle className="text-base">Evaluation History</CardTitle>
-            <div className="text-xs text-muted-foreground">Latest runs for this model. Open a run to inspect pair counts, retries, and failed items.</div>
+            <div className="text-xs text-muted-foreground">Latest runs for this model. Status and duration summarize the run at a glance; open a run to inspect pair counts, retries, failed items, and score reliability.</div>
           </CardHeader>
           <CardContent className="p-0 overflow-x-auto">
             <table className="w-full text-sm">
@@ -363,8 +372,16 @@ export default function ModelDetails() {
             </CardHeader>
             <CardContent>
               {recentOutput ? (
-                <div className="bg-muted border border-border rounded-lg p-3 text-xs text-muted-foreground whitespace-pre-wrap max-h-[220px] overflow-y-auto">
-                  {recentOutput}
+                <div className="space-y-3">
+                  <div className="text-[11px] text-muted-foreground">
+                    Latest successful raw output
+                    {recentOutputRun ? ` from run #${recentOutputRun.id}` : ""}
+                    {recentOutputRun?.configJson?.taskType ? ` (${recentOutputRun.configJson.taskType})` : ""}.
+                    This is a sample for inspection, not automatically the model's best-scoring answer.
+                  </div>
+                  <div className="bg-muted border border-border rounded-lg p-3 text-xs text-muted-foreground whitespace-pre-wrap max-h-[220px] overflow-y-auto">
+                    {recentOutput}
+                  </div>
                 </div>
               ) : (
                 <div className="text-xs text-muted-foreground">No output samples yet.</div>

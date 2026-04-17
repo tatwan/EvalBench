@@ -93,8 +93,8 @@ const TASK_TYPES: Array<{
     label: "Knowledge / MMLU",
     icon: BookOpen,
     desc: "Academic knowledge across professional domains.",
-    tests: "Breadth of factual knowledge and reasoning.",
-    goal: "Score well across standardized subject benchmarks.",
+    tests: "Breadth of factual knowledge, benchmark recall, and commonsense disambiguation.",
+    goal: "Score well across standardized subject and commonsense benchmarks.",
     metrics: ["Exact Match", "Token F1", "Tokens/sec", "LLM Relevance"],
     datasetHint: "EvalBench MMLU (Expanded v2)",
     datasetLabel: "EvalBench MMLU (Expanded v2)",
@@ -107,7 +107,7 @@ const TASK_TYPES: Array<{
     desc: "Semantic search and similarity for retrieval tasks.",
     tests: "Nearest-neighbor ranking, semantic similarity, recall.",
     goal: "Embed queries so relevant docs rank at the top.",
-    metrics: ["Cosine Sim", "Recall@1", "Recall@3", "MRR"],
+    metrics: ["Cosine Sim", "Recall@1", "Recall@3", "MRR", "NDCG"],
     datasetHint: "EvalBench Embeddings v1",
     datasetLabel: "EvalBench Embeddings v1",
     usesJudge: false,
@@ -119,9 +119,9 @@ const TASK_TYPES: Array<{
     desc: "Functional correctness via code execution sandbox.",
     tests: "Correctness, edge cases, and code reliability.",
     goal: "Generate code that passes tests on first try.",
-    metrics: ["ROUGE-1", "Distinct-1", "Pass@1", "Tokens/sec"],
-    datasetHint: "EvalBench HumanEval (Subset)",
-    datasetLabel: "EvalBench HumanEval (Subset)",
+    metrics: ["ROUGE-1", "Distinct-1", "Pass@1", "Pass@3", "Tokens/sec"],
+    datasetHint: "EvalBench HumanEval (Expanded v2)",
+    datasetLabel: "EvalBench HumanEval (Expanded v2)",
     usesJudge: false,
   },
   {
@@ -132,8 +132,8 @@ const TASK_TYPES: Array<{
     tests: "Multi-step reasoning and mathematical accuracy.",
     goal: "Arrive at correct final answers consistently.",
     metrics: ["Exact Match", "Token F1", "Tokens/sec"],
-    datasetHint: "EvalBench GSM8K (Subset)",
-    datasetLabel: "EvalBench GSM8K (Subset)",
+    datasetHint: "EvalBench GSM8K (Expanded v2)",
+    datasetLabel: "EvalBench GSM8K (Expanded v2)",
     usesJudge: false,
   },
   {
@@ -264,7 +264,7 @@ export default function EvalWizard() {
     qa: ["qa"],
     chat: ["chat", "assistant"],
     translation: ["translation"],
-    knowledge: ["mmlu", "hellaswag", "arc", "boolq", "commonsenseqa"],
+    knowledge: ["mmlu", "hellaswag", "arc", "boolq", "commonsenseqa", "winogrande"],
     embedding: ["embeddings"],
     code: ["humaneval"],
     reasoning: ["gsm8k"],
@@ -276,10 +276,17 @@ export default function EvalWizard() {
   const datasetOptions = useMemo(() => {
     if (!selectedTaskType) return [];
     const keywords = datasetKeywords[selectedTaskType] ?? [];
-    return (datasets as any[]).filter((d) =>
+    const options = (datasets as any[]).filter((d) =>
       keywords.some((k) => d.name.toLowerCase().includes(k))
     );
-  }, [datasets, selectedTaskType]);
+    const exactHint = selectedTask?.datasetHint?.toLowerCase();
+    return options.sort((a, b) => {
+      const aExact = exactHint && a.name.toLowerCase() === exactHint ? 1 : 0;
+      const bExact = exactHint && b.name.toLowerCase() === exactHint ? 1 : 0;
+      if (aExact !== bExact) return bExact - aExact;
+      return a.name.localeCompare(b.name);
+    });
+  }, [datasets, selectedTask, selectedTaskType]);
 
   const datasetItemCount = selectedDataset?.itemCount ?? null;
 
@@ -330,6 +337,11 @@ export default function EvalWizard() {
     setSelectedTaskType(taskId);
     const task = TASK_TYPES.find((t) => t.id === taskId);
     if (task?.datasetHint) {
+      const hinted = (datasets as any[]).find((d) => d.name === task.datasetHint);
+      if (hinted) {
+        setSelectedDatasetId(hinted.id);
+        return;
+      }
       const keywords = datasetKeywords[taskId] ?? [];
       const ds = (datasets as any[]).find((d) =>
         keywords.some((k) => d.name.toLowerCase().includes(k))
@@ -678,7 +690,7 @@ export default function EvalWizard() {
         <div className="space-y-5">
           <div>
             <h2 className="text-lg font-bold">Review & Run</h2>
-            <p className="text-sm text-muted-foreground">Confirm your choices before starting the evaluation.</p>
+            <p className="text-sm text-muted-foreground">Confirm your choices before starting the evaluation. Once the run is created, EvalBench opens the live Run Details view automatically.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -741,6 +753,9 @@ export default function EvalWizard() {
               This run will evaluate <span className="font-semibold">{totalSelectedModels}</span> model{totalSelectedModels !== 1 ? "s" : ""} on{" "}
               <span className="font-semibold">{selectedTask.label}</span>. Scores will be computed automatically and saved to your history.
               </p>
+              <p>
+                After kickoff, you will land on the newest Run Details page so you can watch progress, inspect failures, or cancel without going back through history first.
+              </p>
               {estimatedDurationSeconds ? (
                 <p className="flex items-center gap-2 text-violet-900/80">
                   <Clock3 className="w-4 h-4 text-violet-600" />
@@ -753,7 +768,7 @@ export default function EvalWizard() {
           <div className="flex justify-between">
             <Button variant="outline" onClick={() => setStep(2)}>&lt;- Back</Button>
             <Button onClick={handleRun} disabled={createRun.isPending} className="gap-2">
-              {createRun.isPending ? "Starting..." : "Start Evaluation"}
+              {createRun.isPending ? "Starting..." : "Start Evaluation & Open Live Run"}
             </Button>
           </div>
         </div>

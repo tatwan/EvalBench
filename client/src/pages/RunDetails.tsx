@@ -57,11 +57,11 @@ function metricLabel(name: string): string {
     meteor: "METEOR", bleu: "BLEU", chrf: "chrF",
     exact_match: "Exact Match", f1: "Token F1",
     distinct1: "Distinct-1", distinct2: "Distinct-2",
-    pass_at_1: "Pass@1", pass_at_10: "Pass@10",
+    pass_at_1: "Pass@1", pass_at_3: "Pass@3", pass_at_10: "Pass@10",
     tokens_per_second: "Tokens/sec", total_latency_s: "Latency (s)",
     load_latency_s: "Load Time (s)", prompt_tokens: "Prompt Tokens",
     output_tokens: "Output Tokens", perplexity: "Perplexity",
-    cosine_sim: "Cosine Sim", recall_at_1: "Recall@1", recall_at_3: "Recall@3", mrr: "MRR",
+    cosine_sim: "Cosine Sim", recall_at_1: "Recall@1", recall_at_3: "Recall@3", mrr: "MRR", ndcg: "NDCG",
     semantic_sim: "Semantic Sim",
     bertscore_f1: "BERTScore F1",
     llm_coherence: "Judge Coherence",
@@ -84,8 +84,8 @@ function highlightedMetricsForTask(taskType: string, metricScores: Record<string
     safety: ["llm_relevance", "exact_match"],
     chat: ["llm_coherence", "llm_fluency", "distinct1"],
     translation: ["bleu", "chrf", "meteor"],
-    code: ["pass_at_1", "rouge1", "distinct1"],
-    embedding: ["cosine_sim", "recall_at_1", "mrr"],
+    code: ["pass_at_1", "pass_at_3", "rouge1", "distinct1"],
+    embedding: ["cosine_sim", "recall_at_1", "recall_at_3", "mrr", "ndcg"],
     classification: ["exact_match"],
     rag: ["context_relevance", "faithfulness"],
   };
@@ -737,7 +737,7 @@ export default function RunDetails() {
                           <p className="text-xs text-muted-foreground uppercase w-full tracking-widest font-semibold text-center border-b border-border pb-2">Comparison</p>
                           {taskType === "code" ? (
                             <p className="text-xs text-muted-foreground">
-                              `Pass@1` is the main coding signal here: EvalBench executes the generated code against the dataset tests below. The short reference note is only a human hint, not the main grading target.
+                              `Pass@1` scores the first sample, while `Pass@3` checks whether any of the first three samples passed the dataset tests below. The short reference note is only a human hint, not the main grading target.
                             </p>
                           ) : null}
                            <div className="grid grid-rows-2 h-[250px] gap-4">
@@ -791,7 +791,7 @@ export default function RunDetails() {
                           <p className="text-xs text-muted-foreground w-full uppercase tracking-widest font-semibold text-center border-b border-border pb-2">Comparison</p>
                           {taskType === "code" ? (
                             <p className="text-xs text-muted-foreground">
-                              `Pass@1` is the main coding signal here: EvalBench executes the generated code against the dataset tests below. The short reference note is only a human hint, not the main grading target.
+                              `Pass@1` scores the first sample, while `Pass@3` checks whether any of the first three samples passed the dataset tests below. The short reference note is only a human hint, not the main grading target.
                             </p>
                           ) : null}
                            <div className="grid grid-rows-2 h-[250px] gap-4">

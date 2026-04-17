@@ -1,5 +1,5 @@
 import multiprocessing as mp
-from typing import Tuple
+from typing import List, Tuple
 
 
 SAFE_BUILTINS = {
@@ -71,3 +71,13 @@ def pass_at_1(code: str, tests: str, timeout_s: float = 3.0) -> Tuple[float, str
 
     ok, msg = queue.get()
     return (1.0, msg) if ok else (0.0, msg)
+
+
+def evaluate_attempts(codes: List[str], tests: str, timeout_s: float = 3.0) -> List[Tuple[float, str]]:
+    return [pass_at_1(code, tests, timeout_s) for code in codes]
+
+
+def pass_at_k(codes: List[str], tests: str, k: int, timeout_s: float = 3.0) -> Tuple[float, List[Tuple[float, str]]]:
+    attempts = evaluate_attempts(codes[: max(1, k)], tests, timeout_s)
+    passed = any(score >= 1.0 for score, _ in attempts)
+    return (1.0 if passed else 0.0), attempts

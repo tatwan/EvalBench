@@ -264,7 +264,7 @@ export default function Dashboard() {
         <div className="text-sm font-semibold text-foreground">How To Read These Scores</div>
         <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-muted-foreground">
           <div>
-            Overall score averages successful non-speed quality metrics for the current task filter.
+            Overall score averages successful non-speed quality metrics for the current task filter. Here, "quality rows" means scorer outputs that completed successfully.
           </div>
           <div>
             Confidence intervals show how noisy the average is. Wider bands mean less stable comparisons.
@@ -284,6 +284,9 @@ export default function Dashboard() {
                 {selectedTask === "all"
                   ? "Sorted by overall quality score across all evaluated tasks"
                   : `Sorted by overall quality score for ${selectedTask}`}
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-1">
+                Failed scorer/provider rows stay visible elsewhere, but this ranking uses successful quality rows only so speed and broken pairs do not distort the ordering.
               </div>
             </div>
             <div className="flex gap-2">
@@ -419,7 +422,7 @@ export default function Dashboard() {
               {leaderboard.length > 0
                 ? ` (${leaderboardLocalCount} local${leaderboardComparisonCount > 0 ? `, ${leaderboardComparisonCount} comparison` : ""})`
                 : ""}
-              . Task-specific metrics appear only where they apply.
+              . Task tags reflect where each model has successful quality rows, and task-specific metrics appear only where they apply.
             </span>
             <Link href="/models" className="text-violet-600 font-semibold">View All -&gt;</Link>
           </div>

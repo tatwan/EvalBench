@@ -19,9 +19,15 @@ def rank_by_similarity(query_vec: List[float], candidate_vecs: List[List[float]]
     return ranked, sims
 
 
+def ndcg_for_rank(rank: int) -> float:
+    if rank <= 0:
+        return 0.0
+    return 1.0 / math.log2(rank + 1)
+
+
 def compute_embedding_metrics(query_vec: List[float], candidate_vecs: List[List[float]], answer_index: int) -> dict[str, float]:
     if answer_index < 0 or answer_index >= len(candidate_vecs):
-        return {"cosine_sim": 0.0, "recall_at_1": 0.0, "recall_at_3": 0.0, "mrr": 0.0}
+        return {"cosine_sim": 0.0, "recall_at_1": 0.0, "recall_at_3": 0.0, "mrr": 0.0, "ndcg": 0.0}
 
     ranked, sims = rank_by_similarity(query_vec, candidate_vecs)
     rank = ranked.index(answer_index) + 1
@@ -31,4 +37,5 @@ def compute_embedding_metrics(query_vec: List[float], candidate_vecs: List[List[
         "recall_at_1": 1.0 if rank == 1 else 0.0,
         "recall_at_3": 1.0 if rank <= 3 else 0.0,
         "mrr": 1.0 / rank,
+        "ndcg": ndcg_for_rank(rank),
     }

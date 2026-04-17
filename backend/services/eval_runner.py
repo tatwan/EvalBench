@@ -22,7 +22,7 @@ import json
 import logging
 import time
 from datetime import datetime
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,7 @@ _progress_queues: dict[int, asyncio.Queue] = {}
 
 # Maximum concurrent (model × item) evaluations
 CONCURRENCY = 4
+CODE_MAX_ATTEMPTS = 3
 
 
 # ─── Task-type → scorer mapping ─────────────────────────
@@ -76,10 +77,10 @@ TASK_METRICS: dict[str, list[str]] = {
     "qa":            ["exact_match", "f1", "semantic_sim", *COMMON_SPEED_METRICS, "llm_relevance", "llm_correctness", "llm_faithfulness", "perplexity"],
     "chat":          ["distinct1", "distinct2", "semantic_sim", *COMMON_SPEED_METRICS, "llm_fluency", "llm_coherence", "perplexity"],
     "translation":   ["bleu", "chrf", "meteor", "semantic_sim", *COMMON_SPEED_METRICS],
-    "code":          ["rouge1", "distinct1", "pass_at_1", *COMMON_SPEED_METRICS],
+    "code":          ["rouge1", "distinct1", "pass_at_1", "pass_at_3", *COMMON_SPEED_METRICS],
     "reasoning":     ["exact_match", "f1", *COMMON_SPEED_METRICS, "llm_correctness"],
     "knowledge":     ["exact_match", "f1", *COMMON_SPEED_METRICS, "llm_relevance", "llm_correctness", "perplexity"],
-    "embedding":     ["cosine_sim", "recall_at_1", "recall_at_3", "mrr"],
+    "embedding":     ["cosine_sim", "recall_at_1", "recall_at_3", "mrr", "ndcg"],
     "classification":["exact_match", *COMMON_SPEED_METRICS],
     "safety":        ["exact_match", "toxicity", *COMMON_SPEED_METRICS, "llm_relevance"],
     "rag":           ["context_relevance", "faithfulness", *COMMON_SPEED_METRICS],
@@ -90,8 +91,8 @@ DEFAULT_DATASET_BY_TASK: dict[str, str] = {
     "qa": "EvalBench QA v1",
     "chat": "EvalBench TruthfulQA (Subset)",
     "translation": "EvalBench Translation v1",
-    "code": "EvalBench HumanEval (Subset)",
-    "reasoning": "EvalBench GSM8K (Subset)",
+    "code": "EvalBench HumanEval (Expanded v2)",
+    "reasoning": "EvalBench GSM8K (Expanded v2)",
     "knowledge": "EvalBench MMLU (Expanded v2)",
     "embedding": "EvalBench Embeddings v1",
     "classification": "EvalBench Classification v1",
@@ -181,6 +182,102 @@ def _score(task_type: str, prediction: str, reference: str, ollama_resp: dict) -
             logger.warning(f"Speed metric computation failed: {exc}")
 
     return scores
+
+
+def _response_cache_key(model_name: str, prompt: str, attempt_index: int = 0) -> str:
+    raw = f"{model_name}:{prompt}" if attempt_index == 0 else f"{model_name}:{prompt}:attempt:{attempt_index}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _code_attempt_temperature(attempt_index: int) -> float | None:
+    if attempt_index == 0:
+        return None
+    return min(1.0, 0.7 + (attempt_index * 0.15))
+
+
+def _format_code_attempt_summary(
+    attempt_scores: list[tuple[float, str]],
+    generation_errors: list[str],
+    display_attempt_index: int,
+) -> str:
+    lines = [
+        f"# EvalBench code attempts: pass@1={'pass' if attempt_scores and attempt_scores[0][0] >= 1.0 else 'fail'}, "
+        f"pass@3={'pass' if any(score >= 1.0 for score, _ in attempt_scores[:3]) else 'fail'}",
+    ]
+    for idx, (score, message) in enumerate(attempt_scores, start=1):
+        status = "pass" if score >= 1.0 else "fail"
+        detail = message if message else "no details"
+        lines.append(f"# Attempt {idx}: {status} - {detail}")
+    for message in generation_errors:
+        lines.append(f"# {message}")
+    if display_attempt_index > 0:
+        lines.append(f"# Displayed code is from attempt {display_attempt_index + 1}, which was the first passing sample.")
+    return "\n".join(lines)
+
+
+async def _generate_local_attempt(db_local: Session, model_name: str, prompt: str, attempt_index: int = 0) -> tuple[dict, int]:
+    cache_key = _response_cache_key(model_name, prompt, attempt_index)
+    cached = db_local.query(db_models.ResponseCache).filter_by(key=cache_key).first()
+
+    if cached:
+        cached_payload = _decode_cached_payload(cached)
+        return {
+            "ok": True,
+            "response": cached_payload.get("response", ""),
+            "eval_count": cached_payload.get("eval_count"),
+            "eval_duration": cached_payload.get("eval_duration"),
+            "prompt_eval_count": cached_payload.get("prompt_eval_count"),
+            "load_duration": cached_payload.get("load_duration"),
+            "total_duration": cached_payload.get("total_duration"),
+            "logprobs": cached_payload.get("logprobs"),
+            "retries": 0,
+            "cache_hit": True,
+        }, 1
+
+    result = await ollama_svc.generate(
+        model_name,
+        prompt,
+        temperature=_code_attempt_temperature(attempt_index),
+    )
+    if result.get("ok"):
+        db_local.add(db_models.ResponseCache(
+            key=cache_key,
+            response=_encode_cached_payload(result),
+            eval_count=result.get("eval_count"),
+            eval_duration=result.get("eval_duration"),
+        ))
+    return result, 0
+
+
+async def _generate_cloud_attempt(
+    *,
+    client: Any,
+    anthropic_client: Any,
+    model_name: str,
+    prompt: str,
+    attempt_index: int = 0,
+) -> tuple[Any, str, float]:
+    temperature = _code_attempt_temperature(attempt_index) or 0.7
+    started_at = time.perf_counter()
+    if anthropic_client:
+        resp = anthropic_client.messages.create(
+            model=model_name,
+            max_tokens=512,
+            temperature=temperature,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        prediction = resp.content[0].text.strip()
+    else:
+        resp = _chat_completion_with_fallback(
+            client=client,
+            model=model_name,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_output_tokens=512,
+        )
+        prediction = resp.choices[0].message.content.strip()
+    elapsed_seconds = time.perf_counter() - started_at
+    return resp, prediction, elapsed_seconds
 
 
 def _encode_cached_payload(result: dict) -> str:
@@ -502,35 +599,9 @@ async def run_eval(run_id: int) -> None:
                             ))
 
                     else:
-                        cache_key = hashlib.sha256(f"{model.name}:{item.input}".encode("utf-8")).hexdigest()
-                        cached = db_local.query(db_models.ResponseCache).filter_by(key=cache_key).first()
-
-                        if cached:
-                            cached_payload = _decode_cached_payload(cached)
-                            cache_hits += 1
-                            result = {
-                                "ok": True,
-                                "response": cached_payload.get("response", ""),
-                                "eval_count": cached_payload.get("eval_count"),
-                                "eval_duration": cached_payload.get("eval_duration"),
-                                "prompt_eval_count": cached_payload.get("prompt_eval_count"),
-                                "load_duration": cached_payload.get("load_duration"),
-                                "total_duration": cached_payload.get("total_duration"),
-                                "logprobs": cached_payload.get("logprobs"),
-                                "retries": 0,
-                                "cache_hit": True,
-                            }
-                        else:
-                            result = await ollama_svc.generate(model.name, item.input)
-                            retry_count += int(result.get("retries", 0))
-                            if result.get("ok"):
-                                new_cache = db_models.ResponseCache(
-                                    key=cache_key,
-                                    response=_encode_cached_payload(result),
-                                    eval_count=result.get("eval_count"),
-                                    eval_duration=result.get("eval_duration")
-                                )
-                                db_local.add(new_cache)
+                        result, cache_hit_count = await _generate_local_attempt(db_local, model.name, item.input)
+                        cache_hits += cache_hit_count
+                        retry_count += int(result.get("retries", 0))
 
                         if not result.get("ok"):
                             # Inference failed — record an error for every expected metric
@@ -544,22 +615,54 @@ async def run_eval(run_id: int) -> None:
                                 ))
                         else:
                             prediction = result.get("response", "")
+                            display_prediction = prediction
 
                             # Traditional metrics (TASK_METRICS-aligned, no cross-task leakage)
                             item_scores = await asyncio.to_thread(
                                 _score, task_type, prediction, item.expected_output, result
                             )
 
-                            # Code execution scoring (Pass@1)
+                            # Code execution scoring (Pass@1 / Pass@3)
                             if task_type == "code" and item.context:
                                 try:
                                     ctx = json.loads(item.context)
                                     tests = ctx.get("tests")
                                     if tests:
-                                        score, err = code_exec.pass_at_1(prediction, tests)
-                                        item_scores["pass_at_1"] = score
-                                        if err and score == 0.0:
-                                            prediction = f"{prediction}\n\n# Eval error: {err}"
+                                        code_predictions = [prediction]
+                                        generation_errors: list[str] = []
+                                        for attempt_index in range(1, CODE_MAX_ATTEMPTS):
+                                            extra_result, extra_cache_hit_count = await _generate_local_attempt(
+                                                db_local,
+                                                model.name,
+                                                item.input,
+                                                attempt_index=attempt_index,
+                                            )
+                                            cache_hits += extra_cache_hit_count
+                                            retry_count += int(extra_result.get("retries", 0))
+                                            if not extra_result.get("ok"):
+                                                generation_errors.append(
+                                                    f"Attempt {attempt_index + 1} generation failed: {extra_result.get('error', 'Inference failed')}"
+                                                )
+                                                break
+                                            code_predictions.append(extra_result.get("response", ""))
+
+                                        attempt_scores = await asyncio.to_thread(
+                                            code_exec.evaluate_attempts,
+                                            code_predictions,
+                                            tests,
+                                        )
+                                        item_scores["pass_at_1"] = attempt_scores[0][0] if attempt_scores else 0.0
+                                        item_scores["pass_at_3"] = 1.0 if any(score >= 1.0 for score, _ in attempt_scores[:3]) else 0.0
+                                        passing_index = next(
+                                            (idx for idx, (score, _) in enumerate(attempt_scores) if score >= 1.0),
+                                            None,
+                                        )
+                                        if passing_index is not None and passing_index < len(code_predictions):
+                                            display_prediction = code_predictions[passing_index]
+                                        display_prediction = (
+                                            f"{display_prediction}\n\n"
+                                            f"{_format_code_attempt_summary(attempt_scores, generation_errors, passing_index or 0)}"
+                                        )
                                 except Exception:
                                     pass
 
@@ -567,7 +670,7 @@ async def run_eval(run_id: int) -> None:
                                 results_to_save.append(dict(
                                     run_id=run_id, model_id=model.id,
                                     metric_name=metric_name, score=float(score_value), error=False,
-                                    raw_output=prediction[:2000], item_id=item.id,
+                                    raw_output=display_prediction[:2000], item_id=item.id,
                                 ))
 
                             # LLM-as-Judge metrics
@@ -814,24 +917,13 @@ async def run_eval(run_id: int) -> None:
                             finally:
                                 db_session.close()
                         else:
-                            started_at = time.perf_counter()
-                            if cloud_anthropic:
-                                resp = cloud_anthropic.messages.create(
-                                    model=invocation_model or cloud_model_name,
-                                    max_tokens=512,
-                                    messages=[{"role": "user", "content": item.input}],
-                                )
-                                prediction = resp.content[0].text.strip()
-                            else:
-                                resp = _chat_completion_with_fallback(
-                                    client=cloud_client,
-                                    model=invocation_model or cloud_model_name,
-                                    messages=[{"role": "user", "content": item.input}],
-                                    temperature=0.7,
-                                    max_output_tokens=512,
-                                )
-                                prediction = resp.choices[0].message.content.strip()
-                            elapsed_seconds = time.perf_counter() - started_at
+                            resp, prediction, elapsed_seconds = await _generate_cloud_attempt(
+                                client=cloud_client,
+                                anthropic_client=cloud_anthropic,
+                                model_name=invocation_model or cloud_model_name,
+                                prompt=item.input,
+                            )
+                            display_prediction = prediction
 
                             try:
                                 scores = _score(task_type, prediction, item.expected_output or "", {})
@@ -839,6 +931,50 @@ async def run_eval(run_id: int) -> None:
                                 logger.warning(f"Cloud scoring fallback triggered for {cloud_model_name} item {item.id}: {exc}")
                                 scores = {}
                             scores.update(speed.compute_api_usage(resp, elapsed_seconds))
+
+                            if task_type == "code" and item.context:
+                                try:
+                                    ctx = json.loads(item.context)
+                                    tests = ctx.get("tests")
+                                    if tests:
+                                        code_predictions = [prediction]
+                                        generation_errors: list[str] = []
+                                        for attempt_index in range(1, CODE_MAX_ATTEMPTS):
+                                            try:
+                                                _, extra_prediction, _ = await _generate_cloud_attempt(
+                                                    client=cloud_client,
+                                                    anthropic_client=cloud_anthropic,
+                                                    model_name=invocation_model or cloud_model_name,
+                                                    prompt=item.input,
+                                                    attempt_index=attempt_index,
+                                                )
+                                                code_predictions.append(extra_prediction)
+                                            except Exception as exc:
+                                                generation_errors.append(
+                                                    f"Attempt {attempt_index + 1} generation failed: {exc}"
+                                                )
+                                                break
+
+                                        attempt_scores = await asyncio.to_thread(
+                                            code_exec.evaluate_attempts,
+                                            code_predictions,
+                                            tests,
+                                        )
+                                        scores["pass_at_1"] = attempt_scores[0][0] if attempt_scores else 0.0
+                                        scores["pass_at_3"] = 1.0 if any(score >= 1.0 for score, _ in attempt_scores[:3]) else 0.0
+                                        passing_index = next(
+                                            (idx for idx, (score, _) in enumerate(attempt_scores) if score >= 1.0),
+                                            None,
+                                        )
+                                        if passing_index is not None and passing_index < len(code_predictions):
+                                            display_prediction = code_predictions[passing_index]
+                                        display_prediction = (
+                                            f"{display_prediction}\n\n"
+                                            f"{_format_code_attempt_summary(attempt_scores, generation_errors, passing_index or 0)}"
+                                        )
+                                except Exception as exc:
+                                    logger.warning(f"Cloud code execution scoring failed for {cloud_model_name} item {item.id}: {exc}")
+
                             llm_metrics = _get_llm_metrics_for_task(task_type) if judge_metrics_enabled else []
                             db_session = SessionLocal()
                             try:
@@ -846,7 +982,7 @@ async def run_eval(run_id: int) -> None:
                                     storage.save_eval_result(
                                         db_session, run.id, virtual_model_id,
                                         metric_name, score_val,
-                                        raw_output=prediction[:2000],
+                                        raw_output=display_prediction[:2000],
                                         item_id=item.id,
                                     )
                                 for metric_name in llm_metrics:
