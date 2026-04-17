@@ -1,23 +1,29 @@
 # EvalBench
 
-**Local-first LLM evaluation workbench** for running real metrics, tracking runs, and comparing models — with an educational layer that teaches *why* each metric exists.
+**Local-first LLM evaluation workbench** for Ollama users who want trustworthy metrics, fair model comparisons, and faster iteration loops.
 
-[![Local-first](https://img.shields.io/badge/Local--first-privacy%20friendly-success)](./README.md)
-[![Eval Metrics](https://img.shields.io/badge/Eval-ROUGE%20%7C%20BLEU%20%7C%20F1-blue)](./README.md)
-[![Runs](https://img.shields.io/badge/Run-History%20%2B%20Details-purple)](./README.md)
+[![Ollama-first](https://img.shields.io/badge/Ollama-first-111827)](./README.md)
+[![Local-first Privacy](https://img.shields.io/badge/Local--first-privacy%20friendly-16a34a)](./README.md)
+[![LLM-as-Judge Optional](https://img.shields.io/badge/LLM--as--Judge-optional-0ea5e9)](./README.md)
+[![Custom Datasets](https://img.shields.io/badge/Datasets-custom%20builder-f59e0b)](./README.md)
+[![Arena ELO](https://img.shields.io/badge/Arena-ELO%20battles-ef4444)](./README.md)
+[![Export](https://img.shields.io/badge/Export-JSON%20%7C%20Markdown%20%7C%20CSV-8b5cf6)](./README.md)
+[![Frontier Compare](https://img.shields.io/badge/Compare-OpenAI%20%7C%20Gemini%20%7C%20Claude%20%7C%20Groq-2563eb)](./README.md)
 [![License](https://img.shields.io/badge/License-MIT-black)](./README.md)
 
-**Status**: v1.0.0 - Local-first eval workbench with trusted runs, optional judge scoring, frontier comparison, and dataset tooling
+**Status**: v1.0.0 - Local-first eval workbench with trusted runs, optional judge scoring, frontier comparisons, Arena battles, and custom dataset tooling
 
 ---
 
 ## Table of Contents
 
 - [Why EvalBench](#why-evalbench)
+- [Why It's Different](#why-its-different)
 - [Demo](#demo)
 - [Architecture](#architecture)
 - [Core Concepts](#core-concepts)
 - [Features](#features)
+- [Try in 5 Minutes](#try-in-5-minutes)
 - [Technical Stack](#technical-stack)
 - [Setup & Installation](#setup--installation)
 - [How to Run and Stop](#how-to-run-and-stop)
@@ -29,11 +35,24 @@
 
 ## Why EvalBench
 
-EvalBench is built for people who **run local models and care about measurable quality**. It bridges two worlds:
-1. **Practical evaluation**: real scores, reproducible runs, and model-to-model comparison.
-2. **Learning**: an embedded decision tree that explains *which metric to use and why*.
+EvalBench is for builders who run local models and want evidence, not vibes.
 
-If you want “LM Studio but for evaluation,” this is it.
+It gives you one practical loop:
+1. **Benchmark quality with real metrics** across tasks like summarization, code, RAG, knowledge, and embeddings.
+2. **Compare local models against frontier models** in the same run when you need an external baseline.
+3. **Inspect reliability and failure context** so run quality and run health are both visible.
+4. **Create your own golden datasets** so evaluations match your actual use case, not generic demos.
+
+If you want "LM Studio for evaluation" with stronger rigor and dataset control, this is it.
+
+## Why It's Different
+
+- **Local-first by design**: EvalBench is intentionally single-user and local-first, with SQLite on-device and encrypted key storage.
+- **Hybrid evaluation without platform lock-in**: keep Ollama as your center, then optionally add OpenAI/Gemini/Claude/Groq models for comparison.
+- **Objective + subjective scoring in one flow**: combine reference metrics with optional LLM-as-Judge scoring and rationale.
+- **Dataset creation is a core feature**: build, import, version, and safely manage custom datasets from inside the product.
+- **Two modes of truth**: metric-based head-to-head comparison plus human preference testing via blind Arena battles and ELO.
+- **Educational layer included**: built-in metric guidance helps teams learn why each score exists, not just what the number is.
 
 ## Demo
 
@@ -87,19 +106,27 @@ EvalBench computes mean scores and margin of error where supported, and now sepa
 
 ## Features
 
-- **Model Discovery**: Auto-detects local Ollama models, keeps the main Models view local-first, and separates comparison/frontier models into their own section.
-- **Task-Aware Wizard**: Select a Task Type (Knowledge, Chat, Code) and EvalBench automatically suggests the correct metrics (Exact Match vs ROUGE vs LLM Judge) and standard benchmark dataset (MMLU vs TruthfulQA).
-- **Typed Eval Run Config**: Run metadata now follows a shared typed contract across backend and frontend, reducing config drift and making run state safer to reason about.
-- **Grounded Wizard ETA**: The wizard estimates runtime from dataset size, selected models, and historical per-pair duration when available, instead of static copy.
-- **Dataset Builder & Registry**: Create golden datasets manually, import CSV/JSON, version datasets by name, use task-aware templates, clearly mark custom/imported datasets, inspect dataset usage history, and delete unused user-authored datasets safely.
-- **Trusted Run Lifecycle**: Runs support cancellation, honest failed/cancelled states, retry-aware Ollama calls, and reliability counters such as retries, failed pairs, cache hits, and success rate.
-- **Capability Signatures**: Multi-dimensional Radar charts to visualize model strengths and weaknesses.
-- **Fair Head-to-Head Compare**: Compare two models only on shared completed run contexts, with task/dataset scoping to avoid misleading apples-to-oranges comparisons.
-- **Arena Mode**: Pairwise blind testing where you explicitly start a battle, vote, then reveal which model was which before moving to the next matchup.
-- **Educational Layer**: The `Learn` tab links to the interactive Metric Decision Tree used in the app.
-- **Run History & Details**: Track runs over time, compare per-model metrics, inspect example outputs side-by-side, review run reliability alongside quality, and scan quick score previews without leaving the history table.
-- **Settings Verification**: Test Ollama connectivity, judge readiness, and cloud API-key setup directly from the Settings form before saving, with the option to start Ollama when it is offline.
-- **Danger Zone / Wipe Data**: Quickly flush all captured evaluation stats, battle ratings, and cached responses from the SQL database—without losing configured datasets or local models—directly from Settings.
+- **Local model benchmarking first**: Auto-discovers Ollama models and keeps the primary catalog local-first.
+- **Mixed local + frontier evaluation**: Add selected OpenAI/Gemini/Claude/Groq models as comparison baselines in the same run.
+- **Optional LLM-as-Judge**: Turn judge scoring on or off from Settings; when enabled, judge rationale is available in run analysis.
+- **Task-aware eval wizard**: Task selection drives metrics and benchmark dataset defaults with estimated runtime context.
+- **Custom dataset builder and registry**: Manually create or import CSV/JSON datasets, version by name, and safely delete unused user-authored sets.
+- **Trusted run lifecycle**: Live progress, cancellation, retries, partial-failure visibility, cache-hit tracking, and clear run health indicators.
+- **Head-to-head compare**: Fair model comparison based on shared completed run contexts with clearer significance framing.
+- **Arena battles with ELO**: Run blind pairwise matchups (random or manual model-vs-model) and update leaderboard ratings.
+- **Export anywhere**: Download results as **JSON**, **Markdown**, or **CSV** from Run Details.
+- **Built to teach**: Learn tab and metric guidance explain why each metric fits each task.
+
+---
+
+## Try in 5 Minutes
+
+1. Pull or discover 2 local Ollama models in Models.
+2. Open Eval Wizard and start a benchmark run on a built-in dataset.
+3. (Optional) Enable one frontier comparison model in Settings and run mixed local + cloud.
+4. Open Run Details to inspect quality metrics, run health, and example outputs.
+5. Export the run as JSON, Markdown, or CSV.
+6. Launch Arena to run a blind battle and vote your preferred output.
 
 ---
 
@@ -198,12 +225,11 @@ Both are kept green as part of the active audit/remediation work.
 
 ## Roadmap
 
-- LLM‑as‑Judge (G‑Eval) + Settings for API keys
-- HumanEval / code benchmarks + execution harness
-- Statistical rigor: confidence intervals and significance tests
-- Dataset editing, richer schema-aware validation, and export formats
-- Provider expansion beyond Ollama for evaluated models
-- Dataset provenance reporting and stronger shareable benchmark outputs
+- Broader provider and model coverage for evaluated comparison baselines
+- Additional benchmark packs and deeper task-specific metrics
+- Richer shareable reporting and export workflows
+- Performance scaling improvements (parallelism, caching, larger-run ergonomics)
+- Stronger dataset provenance, governance, and collaboration workflows
 
 ---
 
