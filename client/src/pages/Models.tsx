@@ -190,14 +190,13 @@ export default function Models() {
 
   const embeddingModelIds = useMemo(() => embeddingModels.map((m: any) => m.id), [embeddingModels]);
 
-  const recommendedEmbedding = useMemo(() => {
+  const embeddingBadgeModels = useMemo(() => {
     return [...embeddingModels]
       .sort((a, b) => {
         const aTps = modelMeta[a.id]?.avgTps ?? 0;
         const bTps = modelMeta[b.id]?.avgTps ?? 0;
         return bTps - aTps;
-      })
-      .slice(0, 3);
+      });
   }, [embeddingModels, modelMeta]);
 
   const activeLocalFilterCount = useMemo(() => {
@@ -366,7 +365,7 @@ export default function Models() {
                 Detected {embeddingModels.length} embedding model{embeddingModels.length !== 1 ? "s" : ""} based on model metadata.
               </div>
               <div className="flex flex-wrap gap-2 mt-3">
-                {recommendedEmbedding.map((model) => (
+                {embeddingBadgeModels.map((model) => (
                   <span key={model.id} className="text-[10px] font-semibold px-2 py-1 rounded-full bg-white text-emerald-700 border border-emerald-200">
                     {model.name}
                   </span>

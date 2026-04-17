@@ -28,6 +28,7 @@ export function useDiscoverModels() {
     },
     onSuccess: (data) => {
       queryClient.setQueryData([api.models.list.path], data);
+      queryClient.invalidateQueries({ queryKey: [api.ollama.status.path] });
       toast({
         title: "Models Discovered",
         description: `Found ${data.length} local models ready for evaluation.`,
