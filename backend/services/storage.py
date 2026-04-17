@@ -174,6 +174,7 @@ def get_arena_leaderboard(db: Session) -> list[dict]:
     rows = (
         db.query(db_models.EloRating, db_models.Model)
         .join(db_models.Model, db_models.EloRating.model_id == db_models.Model.id)
+        .filter(db_models.EloRating.games_played > 0)
         .order_by(db_models.EloRating.rating.desc())
         .all()
     )

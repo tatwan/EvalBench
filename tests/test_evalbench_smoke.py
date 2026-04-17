@@ -474,6 +474,20 @@ def test_get_model_pair_by_ids_rejects_embedding_models(db):
     assert storage.get_model_pair_by_ids(db, embed_model.id, text_model.id) is None
 
 
+def test_arena_leaderboard_hides_zero_game_seed_ratings(db):
+    fresh_model = db_models.Model(name="fresh-arena-model")
+    seeded_elo = db_models.EloRating(model_id=1, rating=1200, games_played=0)
+    db.add(fresh_model)
+    db.flush()
+    seeded_elo.model_id = fresh_model.id
+    db.add(seeded_elo)
+    db.commit()
+
+    leaderboard = storage.get_arena_leaderboard(db)
+
+    assert leaderboard == []
+
+
 def test_rouge_compute_includes_rouge_lsum(monkeypatch):
     class FakeScorer:
         class Score:
