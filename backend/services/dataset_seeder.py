@@ -895,6 +895,24 @@ def seed_if_empty(db: Session) -> None:
     existing_names = [ds.name for ds in db.query(db_models.GoldenDataset).all()]
     
     # ── Summarization dataset ──
+    if "EvalBench Summarization Quick v1" not in existing_names:
+        summ_quick_ds = db_models.GoldenDataset(
+            name="EvalBench Summarization Quick v1",
+            source="curated-inline",
+            schema_version=1,
+        )
+        db.add(summ_quick_ds)
+        db.flush()
+        for item in SUMMARIZATION_ITEMS[:5]:
+            db.add(db_models.GoldenItem(
+                dataset_id=summ_quick_ds.id,
+                input=item["input"],
+                expected_output=item["expected_output"],
+                context=item.get("context"),
+                tags=item["tags"],
+                difficulty=item["difficulty"],
+            ))
+
     if "EvalBench Summarization v1" not in existing_names:
         summ_ds = db_models.GoldenDataset(
             name="EvalBench Summarization v1",

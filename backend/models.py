@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
     Column, Integer, String, Float, Text, ForeignKey, JSON, Boolean, Index
 )
@@ -23,7 +23,7 @@ class EvalRun(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=True) # E17
-    timestamp = Column(FlexibleDateTime, server_default=func.now(), default=datetime.utcnow) # B8
+    timestamp = Column(FlexibleDateTime, server_default=func.now(), default=lambda: datetime.now(timezone.utc)) # B8
     status = Column(String(50), default="pending")  # pending, running, completed, failed
     config_json = Column(JSON, nullable=True)  # Store criteria, taskType, etc.
 
@@ -57,7 +57,7 @@ class GoldenDataset(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
     source = Column(String, nullable=True)
-    created_at = Column(FlexibleDateTime, default=datetime.utcnow)
+    created_at = Column(FlexibleDateTime, default=lambda: datetime.now(timezone.utc))
     schema_version = Column(Integer, default=1)
 
 
@@ -82,7 +82,7 @@ class ArenaBattle(Base):
     model_b_id = Column(Integer, ForeignKey("models.id"), nullable=False)
     prompt = Column(Text, nullable=False)
     winner = Column(String, nullable=False)  # 'model_a', 'model_b', 'tie'
-    timestamp = Column(FlexibleDateTime, default=datetime.utcnow)
+    timestamp = Column(FlexibleDateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class EloRating(Base):
@@ -91,7 +91,7 @@ class EloRating(Base):
     model_id = Column(Integer, ForeignKey("models.id"), primary_key=True)
     rating = Column(Integer, nullable=False, default=1200)
     games_played = Column(Integer, nullable=False, default=0)
-    last_updated = Column(FlexibleDateTime, default=datetime.utcnow)
+    last_updated = Column(FlexibleDateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class ResponseCache(Base):
@@ -101,4 +101,4 @@ class ResponseCache(Base):
     response = Column(Text, nullable=False)
     eval_count = Column(Integer, nullable=True)
     eval_duration = Column(Integer, nullable=True)
-    created_at = Column(FlexibleDateTime, default=datetime.utcnow)
+    created_at = Column(FlexibleDateTime, default=lambda: datetime.now(timezone.utc))

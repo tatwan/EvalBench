@@ -21,7 +21,7 @@ import hashlib
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator
 from sqlalchemy.orm import Session
 
@@ -433,6 +433,9 @@ async def run_eval(run_id: int) -> None:
     failure_messages: list[str] = []
     retry_count = 0
     cache_hits = 0
+    started_pairs = 0
+    active_pairs = 0
+    progress_lock = asyncio.Lock()
     try:
         run = db.query(db_models.EvalRun).filter_by(id=run_id).first()
         if not run:
@@ -454,7 +457,7 @@ async def run_eval(run_id: int) -> None:
         judge_skip_reason: str | None = None
 
         # ── update status ──
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         run.timestamp = start_time
         run.status = "running"
         run.config_json = {**config}
@@ -516,15 +519,69 @@ async def run_eval(run_id: int) -> None:
             **(run.config_json or {}),
             "totalPairs": total,
             "completedPairs": 0,
+            "startedPairs": 0,
+            "activePairs": 0,
             "errorCount": 0,
             "retryCount": 0,
             "cacheHits": 0,
             "judgeSkipped": task_uses_judge and not judge_metrics_enabled,
             "judgeSkipReason": judge_skip_reason,
+            "progressPhase": "warming_up",
+            "progressMessage": "Preparing models, datasets, and scorers.",
         }
         db.commit()
 
         await q.put({"type": "start", "total": total, "done": False})
+
+        async def emit_progress(
+            *,
+            model: str | None = None,
+            phase: str | None = None,
+            message: str | None = None,
+            started_delta: int = 0,
+            active_delta: int = 0,
+            completed_delta: int = 0,
+        ) -> None:
+            nonlocal started_pairs, active_pairs, completed
+            async with progress_lock:
+                started_pairs = max(0, started_pairs + started_delta)
+                active_pairs = max(0, active_pairs + active_delta)
+                completed = max(0, completed + completed_delta)
+                progress_db: Session = SessionLocal()
+                try:
+                    progress_run = progress_db.query(db_models.EvalRun).filter_by(id=run_id).first()
+                    if progress_run and not is_terminal_status(progress_run.status):
+                        progress_config = dict(progress_run.config_json or {})
+                        progress_config["totalPairs"] = total
+                        progress_config["completedPairs"] = completed
+                        progress_config["startedPairs"] = started_pairs
+                        progress_config["activePairs"] = active_pairs
+                        progress_config["errorCount"] = pair_failures
+                        progress_config["retryCount"] = retry_count
+                        progress_config["cacheHits"] = cache_hits
+                        if phase is not None:
+                            progress_config["progressPhase"] = phase
+                        if message is not None:
+                            progress_config["progressMessage"] = message
+                        if model is not None:
+                            progress_config["currentModel"] = model
+                        progress_run.config_json = progress_config
+                        progress_db.commit()
+                finally:
+                    progress_db.close()
+                pct = round(completed / total * 100) if total else 100
+                await q.put({
+                    "type": "progress",
+                    "completed": completed,
+                    "started": started_pairs,
+                    "active": active_pairs,
+                    "total": total,
+                    "percent": pct,
+                    "model": model,
+                    "phase": phase,
+                    "message": message,
+                    "done": False,
+                })
 
         # Warn once if BERTScore is expected but unavailable for this task
         if task_type == "summarization" and not bertscore.is_available():
@@ -537,12 +594,20 @@ async def run_eval(run_id: int) -> None:
         if task_type == "summarization":
             bertscore_state = bertscore.readiness_state()
             if bertscore_state == "download_required":
+                await emit_progress(
+                    phase="warming_up",
+                    message="BERTScore is preparing for first use. The first summarization run can take longer.",
+                )
                 await q.put({
                     "type": "warning",
                     "message": "BERTScore may download a large model on first use (~400MB). This is a one-time download.",
                     "done": False,
                 })
             elif bertscore_state == "ready":
+                await emit_progress(
+                    phase="warming_up",
+                    message="BERTScore is ready. Starting summarization pairs.",
+                )
                 await q.put({
                     "type": "info",
                     "message": "BERTScore is already downloaded and ready for this run.",
@@ -558,6 +623,13 @@ async def run_eval(run_id: int) -> None:
                     current_run = db_local.query(db_models.EvalRun).filter_by(id=run_id).first()
                     if not current_run or current_run.status == "cancel_requested":
                         return
+                    await emit_progress(
+                        model=model.name,
+                        phase="running",
+                        message=f"{model.name} started item {item.id}.",
+                        started_delta=1,
+                        active_delta=1,
+                    )
 
                     results_to_save: list[dict] = []  # accumulate, then bulk-commit
 
@@ -732,29 +804,13 @@ async def run_eval(run_id: int) -> None:
                 finally:
                     db_local.close()
 
-                completed += 1
-                progress_db: Session = SessionLocal()
-                try:
-                    progress_run = progress_db.query(db_models.EvalRun).filter_by(id=run_id).first()
-                    if progress_run and not is_terminal_status(progress_run.status):
-                        progress_config = dict(progress_run.config_json or {})
-                        progress_config["completedPairs"] = completed
-                        progress_config["errorCount"] = pair_failures
-                        progress_config["retryCount"] = retry_count
-                        progress_config["cacheHits"] = cache_hits
-                        progress_run.config_json = progress_config
-                        progress_db.commit()
-                finally:
-                    progress_db.close()
-                pct = round(completed / total * 100) if total else 100
-                await q.put({
-                    "type": "progress",
-                    "completed": completed,
-                    "total": total,
-                    "percent": pct,
-                    "model": model.name,
-                    "done": False,
-                })
+                await emit_progress(
+                    model=model.name,
+                    phase="running",
+                    message=f"{model.name} finished item {item.id}.",
+                    active_delta=-1,
+                    completed_delta=1,
+                )
 
         # Launch all (model, item) pairs; semaphore bounds concurrency
         tasks = [eval_pair(model, item) for model in models for item in items]
@@ -803,32 +859,30 @@ async def run_eval(run_id: int) -> None:
                                 )
                         finally:
                             db_session.close()
-                        completed += 1
-                        progress_db: Session = SessionLocal()
-                        try:
-                            progress_run = progress_db.query(db_models.EvalRun).filter_by(id=run_id).first()
-                            if progress_run and not is_terminal_status(progress_run.status):
-                                progress_config = dict(progress_run.config_json or {})
-                                progress_config["completedPairs"] = completed
-                                progress_config["errorCount"] = pair_failures
-                                progress_config["retryCount"] = retry_count
-                                progress_config["cacheHits"] = cache_hits
-                                progress_run.config_json = progress_config
-                                progress_db.commit()
-                        finally:
-                            progress_db.close()
-                        pct = round(completed / total * 100) if total else 100
-                        await q.put({
-                            "type": "progress",
-                            "completed": completed,
-                            "total": total,
-                            "percent": pct,
-                            "model": cloud_model_name,
-                            "done": False,
-                        })
+                        await emit_progress(
+                            model=cloud_model_name,
+                            phase="failed",
+                            message=f"{cloud_model_name} setup failed. Skipping item {item.id}.",
+                            started_delta=1,
+                            completed_delta=1,
+                        )
                     continue
 
                 for item in items:
+                    status_session = SessionLocal()
+                    try:
+                        current_run = status_session.query(db_models.EvalRun).filter_by(id=run_id).first()
+                        if not current_run or current_run.status == "cancel_requested":
+                            break
+                    finally:
+                        status_session.close()
+                    await emit_progress(
+                        model=cloud_model_name,
+                        phase="running",
+                        message=f"{cloud_model_name} started item {item.id}.",
+                        started_delta=1,
+                        active_delta=1,
+                    )
                     if fatal_cloud_error:
                         pair_failures += 1
                         db_session = SessionLocal()
@@ -844,29 +898,13 @@ async def run_eval(run_id: int) -> None:
                             )
                         finally:
                             db_session.close()
-                        completed += 1
-                        progress_db: Session = SessionLocal()
-                        try:
-                            progress_run = progress_db.query(db_models.EvalRun).filter_by(id=run_id).first()
-                            if progress_run and not is_terminal_status(progress_run.status):
-                                progress_config = dict(progress_run.config_json or {})
-                                progress_config["completedPairs"] = completed
-                                progress_config["errorCount"] = pair_failures
-                                progress_config["retryCount"] = retry_count
-                                progress_config["cacheHits"] = cache_hits
-                                progress_run.config_json = progress_config
-                                progress_db.commit()
-                        finally:
-                            progress_db.close()
-                        pct = round(completed / total * 100) if total else 100
-                        await q.put({
-                            "type": "progress",
-                            "completed": completed,
-                            "total": total,
-                            "percent": pct,
-                            "model": cloud_model_name,
-                            "done": False,
-                        })
+                        await emit_progress(
+                            model=cloud_model_name,
+                            phase="failed",
+                            message=f"{cloud_model_name} skipped item {item.id} after a provider rejection.",
+                            active_delta=-1,
+                            completed_delta=1,
+                        )
                         continue
                     try:
                         if task_type == "embedding":
@@ -1049,40 +1087,28 @@ async def run_eval(run_id: int) -> None:
                                 "done": False,
                             })
                     finally:
-                        completed += 1
-                        progress_db: Session = SessionLocal()
-                        try:
-                            progress_run = progress_db.query(db_models.EvalRun).filter_by(id=run_id).first()
-                            if progress_run and not is_terminal_status(progress_run.status):
-                                progress_config = dict(progress_run.config_json or {})
-                                progress_config["completedPairs"] = completed
-                                progress_config["errorCount"] = pair_failures
-                                progress_config["retryCount"] = retry_count
-                                progress_config["cacheHits"] = cache_hits
-                                progress_run.config_json = progress_config
-                                progress_db.commit()
-                        finally:
-                            progress_db.close()
-                        pct = round(completed / total * 100) if total else 100
-                        await q.put({
-                            "type": "progress",
-                            "completed": completed,
-                            "total": total,
-                            "percent": pct,
-                            "model": cloud_model_name,
-                            "done": False,
-                        })
+                        await emit_progress(
+                            model=cloud_model_name,
+                            phase="running",
+                            message=f"{cloud_model_name} finished item {item.id}.",
+                            active_delta=-1,
+                            completed_delta=1,
+                        )
 
         db.refresh(run)
-        duration_seconds = (datetime.utcnow() - (start_time or datetime.utcnow())).total_seconds()
+        duration_seconds = (datetime.now(timezone.utc) - (start_time or datetime.now(timezone.utc))).total_seconds()
         updated_config = dict(config)
         updated_config["durationSeconds"] = round(duration_seconds, 2)
         updated_config["totalPairs"] = total
         updated_config["completedPairs"] = completed
+        updated_config["startedPairs"] = started_pairs
+        updated_config["activePairs"] = active_pairs
         updated_config["retryCount"] = retry_count
         updated_config["cacheHits"] = cache_hits
         updated_config["successfulPairs"] = max(0, completed - pair_failures)
         updated_config["completedWithErrors"] = pair_failures > 0 and completed > pair_failures
+        updated_config["progressPhase"] = "finished"
+        updated_config["progressMessage"] = "Run finished."
         if pair_failures:
             updated_config["errorCount"] = pair_failures
             updated_config["errors"] = failure_messages[:10]
@@ -1105,7 +1131,7 @@ async def run_eval(run_id: int) -> None:
             if run:
                 config = run.config_json or {}
                 if start_time:
-                    duration_seconds = (datetime.utcnow() - start_time).total_seconds()
+                    duration_seconds = (datetime.now(timezone.utc) - start_time).total_seconds()
                     updated_config = dict(config)
                     updated_config["durationSeconds"] = round(duration_seconds, 2)
                     run.config_json = updated_config

@@ -2,12 +2,15 @@ from typing import List, Dict
 import logging
 import os
 from pathlib import Path
+import threading
 
 logger = logging.getLogger(__name__)
 
 _scorer = None
 _unavailable = False
 _model_ready: bool = False
+_load_lock = threading.Lock()
+_compute_lock = threading.Lock()
 
 
 def _get_scorer():
@@ -15,13 +18,15 @@ def _get_scorer():
     if _unavailable:
         return None
     if _scorer is None:
-        try:
-            import evaluate
-            _scorer = evaluate.load("bertscore")
-        except Exception as e:
-            logger.warning(f"Failed to load bertscore via evaluate: {e}")
-            _unavailable = True
-            return None
+        with _load_lock:
+            if _scorer is None and not _unavailable:
+                try:
+                    import evaluate
+                    _scorer = evaluate.load("bertscore")
+                except Exception as e:
+                    logger.warning(f"Failed to load bertscore via evaluate: {e}")
+                    _unavailable = True
+                    return None
     return _scorer
 
 
@@ -40,32 +45,33 @@ def compute(predictions: List[str], references: List[str]) -> Dict[str, float]:
     if scorer is None:
         return {}
     try:
-        try:
-            results = scorer.compute(predictions=predictions, references=references, lang="en", rescale_with_baseline=True)
-        except Exception:
-            # Some local environments fail when the baseline bundle is unavailable;
-            # retry without baseline rescaling so the run still produces a usable score.
+        with _compute_lock:
             try:
-                results = scorer.compute(predictions=predictions, references=references, lang="en", rescale_with_baseline=False)
+                results = scorer.compute(predictions=predictions, references=references, lang="en", rescale_with_baseline=True)
             except Exception:
-                from bert_score import score as direct_bert_score
+                # Some local environments fail when the baseline bundle is unavailable;
+                # retry without baseline rescaling so the run still produces a usable score.
+                try:
+                    results = scorer.compute(predictions=predictions, references=references, lang="en", rescale_with_baseline=False)
+                except Exception:
+                    from bert_score import score as direct_bert_score
 
-                _precision, _recall, f1_tensor = direct_bert_score(
-                    predictions,
-                    references,
-                    lang="en",
-                    rescale_with_baseline=False,
-                    verbose=False,
-                )
-                f1_list = [float(v) for v in f1_tensor.tolist()]
-                _model_ready = True
-                return {"bertscore_f1": float(sum(f1_list) / len(f1_list)) if f1_list else 0.0}
-        f1_list = results.get("f1", [])
-        if not f1_list:
-            return {"bertscore_f1": 0.0}
-        mean_f1 = sum(f1_list) / len(f1_list)
-        _model_ready = True
-        return {"bertscore_f1": float(mean_f1)}
+                    _precision, _recall, f1_tensor = direct_bert_score(
+                        predictions,
+                        references,
+                        lang="en",
+                        rescale_with_baseline=False,
+                        verbose=False,
+                    )
+                    f1_list = [float(v) for v in f1_tensor.tolist()]
+                    _model_ready = True
+                    return {"bertscore_f1": float(sum(f1_list) / len(f1_list)) if f1_list else 0.0}
+            f1_list = results.get("f1", [])
+            if not f1_list:
+                return {"bertscore_f1": 0.0}
+            mean_f1 = sum(f1_list) / len(f1_list)
+            _model_ready = True
+            return {"bertscore_f1": float(mean_f1)}
     except Exception as e:
         logger.warning(f"BERTScore computation failed: {e}")
         return {}

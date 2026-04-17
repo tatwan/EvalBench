@@ -13,6 +13,7 @@ from backend.services import dataset_seeder
 from backend.services.ollama import list_models
 from backend.services import storage
 from backend.scoring import meteor as meteor_scoring
+from backend import models as db_models
 from sqlalchemy import text
 
 
@@ -44,18 +45,35 @@ async def lifespan(app: FastAPI):
         except Exception:
             db.rollback()
 
-        # Cleanup interrupted background runs
+        # Cleanup interrupted background runs with a user-facing status and recovery note.
         try:
-            db.execute(
-                text("UPDATE eval_runs SET status = 'error' WHERE status IN ('running', 'pending')")
+            interrupted_runs = (
+                db.query(db_models.EvalRun)
+                .filter(db_models.EvalRun.status.in_(("running", "pending")))
+                .all()
             )
+            for run in interrupted_runs:
+                config = dict(run.config_json or {})
+                config["completedWithErrors"] = bool(config.get("completedPairs"))
+                config["progressPhase"] = "interrupted"
+                config["progressMessage"] = "This run was interrupted when the app stopped."
+                run.config_json = config
+                run.status = "failed"
             db.commit()
         except Exception:
             db.rollback()
         try:
-            db.execute(
-                text("UPDATE eval_runs SET status = 'cancelled' WHERE status = 'cancel_requested'")
+            cancelled_runs = (
+                db.query(db_models.EvalRun)
+                .filter(db_models.EvalRun.status == "cancel_requested")
+                .all()
             )
+            for run in cancelled_runs:
+                config = dict(run.config_json or {})
+                config["progressPhase"] = "cancelled"
+                config["progressMessage"] = "This run was cancelled before the app restarted."
+                run.config_json = config
+                run.status = "cancelled"
             db.commit()
         except Exception:
             db.rollback()

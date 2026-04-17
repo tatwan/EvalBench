@@ -73,6 +73,8 @@ export default function Models() {
   const [sizeFilter, setSizeFilter] = useState("all");
   const [specialtyFilter, setSpecialtyFilter] = useState("all");
   const [paramFilter, setParamFilter] = useState<ParamPresetKey>("all");
+  const [familyFilter, setFamilyFilter] = useState("all");
+  const [quantizationFilter, setQuantizationFilter] = useState("all");
   const [, navigate] = useLocation();
 
   const eloMap = useMemo(() => {
@@ -169,6 +171,18 @@ export default function Models() {
     return Array.from(tags).sort();
   }, [localModels]);
 
+  const familyOptions = useMemo(() => {
+    return Array.from(
+      new Set(localModels.map((model) => model.family).filter((value): value is string => Boolean(value)))
+    ).sort((a, b) => a.localeCompare(b));
+  }, [localModels]);
+
+  const quantizationOptions = useMemo(() => {
+    return Array.from(
+      new Set(localModels.map((model) => model.quantization).filter((value): value is string => Boolean(value)))
+    ).sort((a, b) => a.localeCompare(b));
+  }, [localModels]);
+
   const filteredLocalModels = useMemo(() => {
     return localModels.filter((model) => {
       const paramCount = parseParamCount(model.params);
@@ -176,9 +190,11 @@ export default function Models() {
       const matchesParam = matchesParamPreset(paramCount, paramFilter);
       const matchesSize = sizeFilter === "all" || sizeBucket(model.sizeGb) === sizeFilter;
       const matchesSpecialty = specialtyFilter === "all" || specialties.includes(specialtyFilter);
-      return matchesParam && matchesSize && matchesSpecialty;
+      const matchesFamily = familyFilter === "all" || model.family === familyFilter;
+      const matchesQuantization = quantizationFilter === "all" || model.quantization === quantizationFilter;
+      return matchesParam && matchesSize && matchesSpecialty && matchesFamily && matchesQuantization;
     });
-  }, [localModels, paramFilter, sizeFilter, specialtyFilter]);
+  }, [localModels, paramFilter, sizeFilter, specialtyFilter, familyFilter, quantizationFilter]);
 
   const embeddingModels = useMemo(() => {
     return (models as any[]).filter((model) => model.family !== "cloud" && deriveSpecialties(model.name, model.family).includes("embedding"));
@@ -204,8 +220,10 @@ export default function Models() {
     if (paramFilter !== "all") count += 1;
     if (sizeFilter !== "all") count += 1;
     if (specialtyFilter !== "all") count += 1;
+    if (familyFilter !== "all") count += 1;
+    if (quantizationFilter !== "all") count += 1;
     return count;
-  }, [paramFilter, sizeFilter, specialtyFilter]);
+  }, [paramFilter, sizeFilter, specialtyFilter, familyFilter, quantizationFilter]);
 
   const handleEmbeddingEval = () => {
     if (embeddingModelIds.length === 0) {
@@ -345,10 +363,40 @@ export default function Models() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="w-[180px] space-y-1">
+              <div className="text-[11px] font-medium text-muted-foreground">Model family</div>
+              <Select value={familyFilter} onValueChange={setFamilyFilter}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Model family" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All families</SelectItem>
+                  {familyOptions.map((family) => (
+                    <SelectItem key={family} value={family}>{family}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-[180px] space-y-1">
+              <div className="text-[11px] font-medium text-muted-foreground">Quantization</div>
+              <Select value={quantizationFilter} onValueChange={setQuantizationFilter}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Quantization" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All quantization</SelectItem>
+                  {quantizationOptions.map((quantization) => (
+                    <SelectItem key={quantization} value={quantization}>{quantization}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Button variant="ghost" size="sm" className="text-xs" onClick={() => {
               setParamFilter("all");
               setSizeFilter("all");
               setSpecialtyFilter("all");
+              setFamilyFilter("all");
+              setQuantizationFilter("all");
             }}>
               Reset
             </Button>

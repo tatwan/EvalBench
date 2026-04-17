@@ -1,4 +1,4 @@
-import { useAllEvalResults, useEvalRuns } from "@/hooks/use-eval";
+import { useAllEvalResults, useCancelEvalRun, useEvalRuns } from "@/hooks/use-eval";
 import { useModels } from "@/hooks/use-models";
 import { useDatasets } from "@/hooks/use-datasets";
 import { MetricTooltip } from "@/components/ui/MetricTooltip";
@@ -46,6 +46,7 @@ function humanizeStatus(status?: string | null): string {
 export default function RunHistory() {
   const { data: runs = [], isLoading: runsLoading, refetch } = useEvalRuns();
   const { data: results = [], isLoading: resultsLoading, refetch: refetchResults } = useAllEvalResults();
+  const cancelRun = useCancelEvalRun();
   const { data: models = [] } = useModels();
   const { data: datasets = [] } = useDatasets();
   const [taskFilter, setTaskFilter] = useState("all");
@@ -332,6 +333,10 @@ export default function RunHistory() {
                 const completedPairs = typeof config.completedPairs === "number" ? config.completedPairs : null;
                 const errorCount = typeof config.errorCount === "number" ? config.errorCount : 0;
                 const retryCount = typeof config.retryCount === "number" ? config.retryCount : 0;
+                const startedPairs = typeof config.startedPairs === "number" ? config.startedPairs : 0;
+                const activePairs = typeof config.activePairs === "number" ? config.activePairs : 0;
+                const progressPhase = typeof config.progressPhase === "string" ? config.progressPhase : null;
+                const progressMessage = typeof config.progressMessage === "string" ? config.progressMessage : null;
                 const successRate = totalPairs && totalPairs > 0
                   ? Math.max(0, (totalPairs - errorCount) / totalPairs)
                   : null;
@@ -458,15 +463,22 @@ export default function RunHistory() {
                       ) : null}
                     </td>
                     <td className="px-4 py-4">
-                      <div className="space-y-2 min-w-[170px]">
-                        <div className="text-[10px] text-muted-foreground">
-                          {completedPairs !== null && totalPairs !== null
-                            ? `${completedPairs}/${totalPairs} pairs completed`
-                            : "Pair totals appear in Run Details"}
-                        </div>
-                        {successRate !== null ? (
-                          <div className="text-[11px] font-medium text-foreground/85">
-                            {(successRate * 100).toFixed(1)}% pair success
+                        <div className="space-y-2 min-w-[170px]">
+                          <div className="text-[10px] text-muted-foreground">
+                            {completedPairs !== null && totalPairs !== null
+                              ? `${completedPairs}/${totalPairs} pairs completed`
+                              : "Pair totals appear in Run Details"}
+                          </div>
+                          {(run.status === "running" || run.status === "cancel_requested" || run.status === "pending") && (
+                            <div className="text-[10px] text-muted-foreground space-y-1">
+                              <div>{startedPairs} started • {activePairs} active</div>
+                              {progressPhase ? <div className="capitalize">{progressPhase.replace(/_/g, " ")}</div> : null}
+                              {progressMessage ? <div className="line-clamp-2">{progressMessage}</div> : null}
+                            </div>
+                          )}
+                          {successRate !== null ? (
+                            <div className="text-[11px] font-medium text-foreground/85">
+                              {(successRate * 100).toFixed(1)}% pair success
                           </div>
                         ) : null}
                         <div className="flex flex-wrap gap-2 text-[10px]">
@@ -482,11 +494,29 @@ export default function RunHistory() {
                       </div>
                     </td>
                     <td className="px-4 py-4 text-right">
-                      <Link href={`/evaluate/${run.id}`}>
-                        <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity text-xs px-2">
-                          View <ChevronRight className="w-4 h-4 ml-1" />
-                        </Button>
-                      </Link>
+                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {(run.status === "running" || run.status === "pending") && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-xs px-2"
+                            onClick={() => cancelRun.mutate(run.id)}
+                            disabled={cancelRun.isPending}
+                          >
+                            Stop
+                          </Button>
+                        )}
+                        {run.status === "cancel_requested" && (
+                          <Button variant="outline" size="sm" className="text-xs px-2" disabled>
+                            Stopping...
+                          </Button>
+                        )}
+                        <Link href={`/evaluate/${run.id}`}>
+                          <Button variant="ghost" size="sm" className="text-xs px-2">
+                            View <ChevronRight className="w-4 h-4 ml-1" />
+                          </Button>
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 );

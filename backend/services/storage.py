@@ -4,6 +4,7 @@ from sqlalchemy import func, or_
 from backend import models as db_models
 
 BUILT_IN_DATASET_BASELINES: dict[str, int] = {
+    "EvalBench Summarization Quick v1": 1,
     "EvalBench Summarization v1": 1,
     "EvalBench QA v1": 1,
     "EvalBench MMLU (Subset)": 1,

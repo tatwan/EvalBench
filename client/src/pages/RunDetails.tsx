@@ -92,8 +92,11 @@ function highlightedMetricsForTask(taskType: string, metricScores: Record<string
   const ordered = preferredByTask[taskType] ?? Object.keys(metricScores);
   return ordered
     .filter((metric) => metricScores[metric] !== undefined)
-    .slice(0, 4)
     .map((metric) => ({ metric, score: metricScores[metric] }));
+}
+
+function exampleMetricSectionLabel(taskType: string): string {
+  return taskType === "code" ? "Per-Example Test Signals" : "Per-Example Metric Values";
 }
 
 // We no longer manually group results here, we use the backend's /stats endpoint
@@ -213,6 +216,81 @@ function examplePrimaryInputLabel(taskType: string): string {
   return taskType === "code" ? "Problem" : "Prompt Input";
 }
 
+function getExampleMetricDisplay(taskType: string, metricScores: Record<string, number>, maxVisible = 6) {
+  const ordered = highlightedMetricsForTask(taskType, metricScores);
+  return {
+    total: ordered.length,
+    visible: ordered.slice(0, maxVisible),
+    hiddenCount: Math.max(0, ordered.length - maxVisible),
+  };
+}
+
+function exampleScoreCopy(metricCount: number, visibleCount: number, hiddenCount: number): string {
+  if (hiddenCount > 0) {
+    return `Average of ${metricCount} successful metrics for this specific query. Showing ${visibleCount} here. This does not represent the model's overall run average.`;
+  }
+  return `Average of the ${metricCount} metrics below for this specific query. This does not represent the model's overall run average.`;
+}
+
+function exampleMetricCopy(total: number, hiddenCount: number): string {
+  if (hiddenCount > 0) {
+    return `These badges belong to this example only. Showing ${total - hiddenCount} of ${total} metrics used in its score.`;
+  }
+  return "These badges belong to this example only. They are the metrics used in this example score.";
+}
+
+function parseEmbeddingOutput(rawOutput?: string | null): {
+  topMatch: string | null;
+  topSimilarity: number | null;
+  rankedIndices: number[];
+} | null {
+  if (!rawOutput) return null;
+  try {
+    const parsed = JSON.parse(rawOutput);
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      topMatch: typeof parsed.top_match === "string" ? parsed.top_match : null,
+      topSimilarity: typeof parsed.top_similarity === "number" ? parsed.top_similarity : null,
+      rankedIndices: Array.isArray(parsed.ranked_indices)
+        ? parsed.ranked_indices.filter((value: unknown) => typeof value === "number")
+        : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function renderModelGeneration(taskType: string, actualOutput: string) {
+  if (taskType === "embedding") {
+    const parsed = parseEmbeddingOutput(actualOutput);
+    if (parsed) {
+      return (
+        <div className="space-y-3">
+          <div className="whitespace-pre-wrap text-foreground">
+            {parsed.topMatch ?? "No top match captured."}
+          </div>
+          <div className="flex flex-wrap gap-2 text-[11px]">
+            {typeof parsed.topSimilarity === "number" ? (
+              <Badge variant="secondary" className="font-mono text-[11px]">
+                Retrieved Similarity {(parsed.topSimilarity * 100).toFixed(1)}%
+              </Badge>
+            ) : null}
+            {parsed.rankedIndices.length > 0 ? (
+              <Badge variant="secondary" className="font-mono text-[11px]">
+                Ranked Indices {parsed.rankedIndices.join(", ")}
+              </Badge>
+            ) : null}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Retrieved similarity is the model&apos;s top-match score inside its candidate list. Cosine Sim is EvalBench&apos;s scored metric for this query.
+          </p>
+        </div>
+      );
+    }
+  }
+  return <>{actualOutput || "No generation captured."}</>;
+}
+
 export default function RunDetails() {
   const queryClient = useQueryClient();
   const params = useParams<{ id: string }>();
@@ -226,7 +304,15 @@ export default function RunDetails() {
   const cancelRun = useCancelEvalRun();
 
   // SSE progress
-  const [progress, setProgress] = useState<{ completed: number; total: number; percent: number } | null>(null);
+  const [progress, setProgress] = useState<{
+    completed: number;
+    total: number;
+    percent: number;
+    started?: number;
+    active?: number;
+    phase?: string | null;
+    message?: string | null;
+  } | null>(null);
   const [streamNotice, setStreamNotice] = useState<{ message: string; tone: "info" | "warning" | "error" } | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
@@ -237,7 +323,15 @@ export default function RunDetails() {
     es.onmessage = (e) => {
       const event = JSON.parse(e.data);
       if (event.type === "progress") {
-        setProgress({ completed: event.completed, total: event.total, percent: event.percent });
+        setProgress({
+          completed: event.completed,
+          total: event.total,
+          percent: event.percent,
+          started: event.started,
+          active: event.active,
+          phase: event.phase ?? null,
+          message: event.message ?? null,
+        });
       }
       if (event.type === "warning" || event.type === "info" || event.type === "error") {
         setStreamNotice({
@@ -304,6 +398,10 @@ export default function RunDetails() {
   const judgeProvider = config.judgeProvider ?? null;
   const totalPairs = typeof config.totalPairs === "number" ? config.totalPairs : null;
   const completedPairs = typeof config.completedPairs === "number" ? config.completedPairs : null;
+  const startedPairs = typeof config.startedPairs === "number" ? config.startedPairs : 0;
+  const activePairs = typeof config.activePairs === "number" ? config.activePairs : 0;
+  const progressPhase = typeof config.progressPhase === "string" ? config.progressPhase : null;
+  const progressMessage = typeof config.progressMessage === "string" ? config.progressMessage : null;
   const errorCount = typeof config.errorCount === "number" ? config.errorCount : 0;
   const retryCount = typeof config.retryCount === "number" ? config.retryCount : 0;
   const cacheHits = typeof config.cacheHits === "number" ? config.cacheHits : 0;
@@ -323,9 +421,19 @@ export default function RunDetails() {
     ...allMetrics.filter((metric) => JUDGE_METRICS.has(metric)),
     ...allMetrics.filter((metric) => QUALITY_EXCLUDED_METRICS.has(metric)),
   ];
-  const modelIds = Object.keys(grouped).map(Number);
+  const modelIds = Array.from(new Set([
+    ...Object.keys(grouped).map(Number),
+    ...(results as any[]).map((r: any) => Number(r.modelId)).filter((value: number) => Number.isFinite(value)),
+  ]));
   const examples = getExamplesPerModel(results as any[]);
   const metricRowsPerPair = totalPairs && totalPairs > 0 ? (results as any[]).length / totalPairs : null;
+  const liveCompleted = progress?.completed ?? completedPairs ?? 0;
+  const liveTotal = progress?.total ?? totalPairs ?? 0;
+  const livePercent = progress?.percent ?? (liveTotal > 0 ? Math.round((liveCompleted / liveTotal) * 100) : 0);
+  const liveStarted = progress?.started ?? startedPairs;
+  const liveActive = progress?.active ?? activePairs;
+  const livePhase = progress?.phase ?? progressPhase;
+  const liveMessage = progress?.message ?? progressMessage;
 
   const bestByMetric: Record<string, number> = {};
   orderedMetrics.forEach((metric) => {
@@ -452,18 +560,26 @@ export default function RunDetails() {
               <span className="text-sm font-medium text-amber-700">
                 {run.status === "cancel_requested" ? "Cancellation requested..." : "Evaluation in progress..."}
               </span>
-              {progress && (
+              {(liveTotal > 0 || liveCompleted > 0) && (
                 <span className="text-sm font-mono text-muted-foreground">
-                  {progress.completed}/{progress.total} items - {progress.percent}%
+                  {liveCompleted}/{liveTotal} items - {livePercent}%
                 </span>
               )}
             </div>
             <div className="w-full bg-muted rounded-full h-2">
               <div
                 className="bg-amber-500 h-2 rounded-full transition-all duration-500"
-                style={{ width: `${progress?.percent ?? 0}%` }}
+                style={{ width: `${livePercent}%` }}
               />
             </div>
+            <div className="mt-3 flex flex-wrap gap-3 text-xs text-amber-800">
+              <span>{liveStarted} started</span>
+              <span>{liveActive} active</span>
+              {livePhase ? <span className="capitalize">{livePhase.replace(/_/g, " ")}</span> : null}
+            </div>
+            {liveMessage ? (
+              <p className="text-xs mt-2 text-amber-800/90">{liveMessage}</p>
+            ) : null}
             {streamNotice && (
               <p className={clsx(
                 "text-xs mt-2",
@@ -704,6 +820,8 @@ export default function RunDetails() {
           {modelIds.map(mid => {
              const ex = examples[mid];
              const modelName = modelMap[mid]?.name ?? resultModelNames[mid] ?? `Model ${mid}`;
+             const bestMetricDisplay = ex?.best ? getExampleMetricDisplay(taskType, ex.best.metricScores) : null;
+             const worstMetricDisplay = ex?.worst ? getExampleMetricDisplay(taskType, ex.worst.metricScores) : null;
              if (!ex) return null;
              return (
                <Card key={mid} className="overflow-hidden">
@@ -713,20 +831,34 @@ export default function RunDetails() {
                    </CardTitle>
                  </CardHeader>
                  <CardContent className="p-0 divide-y divide-border">
-                   {ex.best && (
+                  {ex.best && (
                      <div className="p-6 bg-white">
                        <h3 className="text-emerald-700 font-bold mb-4 flex items-center gap-2">
-                          <CheckCircle2 className="w-5 h-5"/> Highest Scoring Output (Average Quality Score: {formatScore("quality", ex.best.avgScore)})
+                          <CheckCircle2 className="w-5 h-5"/> Highest Scoring Example
                        </h3>
-                       <p className="text-xs text-muted-foreground mb-4">
-                         Average quality score across {ex.best.metricCount} successful non-speed metric rows for this example.
-                       </p>
-                       <div className="mb-4 flex flex-wrap gap-2">
-                         {highlightedMetricsForTask(taskType, ex.best.metricScores).map(({ metric, score }) => (
+                       <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4">
+                         <div className="flex flex-wrap items-center gap-3">
+                           <span className="text-xs font-semibold uppercase tracking-widest text-emerald-700">Example Quality Score</span>
+                           <span className="text-lg font-bold text-emerald-900">{formatScore("quality", ex.best.avgScore)}</span>
+                         </div>
+                         <p className="text-xs text-emerald-900/80 mt-2">
+                           {exampleScoreCopy(ex.best.metricCount, bestMetricDisplay?.visible.length ?? 0, bestMetricDisplay?.hiddenCount ?? 0)}
+                         </p>
+                       </div>
+                       <div className="mb-4">
+                         <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-2">
+                           {exampleMetricSectionLabel(taskType)}
+                         </p>
+                         <p className="text-xs text-muted-foreground mb-3">
+                           {exampleMetricCopy(bestMetricDisplay?.total ?? 0, bestMetricDisplay?.hiddenCount ?? 0)}
+                         </p>
+                         <div className="flex flex-wrap gap-2">
+                         {(bestMetricDisplay?.visible ?? []).map(({ metric, score }) => (
                            <Badge key={metric} variant="secondary" className="font-mono text-xs">
                              {metricLabel(metric)} {formatScore(metric, score)}
                            </Badge>
                          ))}
+                       </div>
                        </div>
                        <div className="grid grid-cols-5 gap-6">
                          <div className="col-span-2 space-y-2">
@@ -747,7 +879,7 @@ export default function RunDetails() {
                              </div>
                              <div className="bg-primary/10 border border-primary/20 p-4 rounded-xl overflow-y-auto text-sm whitespace-pre-wrap">
                                <span className="text-[10px] font-bold text-primary uppercase tracking-wider mb-2 block">Model Generation</span>
-                               {ex.best.actual}
+                               {renderModelGeneration(taskType, ex.best.actual)}
                              </div>
                            </div>
                          </div>
@@ -767,20 +899,34 @@ export default function RunDetails() {
                        ) : null}
                      </div>
                    )}
-                   {ex.worst && ex.worst.itemId !== ex.best?.itemId && (
+                  {ex.worst && ex.worst.itemId !== ex.best?.itemId && (
                      <div className="p-6 bg-white">
                        <h3 className="text-rose-700 font-bold mb-4 flex items-center gap-2">
-                          <AlertTriangle className="w-5 h-5"/> Lowest Scoring Output (Average Quality Score: {formatScore("quality", ex.worst.avgScore)})
+                          <AlertTriangle className="w-5 h-5"/> Lowest Scoring Example
                        </h3>
-                       <p className="text-xs text-muted-foreground mb-4">
-                         Average quality score across {ex.worst.metricCount} successful non-speed metric rows for this example.
-                       </p>
-                       <div className="mb-4 flex flex-wrap gap-2">
-                         {highlightedMetricsForTask(taskType, ex.worst.metricScores).map(({ metric, score }) => (
+                       <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50/70 p-4">
+                         <div className="flex flex-wrap items-center gap-3">
+                           <span className="text-xs font-semibold uppercase tracking-widest text-rose-700">Example Quality Score</span>
+                           <span className="text-lg font-bold text-rose-900">{formatScore("quality", ex.worst.avgScore)}</span>
+                         </div>
+                         <p className="text-xs text-rose-900/80 mt-2">
+                           {exampleScoreCopy(ex.worst.metricCount, worstMetricDisplay?.visible.length ?? 0, worstMetricDisplay?.hiddenCount ?? 0)}
+                         </p>
+                       </div>
+                       <div className="mb-4">
+                         <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold mb-2">
+                           {exampleMetricSectionLabel(taskType)}
+                         </p>
+                         <p className="text-xs text-muted-foreground mb-3">
+                           {exampleMetricCopy(worstMetricDisplay?.total ?? 0, worstMetricDisplay?.hiddenCount ?? 0)}
+                         </p>
+                         <div className="flex flex-wrap gap-2">
+                         {(worstMetricDisplay?.visible ?? []).map(({ metric, score }) => (
                            <Badge key={metric} variant="secondary" className="font-mono text-xs">
                              {metricLabel(metric)} {formatScore(metric, score)}
                            </Badge>
                          ))}
+                       </div>
                        </div>
                        <div className="grid grid-cols-5 gap-6">
                          <div className="col-span-2 space-y-2">
@@ -801,7 +947,7 @@ export default function RunDetails() {
                              </div>
                              <div className="bg-primary/10 border border-primary/20 p-4 rounded-xl overflow-y-auto text-sm whitespace-pre-wrap">
                                <span className="text-[10px] font-bold text-primary uppercase tracking-wider mb-2 block">Model Generation</span>
-                               {ex.worst.actual}
+                               {renderModelGeneration(taskType, ex.worst.actual)}
                              </div>
                            </div>
                          </div>
