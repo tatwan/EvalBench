@@ -40,6 +40,8 @@ export function useEvalResults(runId: number) {
       return api.evalRuns.results.responses[200].parse(await res.json());
     },
     enabled: !!runId,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 }
 
@@ -53,6 +55,8 @@ export function useEvalStats(runId: number) {
       return api.evalRuns.stats.responses[200].parse(await res.json());
     },
     enabled: !!runId,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 }
 

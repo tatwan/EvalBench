@@ -181,9 +181,14 @@ function getExamplesPerModel(results: any[]) {
     scoredItems.sort((a, b) => b.avgScore - a.avgScore);
 
     if (scoredItems.length > 0) {
+      const best = scoredItems[0];
+      const worstCandidate = scoredItems.length > 1 ? scoredItems[scoredItems.length - 1] : undefined;
       examples[Number(mid)] = {
-        best: scoredItems[0],
-        worst: scoredItems.length > 1 ? scoredItems[scoredItems.length - 1] : undefined
+        best,
+        worst:
+          worstCandidate && Math.abs((worstCandidate.avgScore ?? 0) - (best.avgScore ?? 0)) > 1e-8
+            ? worstCandidate
+            : undefined,
       };
     }
   }
@@ -738,6 +743,20 @@ export default function RunDetails() {
                       {orderedMetrics.map(metric => {
                         const stat = grouped[mid]?.[metric];
                         const lowerIsBetter = LOWER_IS_BETTER.has(metric);
+                        const hasError = (results as any[]).some(
+                          (r) => r.modelId === mid && r.metricName === metric && r.error
+                        );
+
+                        if (!stat && hasError) {
+                          return (
+                            <td key={metric} className="px-5 py-4 text-right font-mono text-xs">
+                              <span className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded-md font-semibold font-sans">
+                                [Failed]
+                              </span>
+                            </td>
+                          );
+                        }
+
                         if (!stat) {
                           return <td key={metric} className="px-5 py-4 text-right font-mono text-foreground/80">-</td>;
                         }
@@ -749,20 +768,6 @@ export default function RunDetails() {
                           !lowerIsBetter && stat.mean >= 0.3 ? "text-amber-900" : "text-foreground/90"
                         );
                         const isBest = Number.isFinite(bestByMetric[metric]) && Math.abs(stat.mean - bestByMetric[metric]) < 1e-8;
-
-                        const hasError = (results as any[]).some(
-                          (r) => r.modelId === mid && r.metricName === metric && r.error
-                        );
-
-                        if (hasError) {
-                          return (
-                            <td key={metric} className="px-5 py-4 text-right font-mono text-xs">
-                              <span className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded-md font-semibold font-sans">
-                                [Failed]
-                              </span>
-                            </td>
-                          );
-                        }
 
                         return (
                           <td key={metric} className="px-5 py-4 text-right font-mono">
@@ -778,6 +783,11 @@ export default function RunDetails() {
                               {stat.moe > 0 && (
                                 <span className="text-[10px] text-foreground/80" title="95% Confidence Interval Margin of Error">
                                   +/-{formatScore(metric, stat.moe)}
+                                </span>
+                              )}
+                              {hasError && (
+                                <span className="text-[10px] text-amber-700" title="Some pairs for this metric failed, but successful rows were still aggregated.">
+                                  partial failures
                                 </span>
                               )}
                             </div>

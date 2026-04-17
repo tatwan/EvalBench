@@ -97,7 +97,11 @@ export default function Models() {
     return Object.fromEntries(
       (models as any[]).map((model) => {
         const modelResults = qualityResults.filter((r) => r.modelId === model.id);
+        const avgScore = modelResults.length
+          ? modelResults.reduce((sum, r) => sum + Number(r.score), 0) / modelResults.length
+          : null;
         const bestScore = modelResults.length ? Math.max(...modelResults.map((r) => Number(r.score))) : null;
+        const runCount = new Set(modelResults.map((r) => r.runId)).size;
         const bestTaskScore = new Map<string, number>();
         modelResults.forEach((result) => {
           const task = runMap[result.runId]?.configJson?.taskType;
@@ -139,8 +143,10 @@ export default function Models() {
           model.id,
           {
             bestScore,
+            avgScore,
             strongestTask,
             avgTps,
+            runCount,
             tasks: Array.from(tasksByModel.get(model.id) ?? []),
             radarData,
             hasRadarData
@@ -468,7 +474,7 @@ export default function Models() {
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {filteredLocalModels.map((model: any) => {
                   const meta = modelMeta[model.id] ?? {};
-                  const hasResults = meta.bestScore !== null && meta.bestScore !== undefined;
+                  const hasResults = meta.avgScore !== null && meta.avgScore !== undefined;
                   const specialties = deriveSpecialties(model.name, model.family);
                   return (
                     <div
@@ -522,15 +528,19 @@ export default function Models() {
 
                       <div className="space-y-2 mb-4">
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>Best Score</span>
-                          {hasResults ? <ScoreBadge value={meta.bestScore} metric="rougeL" /> : <span>-</span>}
+                          <span>Avg Score</span>
+                          {hasResults ? <ScoreBadge value={meta.avgScore} metric="rougeL" /> : <span>-</span>}
                         </div>
                         {meta.strongestTask ? (
                           <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span>Best Task</span>
+                            <span>Strongest Task</span>
                             <span className="text-[10px] px-2 py-0.5 rounded bg-muted text-foreground/80 capitalize">{meta.strongestTask}</span>
                           </div>
                         ) : null}
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Evaluations</span>
+                          <span>{meta.runCount ?? 0}</span>
+                        </div>
                         {meta.hasRadarData ? (
                           <div className="h-28 w-full -ml-3 mt-1">
                             <ResponsiveContainer width="100%" height="100%">
@@ -584,7 +594,7 @@ export default function Models() {
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {comparisonModels.map((model: any) => {
                   const meta = modelMeta[model.id] ?? {};
-                  const hasResults = meta.bestScore !== null && meta.bestScore !== undefined;
+                  const hasResults = meta.avgScore !== null && meta.avgScore !== undefined;
                   const specialties = deriveSpecialties(model.name, model.family);
                   return (
                     <div
@@ -631,15 +641,19 @@ export default function Models() {
                       </div>
                       <div className="space-y-2 mb-4">
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>Best Score</span>
-                          {hasResults ? <ScoreBadge value={meta.bestScore} metric="rougeL" /> : <span>-</span>}
+                          <span>Avg Score</span>
+                          {hasResults ? <ScoreBadge value={meta.avgScore} metric="rougeL" /> : <span>-</span>}
                         </div>
                         {meta.strongestTask ? (
                           <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span>Best Task</span>
+                            <span>Strongest Task</span>
                             <span className="text-[10px] px-2 py-0.5 rounded bg-muted text-foreground/80 capitalize">{meta.strongestTask}</span>
                           </div>
                         ) : null}
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Evaluations</span>
+                          <span>{meta.runCount ?? 0}</span>
+                        </div>
                       </div>
                       <div className="mt-auto">
                         <Link href={`/models/${model.id}`}>

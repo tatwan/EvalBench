@@ -87,13 +87,13 @@ TASK_METRICS: dict[str, list[str]] = {
 }
 
 DEFAULT_DATASET_BY_TASK: dict[str, str] = {
-    "summarization": "EvalBench Summarization v1",
+    "summarization": "EvalBench Summarization Quick v1",
     "qa": "EvalBench QA v1",
     "chat": "EvalBench TruthfulQA (Subset)",
     "translation": "EvalBench Translation v1",
-    "code": "EvalBench HumanEval (Expanded v2)",
-    "reasoning": "EvalBench GSM8K (Expanded v2)",
-    "knowledge": "EvalBench MMLU (Expanded v2)",
+    "code": "EvalBench HumanEval (Subset)",
+    "reasoning": "EvalBench GSM8K (Subset)",
+    "knowledge": "EvalBench MMLU (Subset)",
     "embedding": "EvalBench Embeddings v1",
     "classification": "EvalBench Classification v1",
     "safety": "EvalBench TruthfulQA (MC v2)",
@@ -533,6 +533,10 @@ async def run_eval(run_id: int) -> None:
 
         await q.put({"type": "start", "total": total, "done": False})
 
+        def should_stop_local_run(db_session: Session) -> bool:
+            current_run = db_session.query(db_models.EvalRun).filter_by(id=run_id).first()
+            return not current_run or current_run.status == "cancel_requested"
+
         async def emit_progress(
             *,
             model: str | None = None,
@@ -620,8 +624,7 @@ async def run_eval(run_id: int) -> None:
             async with semaphore:
                 db_local: Session = SessionLocal()
                 try:
-                    current_run = db_local.query(db_models.EvalRun).filter_by(id=run_id).first()
-                    if not current_run or current_run.status == "cancel_requested":
+                    if should_stop_local_run(db_local):
                         return
                     await emit_progress(
                         model=model.name,
@@ -674,6 +677,8 @@ async def run_eval(run_id: int) -> None:
                         result, cache_hit_count = await _generate_local_attempt(db_local, model.name, item.input)
                         cache_hits += cache_hit_count
                         retry_count += int(result.get("retries", 0))
+                        if should_stop_local_run(db_local):
+                            return
 
                         if not result.get("ok"):
                             # Inference failed — record an error for every expected metric
@@ -693,6 +698,8 @@ async def run_eval(run_id: int) -> None:
                             item_scores = await asyncio.to_thread(
                                 _score, task_type, prediction, item.expected_output, result
                             )
+                            if should_stop_local_run(db_local):
+                                return
 
                             # Code execution scoring (Pass@1 / Pass@3)
                             if task_type == "code" and item.context:
@@ -703,6 +710,8 @@ async def run_eval(run_id: int) -> None:
                                         code_predictions = [prediction]
                                         generation_errors: list[str] = []
                                         for attempt_index in range(1, CODE_MAX_ATTEMPTS):
+                                            if should_stop_local_run(db_local):
+                                                break
                                             extra_result, extra_cache_hit_count = await _generate_local_attempt(
                                                 db_local,
                                                 model.name,
@@ -748,6 +757,8 @@ async def run_eval(run_id: int) -> None:
                             # LLM-as-Judge metrics
                             llm_metrics = _get_llm_metrics_for_task(task_type) if judge_metrics_enabled else []
                             for metric_name in llm_metrics:
+                                if should_stop_local_run(db_local):
+                                    break
                                 llm_score, rationale = await asyncio.to_thread(
                                     evaluate_with_llm, db_local, metric_name, item.input, prediction, item.context or ""
                                 )
@@ -760,6 +771,8 @@ async def run_eval(run_id: int) -> None:
 
                             # RAG judge metrics (context_relevance + faithfulness)
                             if task_type == "rag" and judge_metrics_enabled:
+                                if should_stop_local_run(db_local):
+                                    return
                                 rag_scores = rag_scoring.compute_rag_metrics_with_rationale(
                                     question=item.input,
                                     context=item.context or "",

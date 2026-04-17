@@ -48,8 +48,8 @@ const TASK_TYPES: Array<{
     tests: "Compression, coverage, and faithfulness to source.",
     goal: "Produce concise summaries without losing key facts.",
     metrics: ["ROUGE-1", "ROUGE-2", "ROUGE-L", "ROUGE-Lsum", "BERTScore", "METEOR", "LLM Coherence", "LLM Relevance"],
-    datasetHint: "EvalBench Summarization v1",
-    datasetLabel: "EvalBench Summarization v1",
+    datasetHint: "EvalBench Summarization Quick v1",
+    datasetLabel: "EvalBench Summarization Quick v1",
     usesJudge: true,
   },
   {
@@ -96,8 +96,8 @@ const TASK_TYPES: Array<{
     tests: "Breadth of factual knowledge, benchmark recall, and commonsense disambiguation.",
     goal: "Score well across standardized subject and commonsense benchmarks.",
     metrics: ["Exact Match", "Token F1", "Tokens/sec", "LLM Relevance"],
-    datasetHint: "EvalBench MMLU (Expanded v2)",
-    datasetLabel: "EvalBench MMLU (Expanded v2)",
+    datasetHint: "EvalBench MMLU (Subset)",
+    datasetLabel: "EvalBench MMLU (Subset)",
     usesJudge: true,
   },
   {
@@ -120,8 +120,8 @@ const TASK_TYPES: Array<{
     tests: "Correctness, edge cases, and code reliability.",
     goal: "Generate code that passes tests on first try.",
     metrics: ["ROUGE-1", "Distinct-1", "Pass@1", "Pass@3", "Tokens/sec"],
-    datasetHint: "EvalBench HumanEval (Expanded v2)",
-    datasetLabel: "EvalBench HumanEval (Expanded v2)",
+    datasetHint: "EvalBench HumanEval (Subset)",
+    datasetLabel: "EvalBench HumanEval (Subset)",
     usesJudge: false,
   },
   {
@@ -132,8 +132,8 @@ const TASK_TYPES: Array<{
     tests: "Multi-step reasoning and mathematical accuracy.",
     goal: "Arrive at correct final answers consistently.",
     metrics: ["Exact Match", "Token F1", "Tokens/sec"],
-    datasetHint: "EvalBench GSM8K (Expanded v2)",
-    datasetLabel: "EvalBench GSM8K (Expanded v2)",
+    datasetHint: "EvalBench GSM8K (Subset)",
+    datasetLabel: "EvalBench GSM8K (Subset)",
     usesJudge: false,
   },
   {
