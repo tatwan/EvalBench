@@ -217,8 +217,8 @@ GitHub Releases are the canonical changelog for EvalBench and include shipped fe
 
 1. **Clone and Install Frontend**
 ```bash
-git clone <repo>
-cd evalbench
+git clone https://github.com/tatwan/EvalBench
+cd EvalBench
 npm install
 ```
 
@@ -307,10 +307,31 @@ Both are kept green as part of the active audit/remediation work.
 
 ## Contributing
 
-Ideas, issues, and PRs are welcome. If you’re proposing a new metric or dataset, please include:
+Ideas, issues, and PRs are welcome. Here are the most impactful ways to contribute:
+
+### Adding a New Task Type
+Task types live in `backend/scoring/` — each task has its own scorer module. To add a new task:
+1. Create a new scorer file in `backend/scoring/` following the pattern of an existing one (e.g., `summarization.py`).
+2. Register the task name and its default metrics in `backend/schemas.py` and keep shared response shapes aligned in `shared/routes.ts` if needed.
+3. Add a seed dataset entry in `backend/services/dataset_seeder.py` so the Eval Wizard can surface your task with a working built-in example.
+4. Add at least one `pytest` test in `tests/` covering expected score outputs.
+
+### Adding a New Metric
+Metrics are computed inside the task scorer files in `backend/scoring/`. To add a metric:
+1. Implement the scoring function and return it as part of the scorer's output dictionary.
+2. Add the metric label to the frontend's display config so it renders in Run Details and Compare views.
+3. Document the metric in the Learn tab guidance (the educational layer) so users understand when to use it.
+
+### Adding a New Dataset
+When proposing a new built-in dataset, please include:
 - The benchmark source + license
-- Expected metric behavior
-- A small seed subset for quick local tests
+- Expected metric behavior on known-good outputs
+- A small seed subset (10–20 examples) for quick local tests
+
+### General Guidelines
+- Open an issue before large PRs to align on scope.
+- Keep PRs focused — one feature or fix per PR.
+- Run `npm run check` and `pytest -q` before submitting and include the output in your PR description.
 
 ---
 
