@@ -143,14 +143,14 @@ EvalBench computes mean scores and margin of error where supported, and now sepa
 
 - Stable version: v1.0.0
 - Release history: 3 published releases
-- Canonical changelog: [GitHub Releases](./releases)
+- Canonical changelog: [GitHub Releases](https://github.com/tatwan/EvalBench/releases)
 - Validation baseline: npm run check and pytest -q
 
 ## Releases
 
 GitHub Releases are the canonical changelog for EvalBench and include shipped features, user impact, validation evidence, and upgrade notes.
 
-- [View Releases](./releases)
+- [View Releases](https://github.com/tatwan/EvalBench/releases)
 
 ---
 
