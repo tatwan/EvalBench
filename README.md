@@ -217,7 +217,7 @@ GitHub Releases are the canonical changelog for EvalBench and include shipped fe
 
 1. **Clone and Install Frontend**
 ```bash
-git clone https://github.com/tatwan/EvalBench
+git clone https://github.com/tatwan/EvalBench.git
 cd EvalBench
 npm install
 ```
