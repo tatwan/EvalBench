@@ -143,14 +143,23 @@ EvalBench computes mean scores and margin of error where supported, and now sepa
 
 - Stable version: v1.0.0
 - Release history: 3 published releases
-- Canonical changelog: [GitHub Releases](./releases)
+- Canonical changelog: [GitHub Releases](https://github.com/tatwan/EvalBench/releases)
 - Validation baseline: npm run check and pytest -q
 
 ## Releases
 
 GitHub Releases are the canonical changelog for EvalBench and include shipped features, user impact, validation evidence, and upgrade notes.
 
-- [View Releases](./releases)
+- [View Releases](https://github.com/tatwan/EvalBench/releases)
+
+### Release Quality Checklist (recommended)
+
+For each new release, include:
+- Scope summary (**What shipped**) and user impact (**Why it matters**)
+- Explicit upgrade notes (breaking changes, migration steps, config/env changes)
+- Validation evidence (`npm run check`, `pytest -q`) plus commit/tag reference
+- Links to key PRs/issues for traceability
+- Known limitations and follow-ups (especially for prereleases)
 
 ---
 
@@ -186,9 +195,7 @@ npm install
 ```
 
 2. **Install Backend Dependencies**
-EvalBench uses a synchronized `concurrently` script that will automatically use `uv` to install the Python dependencies listed in `backend/requirements.txt` the first time you run the backend.
-
-*(If you don't have `uv` installed, the system will attempt to use standard `pip`)*
+Python dependencies are defined in `pyproject.toml` (with lockfile `uv.lock`).
 
 If you want to install Python deps explicitly up front, run:
 ```bash
@@ -197,6 +204,10 @@ uv sync
 Or use the npm helper:
 ```bash
 npm run py:install
+```
+If `uv` is not available, install with pip:
+```bash
+python -m pip install -e .
 ```
 
 ### Security Note — Encryption Key Backup
