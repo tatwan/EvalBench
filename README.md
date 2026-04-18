@@ -11,7 +11,7 @@
 [![Frontier Compare](https://img.shields.io/badge/Compare-OpenAI%20%7C%20Gemini%20%7C%20Claude%20%7C%20Groq-2563eb)](./README.md)
 [![License](https://img.shields.io/badge/License-MIT-black)](./README.md)
 
-**Status**: v1.0.0 - Local-first eval workbench with trusted runs, optional judge scoring, frontier comparisons, Arena battles, and custom dataset tooling
+**Status**: v1.0.0 - Local-first eval workbench with trusted runs, optional judge scoring, frontier comparisons, Arena battles, and custom dataset tooling; 3 published releases with canonical changelog in GitHub Releases.
 
 ---
 
@@ -24,6 +24,8 @@
 - [Core Concepts](#core-concepts)
 - [Features](#features)
 - [Try in 5 Minutes](#try-in-5-minutes)
+- [Public Status](#public-status)
+- [Releases](#releases)
 - [Technical Stack](#technical-stack)
 - [Setup & Installation](#setup--installation)
 - [How to Run and Stop](#how-to-run-and-stop)
@@ -43,6 +45,8 @@ It gives you one practical loop:
 3. **Inspect reliability and failure context** so run quality and run health are both visible.
 4. **Create your own golden datasets** so evaluations match your actual use case, not generic demos.
 
+This project started as a teaching tool for students to learn golden datasets, metrics, and LLM-as-Judge without writing heavy pipeline code.
+
 If you want "LM Studio for evaluation" with stronger rigor and dataset control, this is it.
 
 ## Why It's Different
@@ -56,16 +60,21 @@ If you want "LM Studio for evaluation" with stronger rigor and dataset control, 
 
 ## Demo
 
+### Product Overview (GIF)
+![EvalBench Overview](images/EvalBench_Overview.gif)
+
+### Eval Wizard Walkthrough (GIF)
+![EvalBench Eval Wizard](images/EvalBench_EvalWizard.gif)
+
+## Screenshots
+
 ### Eval Wizard — Run a benchmark in seconds
-<!-- TODO: replace with images/demo-eval-wizard.gif -->
 ![Eval Wizard](images/image-20260401192033058.png)
 
 ### Arena — Blind pairwise voting with ELO
-<!-- TODO: replace with images/demo-arena.gif -->
 ![Arena](images/image-20260313104835222.png)
 
 ### Head-to-Head Compare
-<!-- TODO: replace with images/demo-compare.gif -->
 ![Compare](images/image-20260401192243905.png)
 
 ## Architecture
@@ -127,6 +136,21 @@ EvalBench computes mean scores and margin of error where supported, and now sepa
 4. Open Run Details to inspect quality metrics, run health, and example outputs.
 5. Export the run as JSON, Markdown, or CSV.
 6. Launch Arena to run a blind battle and vote your preferred output.
+
+---
+
+## Public Status
+
+- Stable version: v1.0.0
+- Release history: 3 published releases
+- Canonical changelog: [GitHub Releases](./releases)
+- Validation baseline: npm run check and pytest -q
+
+## Releases
+
+GitHub Releases are the canonical changelog for EvalBench and include shipped features, user impact, validation evidence, and upgrade notes.
+
+- [View Releases](./releases)
 
 ---
 
@@ -218,6 +242,8 @@ Use these commands before shipping changes:
 npm run check
 pytest -q
 ```
+
+Release notes in GitHub Releases are the canonical changelog for this project.
 
 Both are kept green as part of the active audit/remediation work.
 
