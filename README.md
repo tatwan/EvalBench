@@ -11,7 +11,7 @@
 [![Frontier Compare](https://img.shields.io/badge/Compare-OpenAI%20%7C%20Gemini%20%7C%20Claude%20%7C%20Groq-2563eb)](./README.md)
 [![License](https://img.shields.io/badge/License-MIT-black)](./README.md)
 
-**Status**: v1.0.0 - Local-first eval workbench with trusted runs, optional judge scoring, frontier comparisons, Arena battles, and custom dataset tooling; 3 published releases with canonical changelog in GitHub Releases.
+**Status**: v1.0.0 - Local-first eval workbench with trusted runs, optional judge scoring, frontier comparisons, Arena battles, and custom dataset tooling; 3 tagged releases total (2 stable + 1 prerelease beta) with canonical changelog in GitHub Releases.
 
 ---
 
@@ -142,15 +142,34 @@ EvalBench computes mean scores and margin of error where supported, and now sepa
 ## Public Status
 
 - Stable version: v1.0.0
-- Release history: 3 published releases
-- Canonical changelog: [GitHub Releases](./releases)
+- Release history: 3 tagged releases (latest 3 audited below)
+- Canonical changelog: [GitHub Releases](https://github.com/tatwan/EvalBench/releases)
 - Validation baseline: npm run check and pytest -q
 
 ## Releases
 
 GitHub Releases are the canonical changelog for EvalBench and include shipped features, user impact, validation evidence, and upgrade notes.
 
-- [View Releases](./releases)
+- [View Releases](https://github.com/tatwan/EvalBench/releases)
+
+### Release quality snapshot (last 3)
+
+| Release | Quality / Completeness | Versioning / Tagging Notes |
+|---|---|---|
+| `v1.0.0` | Strong "what shipped" + "why it matters" sections and explicit validation commands. | Stable semver tag is appropriate for current feature set. |
+| `v0.9.5` | Good reliability-focused narrative and user-impact framing. | Patch versioning is sensible for hardening work. |
+| `v0.9.0-beta.1` | Clear beta positioning and known limitations documented. | Prerelease label is correct, but was backfilled later. |
+
+### Prioritized recommendations
+
+1. **P0: Keep future tags commit-accurate (avoid multi-tagging the same SHA unless explicitly a metadata backfill).**  
+   Today the last three tags resolve to the same commit, which makes historical diffs per release less trustworthy.
+2. **P1: Add compare links in each release body** (`Full Changelog: <prev_tag>...<this_tag>`).  
+   This improves auditability and makes release notes verifiable from code deltas.
+3. **P1: Keep a consistent release template** (What shipped / Why it matters / Breaking changes / Validation / Upgrade notes).  
+   Current notes are already strong; a fixed template will keep quality high as cadence grows.
+4. **P2: Include artifact intent per release** (source-only vs packaged binaries).  
+   Clarifies what users should download and what "complete" means for each release.
 
 ---
 
@@ -186,7 +205,7 @@ npm install
 ```
 
 2. **Install Backend Dependencies**
-EvalBench uses a synchronized `concurrently` script that will automatically use `uv` to install the Python dependencies listed in `backend/requirements.txt` the first time you run the backend.
+EvalBench uses a synchronized `concurrently` script that will automatically use `uv` to install Python dependencies from `pyproject.toml`/`uv.lock` the first time you run the backend.
 
 *(If you don't have `uv` installed, the system will attempt to use standard `pip`)*
 
