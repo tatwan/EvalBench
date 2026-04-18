@@ -36,6 +36,7 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
+.fuse_hidden*
 
 # Node
 node_modules/
@@ -49,6 +50,13 @@ evalbench.db-shm
 evalbench.db-wal
 runs.json
 compare.md
+logs.txt
+prompt.md
 
 # Git worktrees
 .worktrees/
+
+audit/
+.local/
+docs/
+runs.json
