@@ -19,6 +19,8 @@
 
 - [Why EvalBench](#why-evalbench)
 - [Why It's Different](#why-its-different)
+- [Quickstart (60 Seconds)](#quickstart-60-seconds)
+- [Real Usage Example](#real-usage-example)
 - [Demo](#demo)
 - [Architecture](#architecture)
 - [Core Concepts](#core-concepts)
@@ -57,6 +59,35 @@ If you want "LM Studio for evaluation" with stronger rigor and dataset control, 
 - **Dataset creation is a core feature**: build, import, version, and safely manage custom datasets from inside the product.
 - **Two modes of truth**: metric-based head-to-head comparison plus human preference testing via blind Arena battles and ELO.
 - **Educational layer included**: built-in metric guidance helps teams learn why each score exists, not just what the number is.
+
+## Quickstart (60 Seconds)
+
+1. Start Ollama locally and ensure at least one model is pulled.
+2. Install dependencies and start EvalBench:
+
+```bash
+npm install
+npm run dev
+```
+
+3. Open http://localhost:5173.
+4. Go to Eval Wizard, choose a task, select models, and run your first evaluation.
+
+## Real Usage Example
+
+Example: compare two local models on Question Answering.
+
+1. Open Eval Wizard.
+2. Choose Question Answering.
+3. Select two local Ollama models (for example tinyllama:1.1b and gemma3:270m).
+4. Start the run and open Run Details.
+5. Review Exact Match and Token F1 plus run health fields (failed pairs, retries, cache hits).
+6. Export results as JSON, Markdown, or CSV.
+
+Expected outcome:
+- You get model-by-model score differences on the same dataset/context.
+- You can inspect best/worst examples before deciding which model to ship.
+- You can share reproducible output with your team from the export files.
 
 ## Demo
 
@@ -142,15 +173,21 @@ EvalBench computes mean scores and margin of error where supported, and now sepa
 ## Public Status
 
 - Stable version: v1.0.0
-- Release history: 3 published releases
-- Canonical changelog: [GitHub Releases](./releases)
+- Release history: 3 tagged releases
+- Canonical changelog: [GitHub Releases](https://github.com/tatwan/EvalBench/releases)
 - Validation baseline: npm run check and pytest -q
 
 ## Releases
 
 GitHub Releases are the canonical changelog for EvalBench and include shipped features, user impact, validation evidence, and upgrade notes.
 
-- [View Releases](./releases)
+- [View Releases](https://github.com/tatwan/EvalBench/releases)
+
+### Release Quality Checklist (recommended)
+
+- Scope summary: **What shipped** and user impact: **Why it matters**
+- Explicit upgrade notes: breaking changes, migration steps, config/env changes
+- Validation evidence: `npm run check`, `pytest -q`, plus commit/tag reference
 
 ---
 
@@ -174,7 +211,7 @@ GitHub Releases are the canonical changelog for EvalBench and include shipped fe
 1. **Node.js**: v18 or higher (for the frontend React app)
 2. **Python**: v3.11 or higher (for the backend API and metric computation)
 3. **Ollama**: Installed locally and running on `http://localhost:11434` (with at least one model pulled)
-4. **uv**: (Optional but recommended) Lightning-fast Python package installer
+4. **uv**: Required for backend install/run, but you can install it with `pip` if it is missing
 
 ### Installation Steps
 
@@ -186,14 +223,23 @@ npm install
 ```
 
 2. **Install Backend Dependencies**
-EvalBench uses a synchronized `concurrently` script that will automatically use `uv` to install the Python dependencies listed in `backend/requirements.txt` the first time you run the backend.
-
-*(If you don't have `uv` installed, the system will attempt to use standard `pip`)*
+EvalBench uses `pyproject.toml` dependency management (lockfile: `uv.lock`) as the source of truth.
 
 If you want to install Python deps explicitly up front, run:
 ```bash
 uv sync
 ```
+
+If you do not have `uv`, install it first with pip:
+```bash
+python -m pip install uv
+```
+
+Then rerun:
+```bash
+uv sync
+```
+
 Or use the npm helper:
 ```bash
 npm run py:install
