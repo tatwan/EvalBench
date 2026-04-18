@@ -30,6 +30,7 @@
 - [Releases](#releases)
 - [Technical Stack](#technical-stack)
 - [Setup & Installation](#setup--installation)
+- [Platform Notes](#platform-notes)
 - [How to Run and Stop](#how-to-run-and-stop)
 - [Validation](#validation)
 - [Roadmap](#roadmap)
@@ -209,7 +210,7 @@ GitHub Releases are the canonical changelog for EvalBench and include shipped fe
 
 ### Prerequisites
 1. **Node.js**: v18 or higher (for the frontend React app)
-2. **Python**: v3.11 or higher (for the backend API and metric computation)
+2. **Python**: v3.11 or higher (Windows users: Python 3.12 is recommended for best dependency compatibility)
 3. **Ollama**: Installed locally and running on `http://localhost:11434` (with at least one model pulled)
 4. **uv**: Required for backend install/run, but you can install it with `pip` if it is missing
 
@@ -244,6 +245,39 @@ Or use the npm helper:
 ```bash
 npm run py:install
 ```
+
+## Platform Notes
+
+macOS is the primary development environment. The notes below are for Windows users.
+
+### Python Version On Windows
+Project metadata currently allows Python 3.11+ (see `pyproject.toml`), but plain `uv sync` on Windows may select a very new interpreter (for example 3.14) and fail due to binary dependency and toolchain gaps.
+
+Use Python 3.12 explicitly for reliable setup:
+
+```bash
+uv sync --python 3.12
+```
+
+### PowerShell Execution Policy
+If npm commands fail with a "running scripts is disabled" error, run:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+### npm run dev On Windows
+If combined startup fails in your shell, run frontend and backend separately:
+
+```powershell
+# Terminal 1
+npm run dev:frontend
+
+# Terminal 2
+npm run dev:backend
+```
+
+If combined startup works in your environment, you can keep using `npm run dev`.
 
 ### Security Note — Encryption Key Backup
 
