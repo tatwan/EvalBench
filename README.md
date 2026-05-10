@@ -1,5 +1,7 @@
 # EvalBench
 
+![evalbench](images/evalbench.png)
+
 **Local-first LLM evaluation workbench** for Ollama users who want trustworthy metrics, fair model comparisons, and faster iteration loops.
 
 [![Ollama-first](https://img.shields.io/badge/Ollama-first-111827)](./README.md)
