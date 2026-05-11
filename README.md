@@ -1,6 +1,6 @@
 # EvalBench
 
-![evalbench](images/evalbench.png)
+![evalbench](images/evalbench-8511538.png)
 
 **Local-first LLM evaluation workbench** for Ollama users who want trustworthy metrics, fair model comparisons, and faster iteration loops.
 
